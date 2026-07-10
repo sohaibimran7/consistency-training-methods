@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "consistency-training-methods"
+version = "0.1.0"
+description = "Consistency training (BCT/RLCT) across settings — successor to the arXiv:2606.02211 codebase, legacy-free"
+requires-python = ">=3.11"
+# requirements.txt is the dependency source of truth for the dev environment
+# (install with `uv pip install -r requirements.txt`, then `uv pip install -e . --no-deps`).
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["ctm*", "scripts*", "tests*"]
+namespaces = true
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 300
+
+[tool.pytest.ini_options]
+markers = [
+    "network: needs live API access",
+    "gpu: needs a GPU",
+    "tinker: needs the live Tinker service / a checkpoint",
+]
+addopts = "-m 'not network and not gpu and not tinker'"

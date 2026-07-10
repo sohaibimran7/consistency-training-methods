@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+dist/
+build/
+*.egg-info/
+logs/
+.pytest_cache/
+.ruff_cache/
+uv.lock

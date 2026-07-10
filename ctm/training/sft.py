@@ -1,0 +1,300 @@
+"""SFT (Supervised Fine-Tuning / BCT) — backend-agnostic loop.
+
+Usage:
+    from ctm.training.sft import train_sft, SFTConfig
+
+    # Basic usage with defaults (Tinker backend)
+    checkpoint = asyncio.run(train_sft(Path("data/train.jsonl")))
+
+    # With custom config
+    config = SFTConfig(
+        experiment_name="bct_debug",
+        run_name="control",
+        model="meta-llama/Llama-3.1-8B-Instruct",
+        optimizer=AdamConfig(learning_rate=1e-4, lr_schedule="linear"),
+        batch_size=128,
+        n_epochs=1,
+    )
+    checkpoint = asyncio.run(train_sft(Path("data/train.jsonl"), config=config))
+
+Training data format (JSONL):
+    {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+    {"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}, ...]}
+
+(Old import path ``cot_transparency.apis.tinker.finetune`` re-exports from here.)
+"""
+
+import asyncio
+import json
+import math
+import random
+from pathlib import Path
+from typing import Optional
+
+from pydantic import BaseModel
+from tqdm import tqdm
+
+from tinker_cookbook.supervised.common import datum_from_model_input_weights
+from tinker_cookbook.utils.lr_scheduling import compute_schedule_lr_multiplier
+from tinker_cookbook.utils.ml_log import setup_logging
+
+from ctm.backends.base import TrainingBackend
+from ctm.backends.renderers import get_renderer_and_tokenizer
+from ctm.backends.tinker import TinkerBackend
+from ctm.core.config import AdamConfig, CheckpointConfig, LoRAConfig
+from ctm.training.checkpoints import finalize_checkpoint, save_intermediate_checkpoint
+from ctm.training.manifest import write_run_manifest
+from ctm.training.run_utils import build_log_dir, get_git_state, get_recommended_lr, warn_if_dirty
+
+
+class SFTConfig(BaseModel):
+    """SFT training configuration."""
+    experiment_name: str = "sft"
+    run_name: str = "default"
+    model: str = "meta-llama/Llama-3.1-8B-Instruct"
+    lora: LoRAConfig = LoRAConfig()
+    optimizer: AdamConfig = AdamConfig()
+    n_epochs: int = 1
+    batch_size: int = 128
+    checkpoint: CheckpointConfig = CheckpointConfig()
+    log_base_dir: str = "logs"
+    # Free-form provenance (setting name, data files, ...) set by the CLI;
+    # flows into the run manifest via the config dump — the registry generator reads it.
+    run_metadata: dict = {}
+
+
+def load_samples(file_path: Path) -> list[dict]:
+    """
+    Load training samples from JSONL file.
+
+    Each line should be a JSON object with a "messages" field containing
+    a list of message dicts with "role" and "content" fields.
+    """
+    samples = []
+    with open(file_path) as f:
+        for line in f:
+            samples.append(json.loads(line))
+    return samples
+
+
+def _mean_nll(logprobs_list, weights_list) -> float:
+    """Weighted mean NLL: -sum(logprobs·weights)/sum(weights) over the batch.
+
+    Same computation as tinker_cookbook's ``compute_mean_nll``, but over the
+    torch tensors the backend protocol returns (the cookbook version requires
+    tinker TensorData).
+    """
+    total_weighted_logprobs = 0.0
+    total_weights = 0.0
+    for logprobs, weights in zip(logprobs_list, weights_list):
+        total_weighted_logprobs += float(logprobs.double().dot(weights.double()))
+        total_weights += float(weights.sum())
+    if total_weights == 0:
+        return math.nan
+    return -total_weighted_logprobs / total_weights
+
+
+async def train_sft(
+    file_path: Path,
+    config: Optional[SFTConfig] = None,
+    max_samples: Optional[int] = None,
+    resume_from: Optional[str] = None,
+    resume_with_optimizer: Optional[bool] = None,
+    backend: Optional[TrainingBackend] = None,
+) -> str:
+    """
+    Run SFT training from JSONL file.
+
+    Args:
+        file_path: Path to JSONL file with {"messages": [...]} format
+        config: Training configuration (uses defaults if not provided)
+        max_samples: Limit number of samples (None = use all)
+        resume_from: Checkpoint path to load weights from before training.
+            For Tinker: a state_path (tinker://...weights/...) for full optimizer resume,
+            or a sampler_path (tinker://...sampler_weights/...) for weights-only.
+        resume_with_optimizer: Explicitly choose optimizer-state restore. None (default)
+            infers from the URI; pass True/False to override the fragile URI heuristic
+            (e.g. for non-standard/local checkpoint paths).
+        backend: Training backend; defaults to TinkerBackend().
+
+    Returns:
+        Final checkpoint path
+    """
+    cfg = config or SFTConfig()
+    backend = backend if backend is not None else TinkerBackend()
+
+    # Build log directory: logs/{experiment_name}/{run_name}/
+    log_dir = Path(build_log_dir(cfg.log_base_dir, cfg.experiment_name, cfg.run_name))
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup logging (writes to files + WandB with experiment_name as project, run_name as name)
+    logger = setup_logging(
+        log_dir=str(log_dir),
+        wandb_project=cfg.experiment_name,
+        wandb_name=cfg.run_name,
+        config=cfg.model_dump(),
+    )
+
+    # Log git state for reproducibility
+    git_state = get_git_state()
+    warn_if_dirty(git_state)
+    logger.log_hparams({"git": git_state})
+
+    # Load training data
+    samples = load_samples(file_path)
+    if max_samples and max_samples < len(samples):
+        samples = samples[:max_samples]
+
+    n_samples = len(samples)
+    # Ceiling division: the batch loop below is range(0, n_samples, batch_size), which
+    # yields a partial final batch when n_samples % batch_size != 0. Flooring undercounts
+    # total_steps, so the LR schedule hits 0 on that batch and goes NEGATIVE on multi-epoch
+    # runs (gradient ascent), and gives total_steps=0 (a hard ConfigurationError from the
+    # scheduler) whenever n_samples < batch_size. Match the actual loop with ceil.
+    steps_per_epoch = (n_samples + cfg.batch_size - 1) // cfg.batch_size
+    total_steps = steps_per_epoch * cfg.n_epochs
+    if total_steps == 0:
+        raise ValueError(
+            f"No training steps: {n_samples} samples, batch_size={cfg.batch_size}, "
+            f"n_epochs={cfg.n_epochs}. Add data or lower batch_size."
+        )
+
+    # Reproducibility: seed the per-epoch shuffle below. LoRA init is seeded separately by
+    # the SDK via lora.seed; without this, "same --seed" runs still differ in data order.
+    if cfg.lora.seed is not None:
+        random.seed(cfg.lora.seed)
+
+    # Determine learning rate: use configured value or get recommended LR for model
+    base_lr: float = cfg.optimizer.learning_rate if cfg.optimizer.learning_rate is not None else get_recommended_lr(cfg.model)
+
+    print(f"SFT Training: {n_samples} samples, batch={cfg.batch_size}, {total_steps} steps, lr={base_lr:.2e}")
+    logger.log_hparams({"n_samples": n_samples, "total_steps": total_steps, "file": str(file_path), "base_lr": base_lr})
+
+    write_run_manifest(
+        log_dir,
+        kind="sft",
+        model=cfg.model,
+        backend=backend,
+        config_dump=cfg.model_dump(),
+        extra={"data_file": str(file_path), "n_samples": n_samples},
+    )
+
+    # Initialize the backend (resume handling: explicit resume_with_optimizer wins;
+    # otherwise infer from the URI — state paths contain "/weights/", sampler paths
+    # "/sampler_weights/". The URI heuristic is a fragile fallback; callers can override.)
+    with_opt = False
+    if resume_from:
+        if resume_with_optimizer is None:
+            with_opt = "/weights/" in resume_from and "/sampler_weights/" not in resume_from
+        else:
+            with_opt = resume_with_optimizer
+        print(f"Resuming from: {resume_from} (optimizer state: {with_opt})")
+    backend.setup(
+        model=cfg.model,
+        lora=cfg.lora,
+        resume_from=resume_from,
+        resume_with_optimizer=with_opt,
+    )
+    if resume_from:
+        logger.log_hparams({"resume_from": resume_from, "resume_with_optimizer": with_opt})
+
+    renderer, _ = get_renderer_and_tokenizer(cfg.model)
+
+    checkpoint_paths: list[str] = []
+    global_step = 0
+
+    # Training loop
+    for epoch in range(cfg.n_epochs):
+        # Shuffle samples each epoch
+        epoch_samples = list(samples)
+        random.shuffle(epoch_samples)
+        epoch_loss = 0.0
+        n_examples = 0
+
+        pbar = tqdm(range(0, n_samples, cfg.batch_size), desc=f"Epoch {epoch+1}")
+        for batch_start in pbar:
+            batch_samples = epoch_samples[batch_start:batch_start + cfg.batch_size]
+
+            # Create datums with proper token shifting for next-token prediction
+            batch_data = []
+            for sample in batch_samples:
+                tokens, weights = renderer.build_supervised_example(sample["messages"])
+                batch_data.append(datum_from_model_input_weights(tokens, weights))
+
+            # Compute LR with schedule
+            # max(0.0, ...) is belt-and-suspenders against a negative multiplier; the
+            # ceil-division total_steps above already keeps step < total_steps.
+            lr_mult = max(0.0, compute_schedule_lr_multiplier(
+                lr_schedule=cfg.optimizer.lr_schedule,
+                step=global_step,
+                total_steps=total_steps,
+            ))
+            current_lr = base_lr * lr_mult
+
+            # Async: enqueue forward_backward and optim_step before awaiting results (overlapping pattern)
+            pending_fwd_bwd = await backend.submit_forward_backward(batch_data, loss_fn="cross_entropy")
+            pending_optim = await backend.submit_optim_step(learning_rate=current_lr, adam=cfg.optimizer)
+
+            # Await results
+            fwd_bwd_output = await pending_fwd_bwd.result()
+            await pending_optim.result()
+
+            # Compute proper per-token NLL
+            weights = [d.loss_fn_inputs["weights"].to_torch() for d in batch_data]
+            nll = _mean_nll(fwd_bwd_output.logprobs, weights)
+
+            # Weight each batch's (token-pooled) NLL by its sample count so the epoch mean
+            # isn't skewed by an unequal final/remainder batch.
+            epoch_loss += nll * len(batch_samples)
+            n_examples += len(batch_samples)
+            global_step += 1
+
+            pbar.set_postfix({"nll": f"{nll:.4f}", "lr": f"{current_lr:.2e}"})
+            logger.log_metrics({"train/nll": nll, "train/lr": current_lr}, step=global_step)
+
+            # Intermediate checkpoint (skip if near final to avoid duplicates)
+            await save_intermediate_checkpoint(
+                backend,
+                experiment_name=cfg.experiment_name,
+                run_name=cfg.run_name,
+                checkpoint_cfg=cfg.checkpoint,
+                global_step=global_step,
+                total_steps=total_steps,
+                epoch=epoch,
+                log_dir=log_dir,
+                checkpoint_paths=checkpoint_paths,
+                logger=logger,
+            )
+
+        # Epoch summary
+        if n_examples > 0:
+            avg_loss = epoch_loss / n_examples
+            print(f"Epoch {epoch+1} avg NLL: {avg_loss:.4f}")
+            logger.log_metrics({"train/epoch_nll": avg_loss, "train/epoch": epoch + 1}, step=global_step)
+
+    # Final checkpoint (no step suffix)
+    final_path = await finalize_checkpoint(
+        backend,
+        experiment_name=cfg.experiment_name,
+        run_name=cfg.run_name,
+        n_epochs=cfg.n_epochs,
+        save_state=cfg.checkpoint.save_state,
+        global_step=global_step,
+        log_dir=log_dir,
+        checkpoint_paths=checkpoint_paths,
+        logger=logger,
+    )
+
+    return final_path
+
+
+def train_sft_sync(
+    file_path: Path,
+    config: Optional[SFTConfig] = None,
+    max_samples: Optional[int] = None,
+    resume_from: Optional[str] = None,
+    resume_with_optimizer: Optional[bool] = None,
+    backend: Optional[TrainingBackend] = None,
+) -> str:
+    """Synchronous wrapper for train_sft."""
+    return asyncio.run(train_sft(file_path, config, max_samples, resume_from, resume_with_optimizer, backend))

@@ -1,0 +1,268 @@
+"""End-to-end RL + SFT loops against a fake in-memory backend.
+
+Unlike test_rl_pipelining (which mocks _collect_rollouts and measures overlap),
+these tests run the REAL rollout collection, trait classification, reward /
+advantage construction, datum creation, and rollout persistence — only the
+compute substrate is faked at the TrainingBackend seam. This is the contract
+test any new backend (local torch/PEFT, vLLM) must also satisfy.
+"""
+
+import asyncio
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+import torch
+from tinker import types
+
+from ctm.backends.base import ForwardBackwardOutput
+from ctm.core.rewards import ConsistencyReward
+from ctm.evals.analysis.rollouts import iter_rollouts, load_index
+from ctm.training.rl import (
+    GenerationConfig,
+    RateEstimationConfig,
+    RLConfig,
+    RLTrainer,
+    TrainingLoopConfig,
+    TrainingSamplingConfig,
+)
+from ctm.training.sft import SFTConfig, train_sft
+from ctm.core.config import AdamConfig, CheckpointConfig, LoRAConfig
+
+A_TOKEN, B_TOKEN = 65, 66  # completions: "(A)" (biased) vs "(B)"
+
+
+class FakeTokenizer:
+    def decode(self, tokens):
+        if not tokens:
+            return ""
+        if tokens[0] == A_TOKEN:
+            return "The best answer is: (A)"
+        if tokens[0] == B_TOKEN:
+            return "The best answer is: (B)"
+        return " ".join(str(t) for t in tokens)
+
+
+class FakeRenderer:
+    """Encodes which perturbation a prompt came from in its first token."""
+
+    def build_generation_prompt(self, messages):
+        cued = any("bias" in m["content"] for m in messages)
+        return types.ModelInput.from_ints(tokens=[1 if cued else 0])
+
+    def build_supervised_example(self, messages):
+        return types.ModelInput.from_ints(tokens=[1, 2, 3, 4]), torch.tensor([0.0, 0.0, 1.0, 1.0])
+
+    def parse_response(self, tokens):
+        raise RuntimeError("no structured parse in fake")  # decode_response falls back to tokenizer
+
+    def get_stop_sequences(self):
+        return []
+
+
+class FakeSampler:
+    """Deterministic trait mix: cued prompts answer (A) 75% of the time, neutral 25%."""
+
+    async def sample(self, prompt, *, max_tokens, temperature, stop, num_samples):
+        from ctm.backends.base import SampledSequence
+
+        cued = prompt.to_ints()[0] == 1
+        seqs = []
+        for i in range(num_samples):
+            biased = (i % 4 != 0) if cued else (i % 4 == 0)  # 3/4 vs 1/4
+            seqs.append(SampledSequence(tokens=[A_TOKEN if biased else B_TOKEN], logprobs=[-0.1]))
+        return seqs
+
+
+class FakeBackend:
+    """In-memory TrainingBackend that records every call."""
+
+    def __init__(self):
+        self.fb_datums: list[list] = []
+        self.fb_loss_fns: list[str] = []
+        self.optim_lrs: list[float] = []
+        self.kl_calls = 0
+        self.checkpoints: list[str] = []
+
+    def setup(self, **kwargs):
+        pass
+
+    def policy_sampler(self, name):
+        return FakeSampler()
+
+    async def refresh_policy_sampler(self, name):
+        return FakeSampler()
+
+    def base_sampler(self):
+        return FakeSampler()
+
+    async def submit_forward_backward(self, datums, loss_fn):
+        self.fb_datums.append(list(datums))
+        self.fb_loss_fns.append(loss_fn)
+        lengths = [d.loss_fn_inputs["target_tokens"].to_torch().shape[0] for d in datums]
+
+        class Pending:
+            async def result(self):
+                return ForwardBackwardOutput(logprobs=[-0.1 * torch.ones(n) for n in lengths], metrics={"loss": 0.5})
+
+        return Pending()
+
+    async def submit_optim_step(self, *, learning_rate, adam):
+        self.optim_lrs.append(learning_rate)
+
+        class Pending:
+            async def result(self):
+                return None
+
+        return Pending()
+
+    async def incorporate_kl_penalty(self, datums, *, kl_coef, kl_discount_factor):
+        self.kl_calls += 1
+        return {"kl_penalty": 0.0}
+
+    async def save_checkpoint(self, *, name, log_dir, loop_state, kind):
+        self.checkpoints.append(name)
+        return {"sampler_path": f"fake://checkpoint/{name}", "state_path": None}
+
+
+def _perturbations():
+    return [
+        lambda dp: {"messages": [{"role": "user", "content": dp["question"]}]},
+        lambda dp: {"messages": [{"role": "user", "content": "bias " + dp["question"]}]},
+    ]
+
+
+def _trait(answer_text, dp):
+    return 1.0 if "(A)" in answer_text else 0.0
+
+
+class TestRLEndToEnd:
+    def _run(self, tmp_path, **config_overrides):
+        cfg = dict(
+            experiment_name="itest",
+            run_name="rl",
+            lora=LoRAConfig(rank=4, seed=0),
+            optimizer=AdamConfig(learning_rate=1e-4),
+            reference_rate=RateEstimationConfig(perturbation_indices=[0], n_rollouts=8),
+            # n_rollouts_for_consistency=None → gradient set = ALL 8 parsed rollouts, so the
+            # 6:2 trait mix (and hence nonzero advantage variance) is deterministic — no
+            # random.sample subset can collapse a batch to all-equal rewards and skip it.
+            training=TrainingSamplingConfig(
+                perturbation_indices=[1], n_rollouts_for_rate=8, n_rollouts_for_consistency=None
+            ),
+            loop=TrainingLoopConfig(batch_size=2, refresh_policy_every_n_steps=1, n_epochs=1),
+            generation=GenerationConfig(max_new_tokens=16, temperature=0.7),
+            checkpoint=CheckpointConfig(),
+            kl_coef=0.1,
+            anchor_weight=0.5,
+            log_base_dir=str(tmp_path / "logs"),
+            rollout_dir=str(tmp_path / "rollouts"),
+        )
+        cfg.update(config_overrides)
+        config = RLConfig(**cfg)
+        backend = FakeBackend()
+        trainer = RLTrainer(config=config, reward_function=ConsistencyReward(), backend=backend)
+        # Wire fakes directly instead of setup() (no real model/renderer offline)
+        trainer.setup_done = True
+        trainer.renderer = FakeRenderer()
+        trainer.tokenizer = FakeTokenizer()
+        trainer.sampling_client = FakeSampler()
+        trainer.base_sampling_client = FakeSampler()
+        trainer.anchor_sampling_client = FakeSampler()
+
+        datapoints = [{"question": f"Q{i}"} for i in range(4)]
+        with patch("ctm.training.rl.setup_logging") as mock_logging:
+            mock_logging.return_value = MagicMock()
+            final = asyncio.run(
+                trainer.train(
+                    datapoints=datapoints,
+                    perturbation_fns=_perturbations(),
+                    trait_classifier=_trait,
+                )
+            )
+        return final, backend, trainer
+
+    def test_full_loop_trains_and_checkpoints(self, tmp_path):
+        final, backend, _ = self._run(tmp_path)
+        assert final == "fake://checkpoint/itest_rl"
+        # provenance manifest written into the run's log dir
+        from ctm.training.manifest import read_run_manifest
+
+        manifest = read_run_manifest(tmp_path / "logs" / "itest" / "rl")
+        assert manifest["kind"] == "rl" and manifest["backend"] == "FakeBackend"
+        assert manifest["n_datapoints"] == 4 and manifest["n_perturbations"] == 2
+        # 4 datapoints / batch 2 = 2 steps, all with a 0.5 trait gap → no skips
+        assert len(backend.fb_datums) == 2
+        assert backend.fb_loss_fns == ["ppo", "ppo"]
+        assert len(backend.optim_lrs) == 2
+        assert backend.kl_calls == 2  # kl_coef > 0 routes through the backend
+        # real tinker datums with RL loss inputs
+        datum = backend.fb_datums[0][0]
+        assert {"advantages", "logprobs", "mask", "target_tokens"} <= set(datum.loss_fn_inputs)
+        advs = datum.loss_fn_inputs["advantages"].to_torch()
+        assert advs.abs().sum() > 0
+
+    def test_rollouts_persisted_with_context(self, tmp_path):
+        _, _, trainer = self._run(tmp_path)
+        rollout_dir = tmp_path / "rollouts"
+        index = load_index(rollout_dir)
+        assert [e["step"] for e in index] == [1, 2]
+
+        records = list(iter_rollouts(rollout_dir))
+        roles = {r.role for r in records}
+        assert roles == {"train", "anchor"}  # anchor_weight > 0 → both populations logged
+        for r in records:
+            assert "(A)" in r.completion_text or "(B)" in r.completion_text
+            assert 0.0 <= r.p_ref <= 1.0
+            assert r.trait_value in (0.0, 1.0)
+            if r.role == "train":
+                assert r.perturbation_idx == 1 and r.p_hat is not None
+            else:
+                assert r.perturbation_idx == 0 and r.p_hat is None
+        # advantage/reward context survives: cued trait=1 rollouts are discouraged (adv < 0)
+        cued_biased = [r for r in records if r.role == "train" and r.trait_value == 1.0]
+        assert cued_biased and all(r.advantage < 0 for r in cued_biased)
+
+    def test_rollout_log_none_writes_nothing(self, tmp_path):
+        self._run(tmp_path, rollout_log="none")
+        assert not (tmp_path / "rollouts").exists()
+
+
+class TestSFTEndToEnd:
+    def test_full_loop(self, tmp_path):
+        data = tmp_path / "train.jsonl"
+        samples = [
+            {"messages": [{"role": "user", "content": f"q{i}"}, {"role": "assistant", "content": f"a{i}"}]}
+            for i in range(5)
+        ]
+        data.write_text("".join(json.dumps(s) + "\n" for s in samples))
+
+        cfg = SFTConfig(
+            experiment_name="itest",
+            run_name="sft",
+            optimizer=AdamConfig(learning_rate=1e-4, lr_schedule="linear"),
+            batch_size=2,
+            n_epochs=1,
+            log_base_dir=str(tmp_path / "logs"),
+        )
+        backend = FakeBackend()
+        with (
+            patch("ctm.training.sft.setup_logging") as mock_logging,
+            patch("ctm.training.sft.get_renderer_and_tokenizer", return_value=(FakeRenderer(), FakeTokenizer())),
+        ):
+            mock_logging.return_value = MagicMock()
+            final = asyncio.run(train_sft(data, config=cfg, backend=backend))
+
+        assert final == "fake://checkpoint/itest_sft"
+        from ctm.training.manifest import read_run_manifest
+
+        manifest = read_run_manifest(tmp_path / "logs" / "itest" / "sft")
+        assert manifest["kind"] == "sft" and manifest["n_samples"] == 5
+        assert backend.fb_loss_fns == ["cross_entropy"] * 3  # ceil(5/2) steps
+        assert len(backend.optim_lrs) == 3
+        # linear schedule from full LR, strictly decreasing
+        assert backend.optim_lrs[0] == pytest.approx(1e-4)
+        assert backend.optim_lrs[0] > backend.optim_lrs[1] > backend.optim_lrs[2]
+        # SFT datums carry supervised loss inputs
+        datum = backend.fb_datums[0][0]
+        assert {"target_tokens", "weights"} <= set(datum.loss_fn_inputs)
