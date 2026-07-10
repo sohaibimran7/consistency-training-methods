@@ -12,9 +12,11 @@ code is needed, port it cleanly or leave it behind.
 - **Do not execute** until the user explicitly approves.
 
 ## What this repo is
-Anti-sycophancy / eval-awareness **consistency training** (BCT = SFT, RLCT = RL)
-on Tinker or self-hosted GPUs, evaluated with the published
-[mcq-bias](https://github.com/sohaibimran7/mcq-bias) Inspect eval.
+Anti-sycophancy / eval-awareness **consistency training** (BCT = SFT, RLCT = RL,
+plus internal-consistency SFT methods ACT/AttCT/MLPCT = activation/attention/MLP
+losses — local backend + LoRA only) on Tinker or self-hosted GPUs, evaluated
+with the published [mcq-bias](https://github.com/sohaibimran7/mcq-bias) Inspect
+eval.
 
 ## Environment
 `uv` throughout. `requirements.txt` is the dependency source of truth.
@@ -34,7 +36,14 @@ API keys in `.env` (gitignored): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
   `backends/` (tinker + local GPU seam), `training/` (RL + SFT loops, rollout
   logs, manifests), `settings/` (sycophancy, eval_awareness), `evals/`.
 - `scripts/` — `train_rlct.py` (RL consistency training), `train_bct.py`
-  (SFT consistency training), `rlct_smoke_test.py` (live smoke run).
+  (SFT-family consistency training, `--method bct|act|attct|mlpct`),
+  `rlct_smoke_test.py` (live smoke run).
+- ACT/AttCT/MLPCT losses (`ctm/backends/local/consistency_losses.py`,
+  `mlp_hooks.py`, paired-datum adapter in `ctm/training/consistency_data.py`)
+  are **vendored** from https://github.com/c-wei/AttCT @ 79527cf — copied, not
+  pinned: that repo is an unpackaged, unlicensed, fast-moving research monorepo
+  (top-level `losses`/`data` modules, hard deps on vllm/bitsandbytes). To pick
+  up upstream changes, diff against the noted SHA and port deliberately.
 - Eval tasks/scorers come from the **mcq-bias package** (pinned in
   requirements.txt; co-develop with `uv pip install -e /Users/work/mcq-bias --no-deps`).
 - `ctm/settings/sycophancy/` is the TRAINING half of the setting (RL cue

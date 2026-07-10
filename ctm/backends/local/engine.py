@@ -31,8 +31,18 @@ import torch
 from tinker_cookbook.rl.metrics import discounted_future_sum_vectorized
 
 from ctm.backends.base import ForwardBackwardOutput, SampledSequence
-from ctm.backends.local import losses
+from ctm.backends.local import consistency_losses, losses
+from ctm.backends.local.mlp_hooks import MLPHookManager
 from ctm.core.config import AdamConfig, LoRAConfig
+
+# Internal-consistency loss_fns (ACT / AttCT / MLPCT) — LocalBackend only: they
+# need paired forward passes with attentions / hidden states / MLP hooks, which
+# the Tinker service API doesn't expose.
+CONSISTENCY_LOSS_CLASSES = {
+    "activation_consistency": consistency_losses.ActivationConsistencyLoss,
+    "attention_consistency": consistency_losses.JSDAttentionConsistencyLoss,
+    "mlp_consistency": consistency_losses.MLPConsistencyLoss,
+}
 
 try:  # optional: LoRA support
     import peft
@@ -90,6 +100,7 @@ class LocalBackend:
         ppo_clip_epsilon: float = losses.PPO_CLIP_EPSILON,
         sampler: str = "hf",
         vllm_options: Optional[dict] = None,
+        consistency_loss_options: Optional[dict] = None,
     ):
         """
         Args:
@@ -103,6 +114,9 @@ class LocalBackend:
                 "vllm" (in-process vLLM with LoRA hot-reload; production path).
             vllm_options: forwarded to VLLMSampler / vllm.LLM
                 (gpu_memory_utilization, tensor_parallel_size, max_model_len, ...).
+            consistency_loss_options: constructor kwargs for the consistency
+                loss_fns (weight, layer_selection, ...); defaults are the
+                AttCT-paper settings.
         """
         if sampler not in ("hf", "vllm"):
             raise ValueError(f"Unknown sampler: {sampler!r} (expected 'hf' or 'vllm')")
@@ -114,10 +128,13 @@ class LocalBackend:
         self.ppo_clip_epsilon = ppo_clip_epsilon
         self.sampler = sampler
         self.vllm_options = vllm_options or {}
+        self.consistency_loss_options = consistency_loss_options or {}
         self._vllm = None  # VLLMSampler, created in setup() when sampler == "vllm"
         self._adapter_scratch: Optional[Path] = None
         self._optimizer: Optional[torch.optim.AdamW] = None
         self._pending_optimizer_state: Optional[dict] = None
+        self._consistency_loss_modules: dict[str, consistency_losses.ConsistencyLoss] = {}
+        self._mlp_hooks: Optional[MLPHookManager] = None
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -315,6 +332,8 @@ class LocalBackend:
         return out
 
     async def submit_forward_backward(self, datums: Sequence[Any], loss_fn: str) -> _ResolvedPending:
+        if loss_fn in CONSISTENCY_LOSS_CLASSES:
+            return self._consistency_forward_backward(datums, loss_fn)
         model = self._require_model()
         model.train()
         target_logprobs = self._target_logprobs(datums)
@@ -340,6 +359,84 @@ class LocalBackend:
                 metrics={"loss": float(loss.detach())},
             )
         )
+
+    def _consistency_loss(self, loss_fn: str) -> consistency_losses.ConsistencyLoss:
+        if loss_fn not in self._consistency_loss_modules:
+            self._consistency_loss_modules[loss_fn] = CONSISTENCY_LOSS_CLASSES[loss_fn](**self.consistency_loss_options)
+        return self._consistency_loss_modules[loss_fn]
+
+    def _consistency_forward_backward(self, datums: Sequence[Any], loss_fn: str) -> _ResolvedPending:
+        """Paired-pass gradient accumulation for the consistency loss_fns (ACT/AttCT/MLPCT).
+
+        Per datum (batch of 1, mirroring the upstream AttCT pipeline): a
+        differentiable pass on the biased prompt, a no-grad reference pass on
+        the clean prompt under the disabled adapter (the frozen base), then the
+        loss over the aligned window from the datum's loss_fn_inputs. Backward
+        runs per datum (mean over the batch), so peak memory holds one graph.
+        """
+        model = self._require_model()
+        self._require_base()  # clean pass needs the frozen base (LoRA adapter disabled)
+        model.train()
+        loss_module = self._consistency_loss(loss_fn)
+        needs_attentions = loss_fn == "attention_consistency"
+        needs_hidden = loss_fn == "activation_consistency"
+
+        # sdpa/flash kernels don't materialize attention weights (transformers ≥5
+        # returns empty ``attentions`` instead of falling back) — switch to eager.
+        if needs_attentions and model.config._attn_implementation != "eager":
+            print(
+                f"LocalBackend: switching attention from {model.config._attn_implementation!r} to 'eager' for {loss_fn}"
+            )
+            model.set_attn_implementation("eager")
+
+        hooks = None
+        if loss_module.needs_mlp_hooks:
+            if self._mlp_hooks is None:
+                self._mlp_hooks = MLPHookManager(model, variant=getattr(loss_module, "variant", "hidden"))
+            hooks = self._mlp_hooks.install()
+
+        def forward(tokens: list[int], use_base: bool):
+            input_ids = torch.tensor([tokens], dtype=torch.long, device=self.device)
+            ctx = self._base_ctx() if use_base else _nullcontext()
+            with ctx:
+                outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=torch.ones_like(input_ids),
+                    output_attentions=needs_attentions,
+                    output_hidden_states=needs_hidden,
+                )
+            mlp_states = None
+            if hooks is not None:
+                mlp_states = hooks.get_states()
+                hooks.clear()
+            return outputs, mlp_states
+
+        total_loss = 0.0
+        try:
+            for d in datums:
+                idx = {
+                    k: int(d.loss_fn_inputs[k].to_torch()[0])
+                    for k in ("start_index", "clean_start_index", "clean_len", "match_len")
+                }
+                adv_outputs, adv_mlp_states = forward(d.model_input.to_ints(), use_base=False)
+                with torch.no_grad():
+                    clean_outputs, clean_mlp_states = forward(
+                        d.loss_fn_inputs["clean_tokens"].to_torch().long().tolist(), use_base=True
+                    )
+                out = loss_module(
+                    clean_outputs,
+                    adv_outputs,
+                    **idx,
+                    clean_mlp_states=clean_mlp_states,
+                    adv_mlp_states=adv_mlp_states,
+                )
+                (out["loss"] / len(datums)).backward()  # accumulate; frees this datum's graph
+                total_loss += float(out["loss"].detach())
+        finally:
+            if hooks is not None:
+                hooks.remove()
+
+        return _ResolvedPending(ForwardBackwardOutput(logprobs=[], metrics={"loss": total_loss / max(len(datums), 1)}))
 
     async def submit_optim_step(self, *, learning_rate: float, adam: AdamConfig) -> _ResolvedPending:
         model = self._require_model()

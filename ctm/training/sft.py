@@ -1,4 +1,10 @@
-"""SFT (Supervised Fine-Tuning / BCT) — backend-agnostic loop.
+"""SFT-family training (BCT + internal-consistency methods) — backend-agnostic loop.
+
+Methods (``SFTConfig.method``):
+    bct    — supervised cross-entropy on messages (any backend)
+    act    — activation (residual stream) consistency   ┐ paired biased/clean
+    attct  — attention (JSD) consistency                 │ prompts; LocalBackend
+    mlpct  — MLP post-activation consistency             ┘ only (needs internals)
 
 Usage:
     from ctm.training.sft import train_sft, SFTConfig
@@ -18,8 +24,9 @@ Usage:
     checkpoint = asyncio.run(train_sft(Path("data/train.jsonl"), config=config))
 
 Training data format (JSONL):
-    {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
-    {"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}, ...]}
+    bct:             {"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}
+    act/attct/mlpct: {"biased_messages": [...], "unbiased_messages": [...]}
+                     (prompt pairs; see ctm/training/consistency_data.py)
 
 (Old import path ``cot_transparency.apis.tinker.finetune`` re-exports from here.)
 """
@@ -29,7 +36,7 @@ import json
 import math
 import random
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 from tqdm import tqdm
@@ -43,8 +50,17 @@ from ctm.backends.renderers import get_renderer_and_tokenizer
 from ctm.backends.tinker import TinkerBackend
 from ctm.core.config import AdamConfig, CheckpointConfig, LoRAConfig
 from ctm.training.checkpoints import finalize_checkpoint, save_intermediate_checkpoint
+from ctm.training.consistency_data import build_consistency_datums
 from ctm.training.manifest import write_run_manifest
 from ctm.training.run_utils import build_log_dir, get_git_state, get_recommended_lr, warn_if_dirty
+
+# Method → backend loss_fn. The consistency loss_fns are implemented by LocalBackend only.
+METHOD_LOSS_FNS = {
+    "bct": "cross_entropy",
+    "act": "activation_consistency",
+    "attct": "attention_consistency",
+    "mlpct": "mlp_consistency",
+}
 
 
 class SFTConfig(BaseModel):
@@ -52,6 +68,7 @@ class SFTConfig(BaseModel):
 
     experiment_name: str = "sft"
     run_name: str = "default"
+    method: Literal["bct", "act", "attct", "mlpct"] = "bct"
     model: str = "meta-llama/Llama-3.1-8B-Instruct"
     lora: LoRAConfig = LoRAConfig()
     optimizer: AdamConfig = AdamConfig()
@@ -122,6 +139,12 @@ async def train_sft(
         Final checkpoint path
     """
     cfg = config or SFTConfig()
+    loss_fn = METHOD_LOSS_FNS[cfg.method]
+    if cfg.method != "bct" and (backend is None or isinstance(backend, TinkerBackend)):
+        raise ValueError(
+            f"method={cfg.method!r} trains on internal activations (paired forward passes with "
+            "attentions/hidden states) — the Tinker service API doesn't expose them. Use the local backend."
+        )
     backend = backend if backend is not None else TinkerBackend()
 
     # Build log directory: logs/{experiment_name}/{run_name}/
@@ -146,7 +169,21 @@ async def train_sft(
     if max_samples and max_samples < len(samples):
         samples = samples[:max_samples]
 
-    n_samples = len(samples)
+    renderer, tokenizer = get_renderer_and_tokenizer(cfg.model)
+
+    # Consistency methods train on paired biased/clean prompts: build the datums
+    # once up front (dropping unalignable rows) and shuffle datums per epoch.
+    # BCT keeps building datums per batch from messages.
+    train_items: list = samples
+    if cfg.method != "bct":
+        train_items, _ = build_consistency_datums(tokenizer, samples)
+        if not train_items:
+            raise ValueError(
+                f"No usable consistency pairs in {file_path} — rows need biased_messages/unbiased_messages "
+                "with the clean user content contained verbatim in the biased prompt."
+            )
+
+    n_samples = len(train_items)
     # Ceiling division: the batch loop below is range(0, n_samples, batch_size), which
     # yields a partial final batch when n_samples % batch_size != 0. Flooring undercounts
     # total_steps, so the LR schedule hits 0 on that batch and goes NEGATIVE on multi-epoch
@@ -170,7 +207,10 @@ async def train_sft(
         cfg.optimizer.learning_rate if cfg.optimizer.learning_rate is not None else get_recommended_lr(cfg.model)
     )
 
-    print(f"SFT Training: {n_samples} samples, batch={cfg.batch_size}, {total_steps} steps, lr={base_lr:.2e}")
+    print(
+        f"SFT Training ({cfg.method}): {n_samples} samples, batch={cfg.batch_size}, "
+        f"{total_steps} steps, lr={base_lr:.2e}"
+    )
     logger.log_hparams({"n_samples": n_samples, "total_steps": total_steps, "file": str(file_path), "base_lr": base_lr})
 
     write_run_manifest(
@@ -201,15 +241,14 @@ async def train_sft(
     if resume_from:
         logger.log_hparams({"resume_from": resume_from, "resume_with_optimizer": with_opt})
 
-    renderer, _ = get_renderer_and_tokenizer(cfg.model)
-
     checkpoint_paths: list[str] = []
     global_step = 0
+    metric_key = "nll" if cfg.method == "bct" else "loss"
 
     # Training loop
     for epoch in range(cfg.n_epochs):
         # Shuffle samples each epoch
-        epoch_samples = list(samples)
+        epoch_samples = list(train_items)
         random.shuffle(epoch_samples)
         epoch_loss = 0.0
         n_examples = 0
@@ -218,11 +257,14 @@ async def train_sft(
         for batch_start in pbar:
             batch_samples = epoch_samples[batch_start : batch_start + cfg.batch_size]
 
-            # Create datums with proper token shifting for next-token prediction
-            batch_data = []
-            for sample in batch_samples:
-                tokens, weights = renderer.build_supervised_example(sample["messages"])
-                batch_data.append(datum_from_model_input_weights(tokens, weights))
+            if cfg.method == "bct":
+                # Create datums with proper token shifting for next-token prediction
+                batch_data = []
+                for sample in batch_samples:
+                    tokens, weights = renderer.build_supervised_example(sample["messages"])
+                    batch_data.append(datum_from_model_input_weights(tokens, weights))
+            else:
+                batch_data = batch_samples  # already paired consistency datums
 
             # Compute LR with schedule
             # max(0.0, ...) is belt-and-suspenders against a negative multiplier; the
@@ -238,25 +280,28 @@ async def train_sft(
             current_lr = base_lr * lr_mult
 
             # Async: enqueue forward_backward and optim_step before awaiting results (overlapping pattern)
-            pending_fwd_bwd = await backend.submit_forward_backward(batch_data, loss_fn="cross_entropy")
+            pending_fwd_bwd = await backend.submit_forward_backward(batch_data, loss_fn=loss_fn)
             pending_optim = await backend.submit_optim_step(learning_rate=current_lr, adam=cfg.optimizer)
 
             # Await results
             fwd_bwd_output = await pending_fwd_bwd.result()
             await pending_optim.result()
 
-            # Compute proper per-token NLL
-            weights = [d.loss_fn_inputs["weights"].to_torch() for d in batch_data]
-            nll = _mean_nll(fwd_bwd_output.logprobs, weights)
+            if cfg.method == "bct":
+                # Compute proper per-token NLL
+                weights = [d.loss_fn_inputs["weights"].to_torch() for d in batch_data]
+                batch_metric = _mean_nll(fwd_bwd_output.logprobs, weights)
+            else:
+                batch_metric = fwd_bwd_output.metrics["loss"]
 
-            # Weight each batch's (token-pooled) NLL by its sample count so the epoch mean
-            # isn't skewed by an unequal final/remainder batch.
-            epoch_loss += nll * len(batch_samples)
+            # Weight each batch's (token-pooled) metric by its sample count so the epoch
+            # mean isn't skewed by an unequal final/remainder batch.
+            epoch_loss += batch_metric * len(batch_samples)
             n_examples += len(batch_samples)
             global_step += 1
 
-            pbar.set_postfix({"nll": f"{nll:.4f}", "lr": f"{current_lr:.2e}"})
-            logger.log_metrics({"train/nll": nll, "train/lr": current_lr}, step=global_step)
+            pbar.set_postfix({metric_key: f"{batch_metric:.4f}", "lr": f"{current_lr:.2e}"})
+            logger.log_metrics({f"train/{metric_key}": batch_metric, "train/lr": current_lr}, step=global_step)
 
             # Intermediate checkpoint (skip if near final to avoid duplicates)
             await save_intermediate_checkpoint(
@@ -275,8 +320,8 @@ async def train_sft(
         # Epoch summary
         if n_examples > 0:
             avg_loss = epoch_loss / n_examples
-            print(f"Epoch {epoch+1} avg NLL: {avg_loss:.4f}")
-            logger.log_metrics({"train/epoch_nll": avg_loss, "train/epoch": epoch + 1}, step=global_step)
+            print(f"Epoch {epoch+1} avg {metric_key}: {avg_loss:.4f}")
+            logger.log_metrics({f"train/epoch_{metric_key}": avg_loss, "train/epoch": epoch + 1}, step=global_step)
 
     # Final checkpoint (no step suffix)
     final_path = await finalize_checkpoint(

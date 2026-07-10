@@ -1,7 +1,13 @@
 """
-Unified SFT training script using Tinker API.
+Unified SFT-family training script (BCT + internal-consistency methods).
 
 Trains on arbitrary data files with flexible mixing and hyperparameters.
+
+Methods (--method):
+    bct    — supervised cross-entropy on {"messages": [...]} rows (default; any backend)
+    act    — activation (residual stream) consistency  ┐ paired-prompt rows
+    attct  — attention (JSD) consistency                │ {"biased_messages", "unbiased_messages"};
+    mlpct  — MLP post-activation consistency            ┘ --backend local + LoRA only
 
 Usage:
     # List available models
@@ -19,6 +25,14 @@ Usage:
         --data instruct.jsonl:10 bct_cot.jsonl:5 bct_non_cot.jsonl:5 \
         --interleave \
         --experiment-name bct_llama_interleaved
+
+    # Attention consistency training on a local GPU (no rollouts in SFT → hf sampler)
+    python scripts/train_bct.py \
+        --model meta-llama/Llama-3.1-8B-Instruct \
+        --method attct \
+        --data pairs.jsonl \
+        --backend local --local-sampler hf \
+        --experiment-name attct_llama
 """
 
 import argparse
@@ -120,6 +134,14 @@ def main():
 
     parser.add_argument("--list-models", action="store_true")
     parser.add_argument("--model", help="Model name")
+    parser.add_argument(
+        "--method",
+        default="bct",
+        choices=["bct", "act", "attct", "mlpct"],
+        help="Training method: bct (SFT cross-entropy on messages, default) or "
+        "act/attct/mlpct (activation/attention/MLP consistency on "
+        "biased_messages/unbiased_messages prompt pairs; requires --backend local)",
+    )
 
     # Data
     parser.add_argument("--data", nargs="+", metavar="FILE[:N]", help="Data files with optional sample limits")
@@ -187,6 +209,15 @@ def main():
         parser.error("--model is required unless using --list-models")
     if not args.data:
         parser.error("--data is required")
+    if args.method != "bct" and args.backend != "local":
+        parser.error(
+            f"--method {args.method} needs paired forward passes with internal activations "
+            "(Tinker doesn't expose them) — pass --backend local"
+        )
+    if args.method != "bct" and args.local_full_finetune:
+        parser.error(
+            f"--method {args.method} needs the frozen base for the clean pass — LoRA only (drop --local-full-finetune)"
+        )
 
     # Parse and validate files
     file_specs = [parse_file_spec(spec) for spec in args.data]
@@ -215,6 +246,7 @@ def main():
     config = SFTConfig(
         experiment_name=args.experiment_name,
         run_name=args.run_name,
+        method=args.method,
         model=args.model,
         lora=LoRAConfig(rank=args.lora_rank, seed=args.seed),
         optimizer=AdamConfig(learning_rate=args.lr, lr_schedule=args.lr_schedule),
@@ -229,6 +261,7 @@ def main():
             "data_files": [str(p) for p, _ in file_specs],
             "interleave": args.interleave,
             "backend": args.backend,
+            "method": args.method,
         },
     )
 
@@ -237,6 +270,7 @@ def main():
     n_ckpts = n_steps // args.save_every
     print()
     print(f"Model: {config.model}")
+    print(f"Method: {config.method}")
     print(f"Backend: {describe_backend(args)}")
     print(f"Experiment: {config.experiment_name} / {config.run_name}")
     seed_str = f", seed={args.seed}" if args.seed is not None else ""
