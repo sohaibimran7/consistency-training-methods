@@ -28,7 +28,8 @@ def add_backend_args(parser: argparse.ArgumentParser) -> None:
         default="vllm",
         choices=["vllm", "hf"],
         help="Rollout engine for --backend local: 'vllm' (fast, LoRA hot-reload; "
-        "production) or 'hf' (model.generate; correct but slow — debugging)",
+        "production) or 'hf' (model.generate; correct but slow — debugging). "
+        "The engine boots lazily on first rollout, so non-sampling (SFT) runs never touch it",
     )
     g.add_argument(
         "--local-gpu-mem-util",

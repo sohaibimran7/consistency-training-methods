@@ -135,16 +135,37 @@ class TestLocalBackendVLLMWiring:
         backend.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=2, seed=0))
         return backend
 
-    def test_setup_publishes_initial_adapter(self):
+    def test_setup_defers_engine_boot(self):
+        # SFT-family runs call setup() but never request a sampler — no engine
+        # boot, no adapter snapshot, no vllm package requirement. No fake
+        # engine/api is injected here: a boot inside setup() would hit vllm.
+        from transformers import GPT2Config, GPT2LMHeadModel
+
+        torch.manual_seed(0)
+        model = GPT2LMHeadModel(GPT2Config(vocab_size=64, n_positions=32, n_embd=16, n_layer=1, n_head=1))
+        backend = LocalBackend(device="cpu", use_lora=True, model_instance=model, sampler="vllm")
+        backend.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=2, seed=0))
+        assert backend._vllm is None
+        assert backend._adapter_scratch is None
+
+    def test_first_sampler_request_boots_and_publishes_adapter(self):
         engine = FakeEngine()
         backend = self._backend(engine)
+        backend.policy_sampler("p")
         assert backend._vllm.adapter_version == 1
         adapter_dir = Path(backend._vllm.adapter_dir)
         assert adapter_dir.exists() and any(adapter_dir.iterdir())  # real peft snapshot on disk
 
+    def test_refresh_on_cold_engine_boots_and_publishes_once(self):
+        engine = FakeEngine()
+        backend = self._backend(engine)
+        asyncio.run(backend.refresh_policy_sampler("step1"))
+        assert backend._vllm.adapter_version == 1  # lazy boot's publish, no double snapshot
+
     def test_refresh_snapshots_and_bumps_version(self):
         engine = FakeEngine()
         backend = self._backend(engine)
+        backend.policy_sampler("p")  # boot (v1), as the RL loop does at setup
         asyncio.run(backend.refresh_policy_sampler("step1"))
         assert backend._vllm.adapter_version == 2
         assert backend._vllm.adapter_dir.endswith("v2")
