@@ -112,6 +112,8 @@ class LocalBackend:
             ppo_clip_epsilon: clip range for the "ppo" loss_fn.
             sampler: rollout engine — "hf" (model.generate; correct, slow) or
                 "vllm" (in-process vLLM with LoRA hot-reload; production path).
+                The vLLM engine boots lazily on the first sampler request, so
+                runs that never sample (SFT) pay nothing for it.
             vllm_options: forwarded to VLLMSampler / vllm.LLM
                 (gpu_memory_utilization, tensor_parallel_size, max_model_len, ...).
             consistency_loss_options: constructor kwargs for the consistency
@@ -129,7 +131,7 @@ class LocalBackend:
         self.sampler = sampler
         self.vllm_options = vllm_options or {}
         self.consistency_loss_options = consistency_loss_options or {}
-        self._vllm = None  # VLLMSampler, created in setup() when sampler == "vllm"
+        self._vllm = None  # VLLMSampler, booted lazily by _ensure_vllm() when sampler == "vllm"
         self._adapter_scratch: Optional[Path] = None
         self._optimizer: Optional[torch.optim.AdamW] = None
         self._pending_optimizer_state: Optional[dict] = None
@@ -170,20 +172,15 @@ class LocalBackend:
         self.model.to(self.device)
         if resume_from:
             self._load_checkpoint(resume_from, with_optimizer=resume_with_optimizer)
-        if self.sampler == "vllm":
-            if not self.use_lora:
-                raise NotImplementedError(
-                    "sampler='vllm' requires use_lora=True: policy refresh works by "
-                    "hot-reloading the adapter; full-finetune weights cannot be swapped "
-                    "into a running vLLM engine."
-                )
-            import tempfile
-
-            from ctm.backends.local.vllm_sampler import VLLMSampler
-
-            self._adapter_scratch = Path(tempfile.mkdtemp(prefix="ctm-policy-adapter-"))
-            self._vllm = VLLMSampler(model=model, enable_lora=True, **self.vllm_options)
-            self._publish_adapter()  # initial policy (fresh or resumed adapter)
+        if self.sampler == "vllm" and not self.use_lora:
+            raise NotImplementedError(
+                "sampler='vllm' requires use_lora=True: policy refresh works by "
+                "hot-reloading the adapter; full-finetune weights cannot be swapped "
+                "into a running vLLM engine."
+            )
+        # The vLLM engine itself boots lazily (_ensure_vllm) on the first sampler
+        # request: runs that never sample (SFT) must not pay its GPU memory or
+        # require the vllm package at all.
 
     def _require_model(self) -> torch.nn.Module:
         if self.model is None:
@@ -192,13 +189,28 @@ class LocalBackend:
 
     # ── samplers ─────────────────────────────────────────────────────────
 
+    def _ensure_vllm(self) -> None:
+        """Boot the vLLM engine on first use and publish the current adapter."""
+        if self.sampler != "vllm" or self._vllm is not None:
+            return
+        self._require_model()
+        import tempfile
+
+        from ctm.backends.local.vllm_sampler import VLLMSampler
+
+        self._adapter_scratch = Path(tempfile.mkdtemp(prefix="ctm-policy-adapter-"))
+        self._vllm = VLLMSampler(model=self.model_name, enable_lora=True, **self.vllm_options)
+        self._publish_adapter()  # initial policy (fresh or resumed adapter)
+
     def policy_sampler(self, name: str) -> LocalSamplerHandle:
         self._require_model()
+        self._ensure_vllm()
         return LocalSamplerHandle(self, use_base=False)
 
     async def refresh_policy_sampler(self, name: str) -> LocalSamplerHandle:
         # HF sampler: the in-process model IS the live policy — refresh is free.
         # vLLM sampler: snapshot the adapter and hot-reload it into the engine.
+        # (Cold engine: policy_sampler's lazy boot does the initial publish.)
         if self._vllm is not None:
             self._publish_adapter()
         return self.policy_sampler(name)
@@ -212,6 +224,7 @@ class LocalBackend:
 
     def base_sampler(self) -> LocalSamplerHandle:
         self._require_base()
+        self._ensure_vllm()
         return LocalSamplerHandle(self, use_base=True)
 
     def _require_base(self):
