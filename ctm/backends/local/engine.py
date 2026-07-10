@@ -37,13 +37,14 @@ from ctm.core.config import AdamConfig, LoRAConfig
 try:  # optional: LoRA support
     import peft
     from peft import LoraConfig as PeftLoraConfig, get_peft_model
+
     HAS_PEFT = True
 except ImportError:
     HAS_PEFT = False
 
 
 def _strip_file_scheme(path: str) -> Path:
-    return Path(path[len("file://"):] if path.startswith("file://") else path)
+    return Path(path[len("file://") :] if path.startswith("file://") else path)
 
 
 class _ResolvedPending:
@@ -63,8 +64,9 @@ class LocalSamplerHandle:
         self._backend = backend
         self._use_base = use_base
 
-    async def sample(self, prompt: Any, *, max_tokens: int, temperature: float,
-                     stop: Any, num_samples: int) -> list[SampledSequence]:
+    async def sample(
+        self, prompt: Any, *, max_tokens: int, temperature: float, stop: Any, num_samples: int
+    ) -> list[SampledSequence]:
         return self._backend._sample(
             prompt_tokens=list(prompt.to_ints()),
             max_tokens=max_tokens,
@@ -119,11 +121,13 @@ class LocalBackend:
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
-    def setup(self, *, model: str, lora: LoRAConfig,
-              resume_from: Optional[str] = None, resume_with_optimizer: bool = False) -> None:
+    def setup(
+        self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False
+    ) -> None:
         self.model_name = model
         if self.model is None:
             from transformers import AutoModelForCausalLM
+
             self.model = AutoModelForCausalLM.from_pretrained(model, torch_dtype=self.dtype)
         if self.use_lora:
             if not HAS_PEFT:
@@ -140,7 +144,7 @@ class LocalBackend:
                 torch.manual_seed(lora.seed)
             peft_cfg = PeftLoraConfig(
                 r=lora.rank,
-                lora_alpha=2 * lora.rank,   # cookbook-style alpha/r = 2
+                lora_alpha=2 * lora.rank,  # cookbook-style alpha/r = 2
                 target_modules="all-linear",
                 bias="none",
                 task_type="CAUSAL_LM",
@@ -204,21 +208,45 @@ class LocalBackend:
     def _base_ctx(self):
         return self._require_model().disable_adapter()  # peft context manager
 
-    def _sample(self, *, prompt_tokens: list[int], max_tokens: int, temperature: float,
-                stop: Any, num_samples: int, use_base: bool) -> list[SampledSequence]:
+    def _sample(
+        self,
+        *,
+        prompt_tokens: list[int],
+        max_tokens: int,
+        temperature: float,
+        stop: Any,
+        num_samples: int,
+        use_base: bool,
+    ) -> list[SampledSequence]:
         """Route sampling to the configured engine (vLLM if set, else HF generate)."""
         if self._vllm is not None:
             return self._vllm.sample(
-                prompt_tokens, max_tokens=max_tokens, temperature=temperature,
-                stop=stop, num_samples=num_samples, use_base=use_base,
+                prompt_tokens,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop=stop,
+                num_samples=num_samples,
+                use_base=use_base,
             )
         return self._generate(
-            prompt_tokens=prompt_tokens, max_tokens=max_tokens, temperature=temperature,
-            stop=stop, num_samples=num_samples, use_base=use_base,
+            prompt_tokens=prompt_tokens,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop,
+            num_samples=num_samples,
+            use_base=use_base,
         )
 
-    def _generate(self, *, prompt_tokens: list[int], max_tokens: int, temperature: float,
-                  stop: Any, num_samples: int, use_base: bool) -> list[SampledSequence]:
+    def _generate(
+        self,
+        *,
+        prompt_tokens: list[int],
+        max_tokens: int,
+        temperature: float,
+        stop: Any,
+        num_samples: int,
+        use_base: bool,
+    ) -> list[SampledSequence]:
         model = self._require_model()
         was_training = model.training
         model.eval()
@@ -273,8 +301,8 @@ class LocalBackend:
         input_ids = torch.zeros((len(datums), max_len), dtype=torch.long, device=self.device)
         attention_mask = torch.zeros_like(input_ids)
         for i, toks in enumerate(token_lists):
-            input_ids[i, :len(toks)] = torch.tensor(toks, dtype=torch.long)
-            attention_mask[i, :len(toks)] = 1
+            input_ids[i, : len(toks)] = torch.tensor(toks, dtype=torch.long)
+            attention_mask[i, : len(toks)] = 1
         ctx = self._base_ctx() if use_base else _nullcontext()
         with ctx:
             logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
@@ -299,26 +327,30 @@ class LocalBackend:
             advs = [d.loss_fn_inputs["advantages"].to_torch().to(self.device) for d in datums]
             masks = [d.loss_fn_inputs["mask"].to_torch().float().to(self.device) for d in datums]
             if loss_fn == "ppo":
-                loss = losses.ppo_loss(target_logprobs, sampled, advs, masks,
-                                       clip_epsilon=self.ppo_clip_epsilon)
+                loss = losses.ppo_loss(target_logprobs, sampled, advs, masks, clip_epsilon=self.ppo_clip_epsilon)
             else:
                 loss = losses.importance_sampling_loss(target_logprobs, sampled, advs, masks)
         else:
             raise ValueError(f"Unknown loss_fn: {loss_fn}")
 
         loss.backward()  # accumulate; optim_step applies + zeroes
-        return _ResolvedPending(ForwardBackwardOutput(
-            logprobs=[lp.detach().cpu() for lp in target_logprobs],
-            metrics={"loss": float(loss.detach())},
-        ))
+        return _ResolvedPending(
+            ForwardBackwardOutput(
+                logprobs=[lp.detach().cpu() for lp in target_logprobs],
+                metrics={"loss": float(loss.detach())},
+            )
+        )
 
     async def submit_optim_step(self, *, learning_rate: float, adam: AdamConfig) -> _ResolvedPending:
         model = self._require_model()
         params = [p for p in model.parameters() if p.requires_grad]
         if self._optimizer is None:
             self._optimizer = torch.optim.AdamW(
-                params, lr=learning_rate, betas=(adam.beta1, adam.beta2),
-                eps=adam.eps, weight_decay=adam.weight_decay,
+                params,
+                lr=learning_rate,
+                betas=(adam.beta1, adam.beta2),
+                eps=adam.eps,
+                weight_decay=adam.weight_decay,
             )
             if self._pending_optimizer_state is not None:
                 self._optimizer.load_state_dict(self._pending_optimizer_state)
@@ -331,8 +363,9 @@ class LocalBackend:
         self._optimizer.zero_grad(set_to_none=True)
         return _ResolvedPending(None)
 
-    async def incorporate_kl_penalty(self, datums: Sequence[Any], *, kl_coef: float,
-                                     kl_discount_factor: float) -> dict[str, float]:
+    async def incorporate_kl_penalty(
+        self, datums: Sequence[Any], *, kl_coef: float, kl_discount_factor: float
+    ) -> dict[str, float]:
         """Same math as tinker_cookbook.rl.metrics.incorporate_kl_penalty, with base
         logprobs from a local forward pass under the disabled adapter."""
         import tinker
@@ -369,13 +402,18 @@ class LocalBackend:
         if kind in ("state", "both") and self._optimizer is not None:
             torch.save(self._optimizer.state_dict(), ckpt_dir / "optimizer.pt")
             state_saved = True
-        (ckpt_dir / "manifest.json").write_text(json.dumps({
-            "backend": "local",
-            "model": self.model_name,
-            "lora": self.use_lora,
-            "kind": kind,
-            "loop_state": loop_state,
-        }, indent=1))
+        (ckpt_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "backend": "local",
+                    "model": self.model_name,
+                    "lora": self.use_lora,
+                    "kind": kind,
+                    "loop_state": loop_state,
+                },
+                indent=1,
+            )
+        )
         uri = f"file://{ckpt_dir.resolve()}"
         return {"sampler_path": uri, "state_path": uri if state_saved else None}
 

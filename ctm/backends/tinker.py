@@ -25,8 +25,9 @@ class TinkerSamplerHandle:
     def __init__(self, client: tinker.SamplingClient):
         self.client = client
 
-    async def sample(self, prompt: Any, *, max_tokens: int, temperature: float,
-                     stop: Any, num_samples: int) -> list[SampledSequence]:
+    async def sample(
+        self, prompt: Any, *, max_tokens: int, temperature: float, stop: Any, num_samples: int
+    ) -> list[SampledSequence]:
         result = await self.client.sample_async(
             prompt=prompt,
             sampling_params=types.SamplingParams(
@@ -81,8 +82,9 @@ class TinkerBackend:
             self._service_client = tinker.ServiceClient()
         return self._service_client
 
-    def setup(self, *, model: str, lora: LoRAConfig,
-              resume_from: Optional[str] = None, resume_with_optimizer: bool = False) -> None:
+    def setup(
+        self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False
+    ) -> None:
         self.model = model
         self.training_client = self.service_client.create_lora_training_client(
             base_model=model,
@@ -140,8 +142,9 @@ class TinkerBackend:
         )
         return _TinkerPendingOptimStep(future)
 
-    async def incorporate_kl_penalty(self, datums: Sequence[Any], *, kl_coef: float,
-                                     kl_discount_factor: float) -> dict[str, float]:
+    async def incorporate_kl_penalty(
+        self, datums: Sequence[Any], *, kl_coef: float, kl_discount_factor: float
+    ) -> dict[str, float]:
         # The cookbook helper scores the sampled tokens under the frozen base model
         # via a raw sampling client, then folds -kl_coef * KL into the advantages.
         self.base_sampler()  # ensure the raw base client exists

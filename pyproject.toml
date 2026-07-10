@@ -29,3 +29,6 @@ markers = [
     "tinker: needs the live Tinker service / a checkpoint",
 ]
 addopts = "-m 'not network and not gpu and not tinker'"
+
+[tool.ruff.lint.extend-per-file-ignores]
+"scripts/*" = ["E402", "E501"]  # load_dotenv(PROJECT_ROOT/.env) must run before ctm imports

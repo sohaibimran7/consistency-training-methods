@@ -1,7 +1,7 @@
 """Sycophancy setting: training datapoints and perturbation builders.
 
 Canonical home of the data/perturbation logic that previously lived inline in
-``scripts/tinker_training/train_rl.py`` (which now imports from here). Datapoint
+``scripts/train_rlct.py`` (which now imports from here). Datapoint
 schema: dicts with ``biased_question`` / ``unbiased_question`` message lists,
 ``biased_option``, ``ground_truth``, ``bias_name`` — as produced by the
 dataset_dumps build scripts.

@@ -18,18 +18,19 @@ import torch
 PPO_CLIP_EPSILON = 0.2  # standard PPO clip; Tinker's server-side epsilon is not published
 
 
-def cross_entropy_loss(target_logprobs: Sequence[torch.Tensor],
-                       weights: Sequence[torch.Tensor]) -> torch.Tensor:
+def cross_entropy_loss(target_logprobs: Sequence[torch.Tensor], weights: Sequence[torch.Tensor]) -> torch.Tensor:
     """Weighted NLL: -(Σ w·logp) / Σw over the batch."""
     num = sum((w * lp).sum() for lp, w in zip(target_logprobs, weights))
     den = sum(w.sum() for w in weights)
     return -num / den.clamp(min=1e-8)
 
 
-def importance_sampling_loss(target_logprobs: Sequence[torch.Tensor],
-                             sampled_logprobs: Sequence[torch.Tensor],
-                             advantages: Sequence[torch.Tensor],
-                             masks: Sequence[torch.Tensor]) -> torch.Tensor:
+def importance_sampling_loss(
+    target_logprobs: Sequence[torch.Tensor],
+    sampled_logprobs: Sequence[torch.Tensor],
+    advantages: Sequence[torch.Tensor],
+    masks: Sequence[torch.Tensor],
+) -> torch.Tensor:
     """-E[ratio · A] with ratio = exp(logp_policy − logp_sampled), over masked tokens."""
     num = 0.0
     den = 0.0
@@ -40,11 +41,13 @@ def importance_sampling_loss(target_logprobs: Sequence[torch.Tensor],
     return -num / torch.as_tensor(den).clamp(min=1e-8)
 
 
-def ppo_loss(target_logprobs: Sequence[torch.Tensor],
-             sampled_logprobs: Sequence[torch.Tensor],
-             advantages: Sequence[torch.Tensor],
-             masks: Sequence[torch.Tensor],
-             clip_epsilon: float = PPO_CLIP_EPSILON) -> torch.Tensor:
+def ppo_loss(
+    target_logprobs: Sequence[torch.Tensor],
+    sampled_logprobs: Sequence[torch.Tensor],
+    advantages: Sequence[torch.Tensor],
+    masks: Sequence[torch.Tensor],
+    clip_epsilon: float = PPO_CLIP_EPSILON,
+) -> torch.Tensor:
     """Clipped PPO surrogate: -E[min(ratio·A, clip(ratio, 1±ε)·A)] over masked tokens."""
     num = 0.0
     den = 0.0

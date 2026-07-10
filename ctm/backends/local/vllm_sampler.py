@@ -35,16 +35,21 @@ def _load_vllm_api() -> SimpleNamespace:
             "(CUDA x86 / aarch64). Install it on the GPU box (`uv pip install vllm`), or use "
             "sampler='hf' (correct but slow) for debugging."
         ) from e
-    return SimpleNamespace(LLM=LLM, SamplingParams=SamplingParams,
-                           TokensPrompt=TokensPrompt, LoRARequest=LoRARequest)
+    return SimpleNamespace(LLM=LLM, SamplingParams=SamplingParams, TokensPrompt=TokensPrompt, LoRARequest=LoRARequest)
 
 
 class VLLMSampler:
     """Owns the vLLM engine and the current policy-adapter snapshot."""
 
-    def __init__(self, model: str, *, enable_lora: bool = True,
-                 engine: Optional[Any] = None, api: Optional[SimpleNamespace] = None,
-                 **engine_kwargs):
+    def __init__(
+        self,
+        model: str,
+        *,
+        enable_lora: bool = True,
+        engine: Optional[Any] = None,
+        api: Optional[SimpleNamespace] = None,
+        **engine_kwargs,
+    ):
         """
         Args:
             model: HF model id / path for the frozen base weights.
@@ -78,12 +83,18 @@ class VLLMSampler:
     def _policy_lora_request(self):
         if not self.enable_lora or self.adapter_dir is None:
             return None
-        return self._api.LoRARequest(
-            f"policy_v{self.adapter_version}", self.adapter_version, self.adapter_dir
-        )
+        return self._api.LoRARequest(f"policy_v{self.adapter_version}", self.adapter_version, self.adapter_dir)
 
-    def sample(self, prompt_tokens: list[int], *, max_tokens: int, temperature: float,
-               stop: Any, num_samples: int, use_base: bool) -> list[SampledSequence]:
+    def sample(
+        self,
+        prompt_tokens: list[int],
+        *,
+        max_tokens: int,
+        temperature: float,
+        stop: Any,
+        num_samples: int,
+        use_base: bool,
+    ) -> list[SampledSequence]:
         stop_ids = [t for t in (stop or []) if isinstance(t, int)] or None
         params = self._api.SamplingParams(
             n=num_samples,

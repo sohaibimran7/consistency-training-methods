@@ -60,16 +60,18 @@ class RolloutLogger:
 
         p_hats = [r.p_hat for r in records if r.p_hat is not None]
         self._index = [e for e in self._index if e.get("step") != step]  # resume overwrite
-        self._index.append({
-            "step": step,
-            "file": path.name,
-            "n_records": len(records),
-            "n_train": sum(1 for r in records if r.role == "train"),
-            "n_anchor": sum(1 for r in records if r.role == "anchor"),
-            "p_ref_mean": sum(r.p_ref for r in records) / len(records),
-            "p_hat_mean": (sum(p_hats) / len(p_hats)) if p_hats else None,
-            "trait_mean": sum(r.trait_value for r in records) / len(records),
-        })
+        self._index.append(
+            {
+                "step": step,
+                "file": path.name,
+                "n_records": len(records),
+                "n_train": sum(1 for r in records if r.role == "train"),
+                "n_anchor": sum(1 for r in records if r.role == "anchor"),
+                "p_ref_mean": sum(r.p_ref for r in records) / len(records),
+                "p_hat_mean": (sum(p_hats) / len(p_hats)) if p_hats else None,
+                "trait_mean": sum(r.trait_value for r in records) / len(records),
+            }
+        )
         self._index.sort(key=lambda e: e["step"])
         (self.directory / INDEX_NAME).write_text(json.dumps({"steps": self._index}, indent=1))
         return path

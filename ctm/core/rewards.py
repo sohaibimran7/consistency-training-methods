@@ -18,9 +18,14 @@ class ConsistencyReward:
     Anchor reward is computed separately on reference perturbation rollouts.
     """
 
-    def compute_rewards(self, rollouts: list[Rollout], p_hat: dict[int, float], p_ref: float,
-                        gaps: Optional[dict[int, float]] = None,
-                        baseline: Optional[float] = None) -> list[float]:
+    def compute_rewards(
+        self,
+        rollouts: list[Rollout],
+        p_hat: dict[int, float],
+        p_ref: float,
+        gaps: Optional[dict[int, float]] = None,
+        baseline: Optional[float] = None,
+    ) -> list[float]:
         """Consistency-only rewards for training perturbation rollouts.
 
         r = -gap[pert] * (trait - baseline)
@@ -34,11 +39,14 @@ class ConsistencyReward:
         """
         if gaps is None:
             gaps = {pert: rate - p_ref for pert, rate in p_hat.items()}
-        return [-gaps[r.perturbation_idx] * (r.trait_value - (p_hat[r.perturbation_idx] if baseline is None else baseline))
-                for r in rollouts]
+        return [
+            -gaps[r.perturbation_idx] * (r.trait_value - (p_hat[r.perturbation_idx] if baseline is None else baseline))
+            for r in rollouts
+        ]
 
-    def compute_anchor_rewards(self, ref_rollouts: list[Rollout], p_ref: float, p_ref_initial: Optional[float],
-                               gap: Optional[float] = None) -> list[float]:
+    def compute_anchor_rewards(
+        self, ref_rollouts: list[Rollout], p_ref: float, p_ref_initial: Optional[float], gap: Optional[float] = None
+    ) -> list[float]:
         """Anchor rewards for reference perturbation rollouts.
 
         r = -gap * (trait - p_ref), gap = (p_ref - p_ref_initial) by default.
@@ -50,5 +58,4 @@ class ConsistencyReward:
             if p_ref_initial is None:
                 return [0.0] * len(ref_rollouts)
             gap = p_ref - p_ref_initial
-        return [-gap * (r.trait_value - p_ref)
-                for r in ref_rollouts]
+        return [-gap * (r.trait_value - p_ref) for r in ref_rollouts]

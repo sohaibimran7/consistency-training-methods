@@ -60,10 +60,14 @@ def get_setting(name: str, **kwargs) -> Setting:
     if name not in _SETTING_FACTORIES:
         if name == "sycophancy":
             from ctm.settings.sycophancy.setting import SycophancySetting
+
             register_setting("sycophancy", SycophancySetting)
         elif name == "eval_awareness":
             from ctm.settings.eval_awareness.setting import EvalAwarenessSetting
+
             register_setting("eval_awareness", EvalAwarenessSetting)
         else:
-            raise KeyError(f"Unknown setting: {name!r}. Known: {sorted(_SETTING_FACTORIES) + ['sycophancy', 'eval_awareness']}")
+            raise KeyError(
+                f"Unknown setting: {name!r}. Known: {sorted(_SETTING_FACTORIES) + ['sycophancy', 'eval_awareness']}"
+            )
     return _SETTING_FACTORIES[name](**kwargs)

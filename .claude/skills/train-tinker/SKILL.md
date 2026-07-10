@@ -55,10 +55,10 @@ The eval `--name` flag should be `{model}-{experiment}_{run}_step{N}` to match t
 
 Used for Bias Consistency Training (BCT) or Verbalization Fine-Tuning (VFT) — both use SFT on different data formats.
 
-### Preferred CLI: `train_sft.py`
+### Preferred CLI: `train_bct.py`
 Use the unified CLI script rather than writing custom Python scripts:
 ```bash
-python scripts/tinker_training/train_sft.py \
+python scripts/train_bct.py \
     --model openai/gpt-oss-120b \
     --data path/to/data.jsonl \
     --experiment-name bct-suggested-answer \
@@ -101,12 +101,12 @@ checkpoint = asyncio.run(train_sft(Path("data/train.jsonl"), config=config))
 ```
 
 ### Existing training scripts
-- `scripts/tinker_training/train_sft.py` — Full-featured SFT (supports BCT and VFT data)
-- `scripts/tinker_training/train_bct_suggested_answer.py` — BCT on suggested answer data
-- `scripts/tinker_training/simple_sft_train.py` — Generic SFT training
+- `scripts/train_bct.py` — Full-featured SFT (supports BCT and VFT data)
+- `scripts/train_bct_suggested_answer.py` — BCT on suggested answer data
+- `scripts/simple_sft_train.py` — Generic SFT training
 
 ### VFT-specific notes
-- VFT training uses the same `train_sft.py` script with VFT data from `generate_vft_data.py`
+- VFT training uses the same `train_bct.py` script with VFT data from `generate_vft_data.py`
 - The final checkpoint is always saved with full state (`kind="both"`) for resuming
 - To measure obfuscation: train BCT/RLCT on top of a VFT checkpoint using `--checkpoint`
 
@@ -114,10 +114,10 @@ checkpoint = asyncio.run(train_sft(Path("data/train.jsonl"), config=config))
 
 RL Consistency Training — GRPO rate-matching to reduce sycophancy without labels.
 
-### Preferred CLI: `train_rl.py`
+### Preferred CLI: `train_rlct.py`
 Use the unified RL CLI script rather than `test_rl_training.py`:
 ```bash
-python scripts/tinker_training/train_rl.py \
+python scripts/train_rlct.py \
     --model meta-llama/Llama-3.1-8B-Instruct \
     --bias-types suggested_answer \
     --datasets mmlu,truthfulqa \
@@ -194,7 +194,7 @@ RLConfig(
 | `-y` | Skip confirmation prompt |
 
 ### Legacy script
-`test_rl_training.py` is the older RL script with fewer CLI options. Use `train_rl.py` for new runs.
+`test_rl_training.py` is the older RL script with fewer CLI options. Use `train_rlct.py` for new runs.
 
 ## Resuming from a checkpoint (e.g., obfuscation: BCT/RLCT on VFT)
 
@@ -208,14 +208,14 @@ Both SFT and RL scripts support `--resume-from` / `--resume_from` to load weight
 ### SFT example (BCT on VFT)
 ```bash
 # 1. Generate BCT data from VFT model
-python scripts/tinker_training/generate_bct_from_test.py \
+python scripts/generate_bct_from_test.py \
     --model meta-llama/Llama-3.1-8B-Instruct \
     --checkpoint "tinker://...sampler_weights/vft-suggested-answer_train" \
     --datasets truthfulqa mmlu --bias suggested_answer \
     --output-name bct-on-vft
 
 # 2. Train BCT starting from VFT weights
-python scripts/tinker_training/train_sft.py \
+python scripts/train_bct.py \
     --model meta-llama/Llama-3.1-8B-Instruct \
     --resume-from "tinker://...weights/vft-suggested-answer_train" \
     --data path/to/bct_cot.jsonl \
@@ -224,7 +224,7 @@ python scripts/tinker_training/train_sft.py \
 
 ### RLCT example (RLCT on VFT)
 ```bash
-python scripts/tinker_training/train_rl.py \
+python scripts/train_rlct.py \
     --model meta-llama/Llama-3.1-8B-Instruct \
     --resume-from "tinker://...weights/vft-suggested-answer_train" \
     --bias-types suggested_answer \

@@ -33,17 +33,21 @@ API keys in `.env` (gitignored): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 - `ctm/` — the package: `core/` (rewards, advantages/SNR, configs, types),
   `backends/` (tinker + local GPU seam), `training/` (RL + SFT loops, rollout
   logs, manifests), `settings/` (sycophancy, eval_awareness), `evals/`.
-- `scripts/tinker_training/` — `train_rl.py`, `train_sft.py`,
-  `test_rl_training.py`, `experiment_configs/`.
-- `docs/` — research logs (SNR/RL experiments continue from
-  `docs/eval-awareness/RESEARCH_LOG.md`).
+- `scripts/` — `train_rlct.py` (RL consistency training), `train_bct.py`
+  (SFT consistency training), `rlct_smoke_test.py` (live smoke run).
 - Eval tasks/scorers come from the **mcq-bias package** (pinned in
   requirements.txt; co-develop with `uv pip install -e /Users/work/mcq-bias --no-deps`).
+- `ctm/settings/sycophancy/` is the TRAINING half of the setting (RL cue
+  family, trait classifier for rewards, datapoint perturbations); the EVAL
+  half lives entirely in mcq-bias. Its `data.py` still loads datapoints from
+  the old repo's dumps — dies with port-queue item 1.
 
 ## Port queue (from the old repo — the only things not yet here)
 1. **Training-data generation**: BCT/VFT datapoints from mcq-bias frozen sets
    (old scripts built from `dataset_dumps`; frozen rows carry
-   `biased_messages`/`unbiased_messages` — thin adapter needed).
+   `biased_messages`/`unbiased_messages` — thin adapter needed). Until then
+   `train_rlct.py`'s default `--data_dir` points at a dumps path that does
+   not exist here — pass data explicitly.
 2. **Tinker inference/sampling layer**: `TinkerSamplingClient` etc. still live
    in the old repo's `cot_transparency/apis/tinker/inference.py` (not a shim);
    port into `ctm/backends/` without the legacy data models.

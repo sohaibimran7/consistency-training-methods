@@ -103,7 +103,6 @@ class TestGraderPromptRegistry:
             del BIAS_ACK_PROMPTS["test_only_cue"]
 
 
-
 class TestEvalAwarenessSetting:
     def test_perturbations_apply_cue(self):
         from ctm.settings.eval_awareness import TRAIN_CUE
@@ -122,7 +121,6 @@ class TestEvalAwarenessSetting:
         assert len(s.load_datapoints(corpus_path=corpus)) == 1
         with pytest.raises(ValueError):
             s.load_datapoints()
-
 
 
 class TestPublishableTasks:

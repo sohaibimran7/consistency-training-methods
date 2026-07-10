@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 class LoRAConfig(BaseModel):
     """LoRA adapter configuration."""
+
     rank: int = 32
     train_mlp: bool = True
     train_attn: bool = True
@@ -20,8 +21,11 @@ class LoRAConfig(BaseModel):
 
 class AdamConfig(BaseModel):
     """Adam optimizer and learning rate schedule configuration."""
+
     learning_rate: Optional[float] = None  # None = use get_recommended_lr(model)
-    lr_schedule: Literal["constant", "linear", "cosine"] = "linear"  # shared SFT+RL default; train_sft/train_rl/train_evalaware CLIs mirror it
+    lr_schedule: Literal["constant", "linear", "cosine"] = (
+        "linear"  # shared SFT+RL default; train_sft/train_rl/train_evalaware CLIs mirror it
+    )
     beta1: float = 0.9
     beta2: float = 0.95  # cookbook default
     eps: float = 1e-8
@@ -31,6 +35,7 @@ class AdamConfig(BaseModel):
 
 class CheckpointConfig(BaseModel):
     """Checkpointing configuration."""
+
     save_every_n_steps: Optional[int] = None
     save_state: bool = False  # If True, save optimizer state for resumability
     skip_near_final_steps: int = 0  # Skip intermediate checkpoints within N steps of final

@@ -26,10 +26,10 @@ def config_hash(config_dump: dict) -> str:
 def write_run_manifest(
     log_dir: str | Path,
     *,
-    kind: str,                 # "rl" | "sft"
+    kind: str,  # "rl" | "sft"
     model: str,
-    backend: Any,              # TrainingBackend instance (class name is recorded)
-    config_dump: dict,         # full pydantic model_dump of the run config
+    backend: Any,  # TrainingBackend instance (class name is recorded)
+    config_dump: dict,  # full pydantic model_dump of the run config
     extra: Optional[dict] = None,
 ) -> Path:
     git = get_git_state()

@@ -35,9 +35,9 @@ async def save_intermediate_checkpoint(
     """
     steps_remaining = total_steps - global_step
     near_final = steps_remaining <= checkpoint_cfg.skip_near_final_steps
-    if not (checkpoint_cfg.save_every_n_steps
-            and global_step % checkpoint_cfg.save_every_n_steps == 0
-            and not near_final):
+    if not (
+        checkpoint_cfg.save_every_n_steps and global_step % checkpoint_cfg.save_every_n_steps == 0 and not near_final
+    ):
         return None
     name = build_checkpoint_name(experiment_name, run_name, step=global_step)
     kind = "both" if checkpoint_cfg.save_state else "sampler"

@@ -19,6 +19,7 @@ Usage:
 
 (Old import path ``cot_transparency.apis.tinker.rl_training`` re-exports from here.)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -100,8 +101,10 @@ _select_rollouts = adv_math.select_rollouts
 # Configuration Classes
 # =============================================================================
 
+
 class RateEstimationConfig(BaseModel):
     """Rate estimation config (reference or perturbation rates)."""
+
     perturbation_indices: list[int] | str = [0]
     n_rollouts: int = 64
     aggregation: Optional[Literal["mean", "min", "max"]] = "mean"
@@ -109,14 +112,16 @@ class RateEstimationConfig(BaseModel):
 
 class TrainingSamplingConfig(BaseModel):
     """Training sampling config."""
+
     perturbation_indices: list[int] | str = [1, 2, 3]
     n_rollouts_for_rate: int = 64
-    n_rollouts_for_consistency: Optional[int] = 16   # Consistency gradient rollouts (None = all parsed)
-    n_rollouts_for_anchor: Optional[int] = None      # Anchor gradient rollouts (None = all parsed)
+    n_rollouts_for_consistency: Optional[int] = 16  # Consistency gradient rollouts (None = all parsed)
+    n_rollouts_for_anchor: Optional[int] = None  # Anchor gradient rollouts (None = all parsed)
 
 
 class TrainingLoopConfig(BaseModel):
     """Training loop config."""
+
     batch_size: int = 1
     gradient_accumulation_steps: int = 1
     refresh_policy_every_n_steps: int = 1  # 1 = fully on-policy (cookbook contract); all configs set this explicitly
@@ -126,12 +131,14 @@ class TrainingLoopConfig(BaseModel):
 
 class GenerationConfig(BaseModel):
     """Generation config."""
+
     max_new_tokens: int = 16384
     temperature: float = 0.7
 
 
 class RLConfig(BaseModel):
     """Full RL training configuration."""
+
     experiment_name: str = "rl"
     run_name: str = "default"
     model: str = "meta-llama/Llama-3.1-8B-Instruct"
@@ -144,7 +151,9 @@ class RLConfig(BaseModel):
     checkpoint: CheckpointConfig = CheckpointConfig()
     kl_coef: float = 0.05
     kl_discount_factor: float = 0.0
-    loss_fn: Literal["ppo", "importance_sampling"] = "ppo"  # SDK LossFnType; "reinforce" is NOT valid (would crash forward_backward)
+    loss_fn: Literal["ppo", "importance_sampling"] = (
+        "ppo"  # SDK LossFnType; "reinforce" is NOT valid (would crash forward_backward)
+    )
     anchor_weight: float = 0.5
     anchor_model: Literal["base", "initial_policy"] = "base"
     # Advantage construction:
@@ -162,7 +171,7 @@ class RLConfig(BaseModel):
     #     Keeps the shrunk gap magnitude (snr_normalizer below); z=0 => faithful gap.
     advantage_estimator: Literal["grpo_normalized", "snr_scaling", "matched_pair"] = "grpo_normalized"
     snr_mode: Literal["soft", "hard"] = "soft"
-    snr_z: float = 2.0   # half-weight (soft) / cutoff (hard) at |gap| = z·SE; z=0 => gate≡1 (faithful GRPO)
+    snr_z: float = 2.0  # half-weight (soft) / cutoff (hard) at |gap| = z·SE; z=0 => gate≡1 (faithful GRPO)
     # snr_normalizer applies to matched_pair only (snr_scaling now uses unit-variance normalization):
     #   "trait_std" — divide the score by per-rollout Bernoulli std sqrt(p(1-p)+floor).
     #   "none" — bare A = -shrunk_gap * (T - p_hat), no division.
@@ -204,12 +213,18 @@ class RLConfig(BaseModel):
 # RL Trainer
 # =============================================================================
 
+
 class RLTrainer:
     """RL Trainer for consistency training (backend-injected)."""
 
-    def __init__(self, config: RLConfig, reward_function: Optional[ConsistencyReward] = None,
-                 resume_from: Optional[str] = None, resume_with_optimizer: bool = False,
-                 backend: Optional[TrainingBackend] = None):
+    def __init__(
+        self,
+        config: RLConfig,
+        reward_function: Optional[ConsistencyReward] = None,
+        resume_from: Optional[str] = None,
+        resume_with_optimizer: bool = False,
+        backend: Optional[TrainingBackend] = None,
+    ):
         self.config = config
         self.reward_function = reward_function or ConsistencyReward()
         self.resume_from = resume_from
@@ -254,7 +269,9 @@ class RLTrainer:
             self.anchor_sampling_client = self.base_sampling_client
         self.setup_done = True
 
-    async def _sample_from_client(self, client: SamplerHandle, prompt: types.ModelInput, n_samples: int) -> list[tuple[list[int], list[float], str, str]]:
+    async def _sample_from_client(
+        self, client: SamplerHandle, prompt: types.ModelInput, n_samples: int
+    ) -> list[tuple[list[int], list[float], str, str]]:
         """Sample from a sampler handle and return (tokens, logprobs, full_text, answer_text) tuples.
 
         full_text includes thinking/reasoning (for Rollout.text and logging).
@@ -357,15 +374,17 @@ class RLTrainer:
             for (tokens, logprobs, full_text, answer_text), trait_value in zip(raw, trait_values):
                 answer_ok = answer_parser(answer_text) is not None if answer_parser else True
                 parsed_ok = answer_ok and logprobs is not None
-                rollouts.append(Rollout(
-                    tokens=tokens,
-                    logprobs=logprobs if logprobs is not None else [],
-                    text=full_text,
-                    trait_value=trait_value,
-                    perturbation_idx=idx,
-                    parsed_successfully=parsed_ok,
-                    prompt=prompt,
-                ))
+                rollouts.append(
+                    Rollout(
+                        tokens=tokens,
+                        logprobs=logprobs if logprobs is not None else [],
+                        text=full_text,
+                        trait_value=trait_value,
+                        perturbation_idx=idx,
+                        parsed_successfully=parsed_ok,
+                        prompt=prompt,
+                    )
+                )
             return idx, rollouts, {"n_want": n_want, "n_drawn": n_drawn, "gave_up": gave_up}
 
         results = await asyncio.gather(*[rollout_perturbation(idx) for idx in all_idx])
@@ -378,7 +397,9 @@ class RLTrainer:
                 w = d = g = 0
                 for idx, _rolls, s in results:
                     if idx in idxs:
-                        w += s["n_want"]; d += s["n_drawn"]; g += s["gave_up"]
+                        w += s["n_want"]
+                        d += s["n_drawn"]
+                        g += s["gave_up"]
                 resample_stats.update({f"{name}_want": w, f"{name}_drawn": d, f"{name}_gave_up": g})
 
         rates, rate_counts = self._compute_rates(all_rollouts, list(all_idx))
@@ -390,7 +411,9 @@ class RLTrainer:
             train_rollouts = []
             anchor_rollouts = []
         else:
-            train_rollouts = _select_rollouts(all_rollouts, list(training_idx), self.config.training.n_rollouts_for_consistency)
+            train_rollouts = _select_rollouts(
+                all_rollouts, list(training_idx), self.config.training.n_rollouts_for_consistency
+            )
             anchor_rollouts = _select_rollouts(all_rollouts, list(ref_idx), self.config.training.n_rollouts_for_anchor)
 
         return RolloutResult(
@@ -403,7 +426,9 @@ class RLTrainer:
             resample_stats=resample_stats,
         )
 
-    def _compute_rates(self, rollouts: dict[int, list[Rollout]], indices: list[int]) -> tuple[dict[int, float | None], dict[int, int]]:
+    def _compute_rates(
+        self, rollouts: dict[int, list[Rollout]], indices: list[int]
+    ) -> tuple[dict[int, float | None], dict[int, int]]:
         """Compute trait rates from parsed rollouts only."""
         return adv_math.compute_rates(rollouts, indices)
 
@@ -428,8 +453,9 @@ class RLTrainer:
         return adv_math.gap_se(p1, n1, p2, n2, pseudocount)
 
     @staticmethod
-    def _matched_pair_gap_se(p_hat: dict[int, float], p_hat_counts: dict[int, int],
-                             p_ref: float, n_ref: int, pseudocount: float = 1.0) -> float:
+    def _matched_pair_gap_se(
+        p_hat: dict[int, float], p_hat_counts: dict[int, int], p_ref: float, n_ref: int, pseudocount: float = 1.0
+    ) -> float:
         """Cluster-robust SE of (p_pool - p_ref) (see ctm.core.advantages.matched_pair_gap_se)."""
         return adv_math.matched_pair_gap_se(p_hat, p_hat_counts, p_ref, n_ref, pseudocount)
 
@@ -492,8 +518,15 @@ class RLTrainer:
                 datums = [
                     self._create_rl_datum(
                         prompt,
-                        Rollout(tokens=tokens, logprobs=logprobs, text=full_text,
-                                trait_value=0.0, perturbation_idx=0, parsed_successfully=True, prompt=prompt),
+                        Rollout(
+                            tokens=tokens,
+                            logprobs=logprobs,
+                            text=full_text,
+                            trait_value=0.0,
+                            perturbation_idx=0,
+                            parsed_successfully=True,
+                            prompt=prompt,
+                        ),
                         weight,
                     )
                     for (tokens, logprobs, full_text, _ans) in raw
@@ -517,8 +550,15 @@ class RLTrainer:
             datums = [
                 self._create_rl_datum(
                     prompt,
-                    Rollout(tokens=tokens, logprobs=logprobs, text=full_text,
-                            trait_value=0.0, perturbation_idx=0, parsed_successfully=True, prompt=prompt),
+                    Rollout(
+                        tokens=tokens,
+                        logprobs=logprobs,
+                        text=full_text,
+                        trait_value=0.0,
+                        perturbation_idx=0,
+                        parsed_successfully=True,
+                        prompt=prompt,
+                    ),
                     weight * a,
                 )
                 for (tokens, logprobs, full_text, _ans), a in zip(raw, adv)
@@ -563,15 +603,15 @@ class RLTrainer:
 
         # Consistency: training perturbation rollouts
         consistency_rewards, consistency_data, consistency_div = [], [], []
-        consistency_snr = []   # snr_scaling: per-rollout shrink factor gating the unit-var advantage (1.0 otherwise)
-        consistency_slices = []   # (start, end) per item, for per-item (per-group) normalization
+        consistency_snr = []  # snr_scaling: per-rollout shrink factor gating the unit-var advantage (1.0 otherwise)
+        consistency_slices = []  # (start, end) per item, for per-item (per-group) normalization
         consistency_meta = []  # rollout-log context: (item, rollout, role)
         raw_gap_abs, shrunk_gap_abs, gap_n = 0.0, 0.0, 0
         for item in batch_items:
             gaps = None
-            baseline = None        # matched_pair: centre the score on p_ref, not per-cue p_hat
-            div_p = None           # matched_pair: per-rollout trait-std argument (pooled rate)
-            snr_f = {}             # snr_scaling: per-perturbation shrink factor (applied after normalization)
+            baseline = None  # matched_pair: centre the score on p_ref, not per-cue p_hat
+            div_p = None  # matched_pair: per-rollout trait-std argument (pooled rate)
+            snr_f = {}  # snr_scaling: per-perturbation shrink factor (applied after normalization)
             if use_snr:
                 # snr_scaling = unit-variance GRPO advantage × SNR gate. Build the reward with the
                 # RAW gap (same as grpo) so normalization sees the real signal; the gate (in [0,1])
@@ -583,7 +623,9 @@ class RLTrainer:
                     f = self._snr_shrink_factor(raw, se)
                     gaps[pert] = raw
                     snr_f[pert] = f
-                    raw_gap_abs += abs(raw); shrunk_gap_abs += abs(raw * f); gap_n += 1
+                    raw_gap_abs += abs(raw)
+                    shrunk_gap_abs += abs(raw * f)
+                    gap_n += 1
             elif use_matched and item.p_hat:
                 # Pool the cued rate across the whole cue family into ONE gap vs p_ref, and
                 # score every cued rollout against the neutral control p_ref. Cue diversity
@@ -591,20 +633,28 @@ class RLTrainer:
                 # p_hat is empty (no parsed training rollouts): that item has no train
                 # rollouts to score, and counting its 0-gap would dilute the logged metrics.
                 n_pool = sum(item.p_hat_counts.get(p, 0) for p in item.p_hat)
-                p_pool = (sum(rate * item.p_hat_counts.get(p, 0) for p, rate in item.p_hat.items()) / n_pool
-                          if n_pool > 0 else sum(item.p_hat.values()) / len(item.p_hat))
+                p_pool = (
+                    sum(rate * item.p_hat_counts.get(p, 0) for p, rate in item.p_hat.items()) / n_pool
+                    if n_pool > 0
+                    else sum(item.p_hat.values()) / len(item.p_hat)
+                )
                 raw = p_pool - item.p_ref
                 # Stratified (cluster-robust) SE: the cued side's variance is the
                 # between-cue-weighted within-cue variance, NOT one pooled binomial over
                 # n_pool (which would over-shrink by counting cue heterogeneity as noise).
                 se = self._matched_pair_gap_se(item.p_hat, item.p_hat_counts, item.p_ref, item.n_ref_parsed)
-                g = self._snr_scale_gap(raw, se)  # SE taper ON by default (snr_z=2.0); set snr_z=0 for the faithful pooled gap
+                g = self._snr_scale_gap(
+                    raw, se
+                )  # SE taper ON by default (snr_z=2.0); set snr_z=0 for the faithful pooled gap
                 gaps = {pert: g for pert in item.p_hat}
                 baseline = item.p_ref
                 div_p = p_pool
-                raw_gap_abs += abs(raw); shrunk_gap_abs += abs(g); gap_n += 1
+                raw_gap_abs += abs(raw)
+                shrunk_gap_abs += abs(g)
+                gap_n += 1
             rewards = self.reward_function.compute_rewards(
-                item.train_rollouts, item.p_hat, item.p_ref, gaps=gaps, baseline=baseline)
+                item.train_rollouts, item.p_hat, item.p_ref, gaps=gaps, baseline=baseline
+            )
             slice_start = len(consistency_rewards)
             consistency_rewards.extend(rewards)
             consistency_slices.append((slice_start, len(consistency_rewards)))
@@ -637,7 +687,8 @@ class RLTrainer:
                     else:  # matched_pair: keep the shrunk gap in the reward (div path below)
                         anchor_gap = self._snr_scale_gap(raw, se)
                 rewards = self.reward_function.compute_anchor_rewards(
-                    item.anchor_rollouts, item.p_ref, item.p_ref_init, gap=anchor_gap)
+                    item.anchor_rollouts, item.p_ref, item.p_ref_init, gap=anchor_gap
+                )
                 a_start = len(anchor_rewards)
                 anchor_rewards.extend(rewards)
                 anchor_slices.append((a_start, len(anchor_rewards)))
@@ -671,10 +722,13 @@ class RLTrainer:
         anchor_adv = [a * anchor_weight for a in anchor_adv]
 
         self._snr_metrics = (
-            {"train/gap_raw_abs_mean": raw_gap_abs / gap_n,
-             "train/gap_snr_scaled_abs_mean": shrunk_gap_abs / gap_n,
-             "train/gap_snr_scale_factor": (shrunk_gap_abs / raw_gap_abs) if raw_gap_abs > 1e-9 else 0.0}
-            if (use_snr or use_matched) and gap_n > 0 else {}
+            {
+                "train/gap_raw_abs_mean": raw_gap_abs / gap_n,
+                "train/gap_snr_scaled_abs_mean": shrunk_gap_abs / gap_n,
+                "train/gap_snr_scale_factor": (shrunk_gap_abs / raw_gap_abs) if raw_gap_abs > 1e-9 else 0.0,
+            }
+            if (use_snr or use_matched) and gap_n > 0
+            else {}
         )
 
         all_rewards = consistency_rewards + anchor_rewards
@@ -692,19 +746,21 @@ class RLTrainer:
             for (item, rollout, role), reward, advantage in zip(
                 consistency_meta + anchor_meta, all_rewards, advantages
             ):
-                self._pending_rollout_meta.append(dict(
-                    datapoint_idx=item.datapoint_idx,
-                    perturbation_idx=rollout.perturbation_idx,
-                    role=role,
-                    prompt_text=self._decode_prompt(rollout.prompt),
-                    completion_text=rollout.text,
-                    trait_value=rollout.trait_value,
-                    reward=reward,
-                    advantage=advantage,
-                    p_hat=item.p_hat.get(rollout.perturbation_idx) if role == "train" else None,
-                    p_ref=item.p_ref,
-                    p_ref_init=item.p_ref_init,
-                ))
+                self._pending_rollout_meta.append(
+                    dict(
+                        datapoint_idx=item.datapoint_idx,
+                        perturbation_idx=rollout.perturbation_idx,
+                        role=role,
+                        prompt_text=self._decode_prompt(rollout.prompt),
+                        completion_text=rollout.text,
+                        trait_value=rollout.trait_value,
+                        reward=reward,
+                        advantage=advantage,
+                        p_hat=item.p_hat.get(rollout.perturbation_idx) if role == "train" else None,
+                        p_ref=item.p_ref,
+                        p_ref_init=item.p_ref_init,
+                    )
+                )
 
         grad_datums = [self._create_rl_datum(prompt, r, adv) for (prompt, r), adv in zip(policy_grad_data, advantages)]
         return grad_datums, consistency_rewards, anchor_rewards, advantages, policy_grad_data
@@ -721,8 +777,7 @@ class RLTrainer:
         if self._rollout_logger is None or not self._pending_rollout_meta:
             return
         try:
-            records = [RolloutRecord(step=global_step, epoch=epoch, **meta)
-                       for meta in self._pending_rollout_meta]
+            records = [RolloutRecord(step=global_step, epoch=epoch, **meta) for meta in self._pending_rollout_meta]
             self._rollout_logger.log_step(records)
         except Exception:  # noqa: BLE001 — inspection data must never kill a training run
             _log.warning("Failed to write rollout log for step %d:\n%s", global_step, traceback.format_exc())
@@ -757,11 +812,13 @@ class RLTrainer:
         if self._help_dps and self.config.helpfulness_weight > 0 and self.config.helpfulness_mode == "anchor":
             await self._measure_help_base_accuracy()  # per-prompt anchor target (base accuracy)
 
-        log_dir = Path(build_log_dir(
-            self.config.log_base_dir,
-            self.config.experiment_name,
-            self.config.run_name,
-        ))
+        log_dir = Path(
+            build_log_dir(
+                self.config.log_base_dir,
+                self.config.experiment_name,
+                self.config.run_name,
+            )
+        )
         log_dir.mkdir(parents=True, exist_ok=True)
         logger = setup_logging(
             log_dir=str(log_dir),
@@ -789,8 +846,13 @@ class RLTrainer:
 
         try:
             return await self._train_loop(
-                logger, log_dir, datapoints, perturbation_fns,
-                trait_classifier, initial_reference_rates, answer_parser,
+                logger,
+                log_dir,
+                datapoints,
+                perturbation_fns,
+                trait_classifier,
+                initial_reference_rates,
+                answer_parser,
             )
         except Exception:
             tb = traceback.format_exc()
@@ -801,6 +863,7 @@ class RLTrainer:
                 pass
             try:
                 import wandb
+
                 if wandb.run is not None:
                     wandb.finish(exit_code=1)
             except Exception:
@@ -824,8 +887,13 @@ class RLTrainer:
 
         try:
             return await self._train_loop_inner(
-                logger, log_dir, datapoints, perturbation_fns,
-                trait_classifier, initial_reference_rates, answer_parser,
+                logger,
+                log_dir,
+                datapoints,
+                perturbation_fns,
+                trait_classifier,
+                initial_reference_rates,
+                answer_parser,
             )
         finally:
             sys.stdout = original_stdout
@@ -862,18 +930,24 @@ class RLTrainer:
             else get_recommended_lr(self.config.model)
         )
 
-        print(f"RL Training: {n_datapoints} datapoints, {n_steps_per_epoch} steps/epoch, {total_steps} total steps, lr={base_lr:.2e}")
-        logger.log_hparams({
-            "n_datapoints": n_datapoints,
-            "total_steps": total_steps,
-            "n_perturbations": n_perts,
-            "base_lr": base_lr,
-        })
+        print(
+            f"RL Training: {n_datapoints} datapoints, {n_steps_per_epoch} steps/epoch, {total_steps} total steps, lr={base_lr:.2e}"
+        )
+        logger.log_hparams(
+            {
+                "n_datapoints": n_datapoints,
+                "total_steps": total_steps,
+                "n_perturbations": n_perts,
+                "base_lr": base_lr,
+            }
+        )
 
         if self.config.loop.gradient_accumulation_steps > 1:
-            print("⚠️  gradient_accumulation_steps>1: advantages are normalized per-microbatch "
-                  "(not across the accumulated group) and are NOT rescaled by N, so the effective "
-                  "LR/baseline depends on the server-side loss reduction (unverified). Prefer batch_size.")
+            print(
+                "⚠️  gradient_accumulation_steps>1: advantages are normalized per-microbatch "
+                "(not across the accumulated group) and are NOT rescaled by N, so the effective "
+                "LR/baseline depends on the server-side loss reduction (unverified). Prefer batch_size."
+            )
 
         checkpoint_paths: list[str] = []
 
@@ -881,9 +955,14 @@ class RLTrainer:
             # Apply the configured LR schedule per optim step. RL previously built AdamParams
             # once and silently ignored lr_schedule (SFT applies it); this restores parity.
             # max(0.0, ...) guards against a negative multiplier past the last step.
-            lr_mult = max(0.0, compute_schedule_lr_multiplier(
-                lr_schedule=self.config.optimizer.lr_schedule, step=step, total_steps=total_steps,
-            ))
+            lr_mult = max(
+                0.0,
+                compute_schedule_lr_multiplier(
+                    lr_schedule=self.config.optimizer.lr_schedule,
+                    step=step,
+                    total_steps=total_steps,
+                ),
+            )
             return base_lr * lr_mult
 
         global_step = 0
@@ -892,7 +971,7 @@ class RLTrainer:
         for epoch in range(self.config.loop.n_epochs):
             shuffled = list(range(n_datapoints))
             random.shuffle(shuffled)
-            batches = [shuffled[i:i + batch_size] for i in range(0, n_datapoints, batch_size)]
+            batches = [shuffled[i : i + batch_size] for i in range(0, n_datapoints, batch_size)]
 
             # ── Sampling helpers ──────────────────────────────────────────
 
@@ -903,28 +982,29 @@ class RLTrainer:
                 # we can extract p_ref_init from policy rollouts directly (no extra API call).
                 # True for "initial_policy" always; true for "base" only when not resuming.
                 need_anchor = need_p_ref_init and dp_idx not in initial_reference_rates
-                step0_is_anchor = (
-                    self.config.anchor_model == "initial_policy"
-                    or self.resume_from is None
-                )
+                step0_is_anchor = self.config.anchor_model == "initial_policy" or self.resume_from is None
                 step_snapshot = global_step  # Capture before await; prefetched coroutines read this after yield
-                result = await self._collect_rollouts(dp, perturbation_fns, trait_classifier, answer_parser=answer_parser)
+                result = await self._collect_rollouts(
+                    dp, perturbation_fns, trait_classifier, answer_parser=answer_parser
+                )
 
                 if need_anchor and step_snapshot == 0 and step0_is_anchor:
                     # At step 0, policy matches anchor model — extract p_ref_init directly
                     p_ref_init_val = self._aggregate_ref_rates(result.rates, ref_idx)
                     if p_ref_init_val is not None:
                         initial_reference_rates[dp_idx] = p_ref_init_val
-                        initial_reference_counts[dp_idx] = sum(
-                            result.rate_counts.get(i, 0) for i in ref_idx)
+                        initial_reference_counts[dp_idx] = sum(result.rate_counts.get(i, 0) for i in ref_idx)
 
                 p_ref_init = initial_reference_rates.get(dp_idx, None)
-                p_hat = {i: result.rates[i] for i in training_idx
-                         if i in result.rates and result.rates[i] is not None}
+                p_hat = {i: result.rates[i] for i in training_idx if i in result.rates and result.rates[i] is not None}
                 training_counts = {i: result.rate_counts[i] for i in training_idx if i in result.rate_counts}
                 p_ref = self._aggregate_ref_rates(result.rates, ref_idx)
                 if p_ref is None:
-                    _log.warning("All ref rollouts failed to parse for datapoint %d, falling back to p_ref_init=%s", dp_idx, p_ref_init)
+                    _log.warning(
+                        "All ref rollouts failed to parse for datapoint %d, falling back to p_ref_init=%s",
+                        dp_idx,
+                        p_ref_init,
+                    )
                     p_ref = p_ref_init  # fallback
 
                 n_ref_parsed = sum(result.rate_counts[i] for i in ref_idx if i in result.rate_counts)
@@ -1009,31 +1089,43 @@ class RLTrainer:
                             agg[k] = agg.get(k, 0) + v
                     amp_tr = (agg.get("train_drawn", 0) / agg["train_want"]) if agg.get("train_want") else 1.0
                     amp_rf = (agg.get("ref_drawn", 0) / agg["ref_want"]) if agg.get("ref_want") else 1.0
-                    logger.log_metrics({
-                        "train/resample_amplif_train": amp_tr,
-                        "train/resample_amplif_ref": amp_rf,
-                        "train/resample_gaveup_train": agg.get("train_gave_up", 0),
-                        "train/resample_gaveup_ref": agg.get("ref_gave_up", 0),
-                    }, step=global_step + 1)
+                    logger.log_metrics(
+                        {
+                            "train/resample_amplif_train": amp_tr,
+                            "train/resample_amplif_ref": amp_rf,
+                            "train/resample_gaveup_train": agg.get("train_gave_up", 0),
+                            "train/resample_gaveup_ref": agg.get("ref_gave_up", 0),
+                        },
+                        step=global_step + 1,
+                    )
                     if amp_tr > 2.0 or agg.get("train_gave_up", 0) > 0:
-                        print(f"\n⚠️  Resample amplification train={amp_tr:.1f}x, gave_up "
-                              f"train={agg.get('train_gave_up', 0)} ref={agg.get('ref_gave_up', 0)} "
-                              f"at step {global_step + 1} (model hedging)")
+                        print(
+                            f"\n⚠️  Resample amplification train={amp_tr:.1f}x, gave_up "
+                            f"train={agg.get('train_gave_up', 0)} ref={agg.get('ref_gave_up', 0)} "
+                            f"at step {global_step + 1} (model hedging)"
+                        )
 
                 # ── Resolve p_ref_init for anchor (if needed) ─────────────
                 # Launch all missing anchor rate samples concurrently
                 if need_p_ref_init:
                     items_needing_anchor = [
-                        item for item in batch_items
+                        item
+                        for item in batch_items
                         if item.p_ref_init is None and item.datapoint_idx not in initial_reference_rates
                     ]
                     if items_needing_anchor:
-                        print(f"  ⏳ Anchor rate missing for {len(items_needing_anchor)} datapoint(s), sampling from {self.config.anchor_model}...")
+                        print(
+                            f"  ⏳ Anchor rate missing for {len(items_needing_anchor)} datapoint(s), sampling from {self.config.anchor_model}..."
+                        )
 
                         async def _sample_anchor(item: BatchItem) -> tuple[BatchItem, Optional[float], int]:
                             result = await self._collect_rollouts(
-                                datapoints[item.datapoint_idx], perturbation_fns, trait_classifier,
-                                sampling_client=self.anchor_sampling_client, answer_parser=answer_parser, rates_only=True,
+                                datapoints[item.datapoint_idx],
+                                perturbation_fns,
+                                trait_classifier,
+                                sampling_client=self.anchor_sampling_client,
+                                answer_parser=answer_parser,
+                                rates_only=True,
                             )
                             n_init = sum(result.rate_counts.get(i, 0) for i in ref_idx)
                             return item, self._aggregate_ref_rates(result.rates, ref_idx), n_init
@@ -1067,7 +1159,9 @@ class RLTrainer:
                 if batch_result is None:
                     global_step += 1
                     logger.log_metrics({"train/skipped_empty_batch": 1}, step=global_step)
-                    await self._maybe_save_checkpoint(global_step, total_steps, epoch, log_dir, checkpoint_paths, logger)
+                    await self._maybe_save_checkpoint(
+                        global_step, total_steps, epoch, log_dir, checkpoint_paths, logger
+                    )
                     # Still honor the refresh schedule on a skipped step, then top up.
                     next_to_prefetch = await _maybe_refresh_and_refill(i_batch, next_to_prefetch)
                     next_to_prefetch = _fill_prefetch_queue(next_to_prefetch)
@@ -1095,9 +1189,7 @@ class RLTrainer:
                     )
 
                 # Submit fwd_bwd
-                pending_fwd_bwd = await self.backend.submit_forward_backward(
-                    grad_datums, loss_fn=self.config.loss_fn
-                )
+                pending_fwd_bwd = await self.backend.submit_forward_backward(grad_datums, loss_fn=self.config.loss_fn)
                 accumulated_grads += 1
 
                 # Pipeline: submit optim_step immediately (server queues behind fwd_bwd)
@@ -1129,12 +1221,24 @@ class RLTrainer:
                 fwd_bwd_metrics = {f"train/{k}": v for k, v in fwd_bwd_output.metrics.items()}
 
                 self._log_step_metrics(
-                    logger, global_step, epoch, batch_items, grad_datums,
-                    consistency_rewards, anchor_rewards, advantages,
-                    policy_grad_data, all_rewards, training_logprobs,
+                    logger,
+                    global_step,
+                    epoch,
+                    batch_items,
+                    grad_datums,
+                    consistency_rewards,
+                    anchor_rewards,
+                    advantages,
+                    policy_grad_data,
+                    all_rewards,
+                    training_logprobs,
                     {**kl_penalty_metrics, **fwd_bwd_metrics},
-                    parse_rate, total_n_ref_parsed, total_n_training_parsed,
-                    training_idx, need_p_ref_init, pbar,
+                    parse_rate,
+                    total_n_ref_parsed,
+                    total_n_training_parsed,
+                    training_idx,
+                    need_p_ref_init,
+                    pbar,
                 )
                 self._log_rollouts(global_step, epoch)
 
@@ -1182,11 +1286,25 @@ class RLTrainer:
         )
 
     def _log_step_metrics(
-        self, logger, global_step, epoch, batch_items, grad_datums,
-        consistency_rewards, anchor_rewards, advantages,
-        policy_grad_data, all_rewards, training_logprobs,
-        kl_penalty_metrics, parse_rate, total_n_ref_parsed, total_n_training_parsed,
-        training_idx, need_p_ref_init, pbar,
+        self,
+        logger,
+        global_step,
+        epoch,
+        batch_items,
+        grad_datums,
+        consistency_rewards,
+        anchor_rewards,
+        advantages,
+        policy_grad_data,
+        all_rewards,
+        training_logprobs,
+        kl_penalty_metrics,
+        parse_rate,
+        total_n_ref_parsed,
+        total_n_training_parsed,
+        training_idx,
+        need_p_ref_init,
+        pbar,
     ):
         """Compute and log all metrics for a training step."""
         kl_sample_train_metrics = compute_kl_sample_train(grad_datums, training_logprobs)
@@ -1206,10 +1324,7 @@ class RLTrainer:
         # the anchor model failed to parse all ref rollouts for that datapoint. Average only
         # the resolved ones; None if none resolved. (The reward path already handles None.)
         _p_ref_inits = [item.p_ref_init for item in batch_items if item.p_ref_init is not None]
-        avg_p_ref_init = (
-            (sum(_p_ref_inits) / len(_p_ref_inits) if _p_ref_inits else None)
-            if need_p_ref_init else None
-        )
+        avg_p_ref_init = (sum(_p_ref_inits) / len(_p_ref_inits) if _p_ref_inits else None) if need_p_ref_init else None
         avg_p_hat = {}
         for item in batch_items:
             for pert_idx, rate in item.p_hat.items():
@@ -1223,7 +1338,9 @@ class RLTrainer:
             reward_by_pert_trait[(rollout.perturbation_idx, rollout.trait_value)].append(reward)
 
         adv_abs_mean = sum(abs(a) for a in advantages) / len(advantages) if advantages else 0.0
-        avg_response_len = sum(len(r.tokens) for _, r in policy_grad_data) / len(policy_grad_data) if policy_grad_data else 0.0
+        avg_response_len = (
+            sum(len(r.tokens) for _, r in policy_grad_data) / len(policy_grad_data) if policy_grad_data else 0.0
+        )
         kl_v1 = kl_sample_train_metrics.get("optim/kl_sample_train_v1", 0.0)
 
         step_metrics = {
@@ -1233,15 +1350,26 @@ class RLTrainer:
             "train/n_anchor_rollouts": len(anchor_rewards),
             "train/avg_response_length": avg_response_len,
             "train/p_ref": avg_p_ref,
-            **({"train/p_ref_init": avg_p_ref_init,
-               "train/p_ref_drift": avg_p_ref - avg_p_ref_init} if avg_p_ref_init is not None else {}),
+            **(
+                {"train/p_ref_init": avg_p_ref_init, "train/p_ref_drift": avg_p_ref - avg_p_ref_init}
+                if avg_p_ref_init is not None
+                else {}
+            ),
             "train/n_ref_parsed": total_n_ref_parsed,
             "train/n_training_parsed": total_n_training_parsed,
             "train/rate_var": rate_var,
             "train/consistency_reward_mean": cons_reward_mean,
-            "train/consistency_reward_std": (sum((r - cons_reward_mean)**2 for r in consistency_rewards) / len(consistency_rewards)) ** 0.5 if consistency_rewards else 0.0,
+            "train/consistency_reward_std": (
+                (sum((r - cons_reward_mean) ** 2 for r in consistency_rewards) / len(consistency_rewards)) ** 0.5
+                if consistency_rewards
+                else 0.0
+            ),
             "train/anchor_reward_mean": anchor_reward_mean,
-            "train/anchor_reward_std": (sum((r - anchor_reward_mean)**2 for r in anchor_rewards) / len(anchor_rewards)) ** 0.5 if anchor_rewards else 0.0,
+            "train/anchor_reward_std": (
+                (sum((r - anchor_reward_mean) ** 2 for r in anchor_rewards) / len(anchor_rewards)) ** 0.5
+                if anchor_rewards
+                else 0.0
+            ),
             "train/advantage_abs_mean": adv_abs_mean,
         }
         for pert_idx, rate in avg_p_hat.items():
@@ -1262,4 +1390,11 @@ class RLTrainer:
 
         p_hat_display = list(avg_p_hat.values())[0] if avg_p_hat else 0.0
         gap_display = list(avg_p_hat.values())[0] - avg_p_ref if avg_p_hat else 0.0
-        pbar.set_postfix({"kl": f"{kl_v1:.4f}", "gap": f"{gap_display:.3f}", "p_hat": f"{p_hat_display:.2f}", "adv": f"{adv_abs_mean:.3f}"})
+        pbar.set_postfix(
+            {
+                "kl": f"{kl_v1:.4f}",
+                "gap": f"{gap_display:.3f}",
+                "p_hat": f"{p_hat_display:.2f}",
+                "adv": f"{adv_abs_mean:.3f}",
+            }
+        )

@@ -21,6 +21,7 @@ class SafeFileWrapper:
     BrokenPipeError. This wrapper swallows those errors so training can
     continue uninterrupted.
     """
+
     def __init__(self, fp):
         self._fp = fp
 
@@ -72,6 +73,7 @@ def get_git_state() -> dict:
     and the full diff of uncommitted changes (truncated to 50k chars).
     Degrades gracefully if not in a git repo.
     """
+
     def _run(args: list[str]) -> str:
         r = subprocess.run(args, capture_output=True, text=True, timeout=10)
         return r.stdout.strip() if r.returncode == 0 else ""
@@ -99,7 +101,7 @@ def warn_if_dirty(git_state: dict) -> None:
     """Print a prominent warning if the git working tree is dirty."""
     if git_state.get("git_dirty"):
         files = git_state.get("git_dirty_files", "")
-        n_files = len([l for l in files.splitlines() if l.strip()])
+        n_files = len([ln for ln in files.splitlines() if ln.strip()])
         print(
             f"\n{'='*60}\n"
             f"WARNING: Git working tree is DIRTY ({n_files} file(s) changed)\n"
@@ -127,6 +129,9 @@ def get_recommended_lr(model: str, is_lora: bool = True, fallback: float = 1e-4)
         # contract is "fall back for unknown models", so catch broadly and warn.
         _log.warning(
             "get_recommended_lr(%s) failed (%s: %s); using fallback lr=%g",
-            model, type(e).__name__, e, fallback,
+            model,
+            type(e).__name__,
+            e,
+            fallback,
         )
         return fallback

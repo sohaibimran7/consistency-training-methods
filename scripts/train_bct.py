@@ -5,16 +5,16 @@ Trains on arbitrary data files with flexible mixing and hyperparameters.
 
 Usage:
     # List available models
-    python scripts/tinker_training/train_sft.py --list-models
+    python scripts/train_bct.py --list-models
 
     # BCT training on Llama (all file types)
-    python scripts/tinker_training/train_sft.py \
+    python scripts/train_bct.py \
         --model meta-llama/Llama-3.1-8B-Instruct \
         --data instruct.jsonl:10 bct_cot.jsonl:5 bct_non_cot.jsonl:5 \
         --experiment-name bct_llama
 
     # With interleaving for mixed batches
-    python scripts/tinker_training/train_sft.py \
+    python scripts/train_bct.py \
         --model meta-llama/Llama-3.1-8B-Instruct \
         --data instruct.jsonl:10 bct_cot.jsonl:5 bct_non_cot.jsonl:5 \
         --interleave \
@@ -26,7 +26,7 @@ import json
 import tempfile
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
+_PROJECT_ROOT = Path(__file__).parent.parent
 
 from dotenv import load_dotenv
 
@@ -49,11 +49,7 @@ def list_available_models() -> list[str]:
     """Query Tinker API for available models."""
     service_client = tinker.ServiceClient()
     capabilities = service_client.get_server_capabilities()
-    return [
-        model.model_name
-        for model in capabilities.supported_models
-        if model.model_name is not None
-    ]
+    return [model.model_name for model in capabilities.supported_models if model.model_name is not None]
 
 
 def print_available_models() -> None:
@@ -126,40 +122,54 @@ def main():
     parser.add_argument("--model", help="Model name")
 
     # Data
-    parser.add_argument("--data", nargs="+", metavar="FILE[:N]",
-                        help="Data files with optional sample limits")
-    parser.add_argument("--interleave", action="store_true",
-                        help="Round-robin interleave samples across files")
+    parser.add_argument("--data", nargs="+", metavar="FILE[:N]", help="Data files with optional sample limits")
+    parser.add_argument("--interleave", action="store_true", help="Round-robin interleave samples across files")
 
     # Naming
     parser.add_argument("--experiment-name", default="sft_experiment")
     parser.add_argument("--run-name", default="default")
 
     # Hyperparameters
-    parser.add_argument("--lr", type=float, default=None,
-                        help="Learning rate (default: auto-detect from model)")
-    parser.add_argument("--lr-schedule", default="linear", choices=["constant", "linear", "cosine"],
-                        help="LR schedule (shared SFT+RL default: linear)")
+    parser.add_argument("--lr", type=float, default=None, help="Learning rate (default: auto-detect from model)")
+    parser.add_argument(
+        "--lr-schedule",
+        default="linear",
+        choices=["constant", "linear", "cosine"],
+        help="LR schedule (shared SFT+RL default: linear)",
+    )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lora-rank", type=int, default=8)
-    parser.add_argument("--seed", type=int, default=None,
-                        help="Random seed for training reproducibility")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for training reproducibility")
     parser.add_argument("--save-every", type=int, default=5)
-    parser.add_argument("--save-state", action="store_true",
-                        help="Save full optimizer state for intermediate checkpoints (for resuming)")
-    parser.add_argument("--skip-near-final", type=int, default=0,
-                        help="Skip intermediate checkpoints within N steps of final")
+    parser.add_argument(
+        "--save-state",
+        action="store_true",
+        help="Save full optimizer state for intermediate checkpoints (for resuming)",
+    )
+    parser.add_argument(
+        "--skip-near-final", type=int, default=0, help="Skip intermediate checkpoints within N steps of final"
+    )
 
     # Resume from checkpoint
-    parser.add_argument("--resume-from", default=None,
-                        help="Tinker checkpoint path to load before training (tinker://...)")
-    parser.add_argument("--resume-with-optimizer", dest="resume_with_optimizer",
-                        action="store_const", const=True, default=None,
-                        help="Force restoring optimizer state on resume (default: infer from URI)")
-    parser.add_argument("--no-resume-optimizer", dest="resume_with_optimizer",
-                        action="store_const", const=False,
-                        help="Force weights-only resume (optimizer resets)")
+    parser.add_argument(
+        "--resume-from", default=None, help="Tinker checkpoint path to load before training (tinker://...)"
+    )
+    parser.add_argument(
+        "--resume-with-optimizer",
+        dest="resume_with_optimizer",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Force restoring optimizer state on resume (default: infer from URI)",
+    )
+    parser.add_argument(
+        "--no-resume-optimizer",
+        dest="resume_with_optimizer",
+        action="store_const",
+        const=False,
+        help="Force weights-only resume (optimizer resets)",
+    )
 
     # Backend
     add_backend_args(parser)
@@ -230,13 +240,15 @@ def main():
     print(f"Backend: {describe_backend(args)}")
     print(f"Experiment: {config.experiment_name} / {config.run_name}")
     seed_str = f", seed={args.seed}" if args.seed is not None else ""
-    print(f"Hyperparams: lr={args.lr or 'auto'}, batch={args.batch_size}, "
-          f"epochs={args.epochs}, lora_rank={args.lora_rank}{seed_str}")
+    print(
+        f"Hyperparams: lr={args.lr or 'auto'}, batch={args.batch_size}, "
+        f"epochs={args.epochs}, lora_rank={args.lora_rank}{seed_str}"
+    )
     print(f"Steps: {n_steps}, checkpoints: ~{n_ckpts} intermediate + 1 final")
     if args.save_state:
-        print(f"Checkpoints: intermediate + final save full state (resumable)")
+        print("Checkpoints: intermediate + final save full state (resumable)")
     else:
-        print(f"Final checkpoint: sampler weights only (pass --save-state for a resumable full-state checkpoint)")
+        print("Final checkpoint: sampler weights only (pass --save-state for a resumable full-state checkpoint)")
     if args.resume_from:
         print(f"Resuming from: {args.resume_from}")
 
@@ -246,11 +258,15 @@ def main():
             return
 
     # Train
-    final_checkpoint = asyncio.run(train_sft(
-        data_path, config, resume_from=args.resume_from,
-        resume_with_optimizer=args.resume_with_optimizer,
-        backend=build_backend(args),
-    ))
+    final_checkpoint = asyncio.run(
+        train_sft(
+            data_path,
+            config,
+            resume_from=args.resume_from,
+            resume_with_optimizer=args.resume_with_optimizer,
+            backend=build_backend(args),
+        )
+    )
     print(f"\nDone! Final checkpoint: {final_checkpoint}")
 
 

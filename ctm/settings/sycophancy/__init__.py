@@ -15,7 +15,7 @@ from ctm.settings.sycophancy.data import (
     make_perturbation_fns,
     resolve_distractor_cues,
 )
-from ctm.settings.sycophancy.grader_prompts import (
+from mcq_bias.grader_prompts import (
     BIAS_ACK_PROMPTS,
     get_bias_ack_prompt,
     register_bias_ack_prompt,

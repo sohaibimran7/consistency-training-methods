@@ -11,8 +11,8 @@ from typing import Literal
 
 from ctm.core.types import Rollout
 
-
 # ── Index / rollout selection ────────────────────────────────────────────────
+
 
 def resolve_indices(indices: list[int] | str, n_total: int) -> list[int]:
     if indices == "all":
@@ -34,7 +34,10 @@ def select_rollouts(rollouts: dict[int, list[Rollout]], indices: list[int], n_gr
 
 # ── Rates ────────────────────────────────────────────────────────────────────
 
-def compute_rates(rollouts: dict[int, list[Rollout]], indices: list[int]) -> tuple[dict[int, float | None], dict[int, int]]:
+
+def compute_rates(
+    rollouts: dict[int, list[Rollout]], indices: list[int]
+) -> tuple[dict[int, float | None], dict[int, int]]:
     """Compute trait rates from parsed rollouts only."""
     rates: dict[int, float | None] = {}
     counts = {}
@@ -45,8 +48,9 @@ def compute_rates(rollouts: dict[int, list[Rollout]], indices: list[int]) -> tup
     return rates, counts
 
 
-def aggregate_rates(rates: dict[int, float | None], indices: list[int],
-                    aggregation: Literal["mean", "min", "max"] = "mean") -> float | None:
+def aggregate_rates(
+    rates: dict[int, float | None], indices: list[int], aggregation: Literal["mean", "min", "max"] = "mean"
+) -> float | None:
     """Aggregate reference perturbation rates into a single scalar."""
     valid: list[float] = [rates[i] for i in indices if i in rates and rates[i] is not None]  # type: ignore[misc]
     if not valid:
@@ -61,6 +65,7 @@ def aggregate_rates(rates: dict[int, float | None], indices: list[int],
 
 
 # ── Sampling-noise statistics ────────────────────────────────────────────────
+
 
 def trait_std(p: float, var_floor: float = 0.01) -> float:
     """Per-rollout Bernoulli std, used to standardize trait noise (NOT the gap).
@@ -83,7 +88,7 @@ def binom_var(p: float, n: int, pseudocount: float = 1.0) -> float:
     """
     n_eff = max(n, 1)
     n_smooth = n_eff + 2.0 * pseudocount
-    p_smooth = (p * n_eff + pseudocount) / n_smooth   # shrink toward 0.5
+    p_smooth = (p * n_eff + pseudocount) / n_smooth  # shrink toward 0.5
     return p_smooth * (1.0 - p_smooth) / n_smooth
 
 
@@ -92,8 +97,9 @@ def gap_se(p1: float, n1: int, p2: float, n2: int, pseudocount: float = 1.0) -> 
     return (binom_var(p1, n1, pseudocount) + binom_var(p2, n2, pseudocount)) ** 0.5
 
 
-def matched_pair_gap_se(p_hat: dict[int, float], p_hat_counts: dict[int, int],
-                        p_ref: float, n_ref: int, pseudocount: float = 1.0) -> float:
+def matched_pair_gap_se(
+    p_hat: dict[int, float], p_hat_counts: dict[int, int], p_ref: float, n_ref: int, pseudocount: float = 1.0
+) -> float:
     """SE of (p_pool - p_ref), where p_pool is the count-weighted mean of the per-cue
     rates across the cue family.
 
@@ -106,9 +112,10 @@ def matched_pair_gap_se(p_hat: dict[int, float], p_hat_counts: dict[int, int],
     """
     n_pool = sum(p_hat_counts.get(c, 0) for c in p_hat)
     if n_pool > 0:
-        cued_var = sum((p_hat_counts.get(c, 0) / n_pool) ** 2
-                       * binom_var(rate, p_hat_counts.get(c, 0), pseudocount)
-                       for c, rate in p_hat.items())
+        cued_var = sum(
+            (p_hat_counts.get(c, 0) / n_pool) ** 2 * binom_var(rate, p_hat_counts.get(c, 0), pseudocount)
+            for c, rate in p_hat.items()
+        )
     else:
         # No parsed counts: treat each cue as one observation of the cue-mean.
         k = max(len(p_hat), 1)
@@ -117,6 +124,7 @@ def matched_pair_gap_se(p_hat: dict[int, float], p_hat_counts: dict[int, int],
 
 
 # ── SNR gating ───────────────────────────────────────────────────────────────
+
 
 def snr_scale_gap(d: float, se: float, mode: Literal["soft", "hard"] = "soft", z: float = 2.0) -> float:
     """Scale an empirical gap toward 0 by its sampling SNR = (d/se)^2.
@@ -131,7 +139,7 @@ def snr_scale_gap(d: float, se: float, mode: Literal["soft", "hard"] = "soft", z
     if se <= 0.0:
         return d
     snr = (d * d) / (se * se)
-    z2 = z ** 2
+    z2 = z**2
     if mode == "hard":
         factor = max(0.0, 1.0 - z2 / snr)
     else:
@@ -151,7 +159,7 @@ def snr_shrink_factor(d: float, se: float, mode: Literal["soft", "hard"] = "soft
     if se <= 0.0:
         return 1.0
     snr = (d * d) / (se * se)
-    z2 = z ** 2
+    z2 = z**2
     if mode == "hard":
         return max(0.0, 1.0 - z2 / snr)
     return snr / (snr + z2)
@@ -159,19 +167,21 @@ def snr_shrink_factor(d: float, se: float, mode: Literal["soft", "hard"] = "soft
 
 # ── Advantage normalization ──────────────────────────────────────────────────
 
+
 def normalize_advantages(rewards: list[float]) -> list[float]:
     if not rewards:
         return rewards
     mean_r = sum(rewards) / len(rewards)
     var = sum((r - mean_r) ** 2 for r in rewards) / len(rewards)
-    std_r = var ** 0.5
+    std_r = var**0.5
     if std_r < 1e-8:
         return [0.0] * len(rewards)
     return [(r - mean_r) / std_r for r in rewards]
 
 
-def normalize_grouped(rewards: list[float], slices: list[tuple[int, int]],
-                      mode: Literal["pooled", "per_item"] = "pooled") -> list[float]:
+def normalize_grouped(
+    rewards: list[float], slices: list[tuple[int, int]], mode: Literal["pooled", "per_item"] = "pooled"
+) -> list[float]:
     """Unit-variance standardization, pooled over the whole batch or per-item (per group).
 
     per_item: each item's rollouts are standardized on their own, so the per-item gap (a

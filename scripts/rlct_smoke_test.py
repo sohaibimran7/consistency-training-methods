@@ -4,8 +4,8 @@ Test script for RL consistency training.
 Uses suggested_answer prompts from MMLU and TruthfulQA test sets.
 
 Usage:
-    python scripts/tinker_training/test_rl_training.py
-    python scripts/tinker_training/test_rl_training.py --n_datapoints 10 --dry_run
+    python scripts/rlct_smoke_test.py
+    python scripts/rlct_smoke_test.py --n_datapoints 10 --dry_run
 """
 
 import asyncio
@@ -14,10 +14,11 @@ import json
 from pathlib import Path
 
 # Add project root to path
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent
 
 # Load environment variables from .env
 from dotenv import load_dotenv
+
 load_dotenv(PROJECT_ROOT / ".env")
 
 from ctm.training.rl import (
@@ -72,12 +73,26 @@ def main():
     parser.add_argument("--dry_run", action="store_true", help="Just load data, don't train")
     parser.add_argument("--experiment_name", type=str, default="rl_test")
     parser.add_argument("--run_name", type=str, default="suggested_answer")
-    parser.add_argument("--ref_perturbations", type=int, nargs="+", default=[0], help="Perturbation indices for reference rate")
-    parser.add_argument("--train_perturbations", type=int, nargs="+", default=[1], help="Perturbation indices for training")
-    parser.add_argument("--control", action="store_true", help="Control run: use unbiased perturbation for both ref and train")
-    parser.add_argument("--refresh_policy_every_n_steps", type=int, default=1, help="Refresh sampling policy every N steps")
-    parser.add_argument("--resume_from", type=str, default=None, help="Tinker checkpoint path to load before training (tinker://...)")
-    parser.add_argument("--resume_with_optimizer", action="store_true", help="Also restore optimizer state when resuming (for exact continuation)")
+    parser.add_argument(
+        "--ref_perturbations", type=int, nargs="+", default=[0], help="Perturbation indices for reference rate"
+    )
+    parser.add_argument(
+        "--train_perturbations", type=int, nargs="+", default=[1], help="Perturbation indices for training"
+    )
+    parser.add_argument(
+        "--control", action="store_true", help="Control run: use unbiased perturbation for both ref and train"
+    )
+    parser.add_argument(
+        "--refresh_policy_every_n_steps", type=int, default=1, help="Refresh sampling policy every N steps"
+    )
+    parser.add_argument(
+        "--resume_from", type=str, default=None, help="Tinker checkpoint path to load before training (tinker://...)"
+    )
+    parser.add_argument(
+        "--resume_with_optimizer",
+        action="store_true",
+        help="Also restore optimizer state when resuming (for exact continuation)",
+    )
     args = parser.parse_args()
 
     # Load samples from both datasets
@@ -176,7 +191,7 @@ def main():
         perturbation_fns = [unbiased_perturbation, biased_perturbation]
         pert_desc = "unbiased (ref), biased (train)"
 
-    print(f"\n=== Starting RL Training ===")
+    print("\n=== Starting RL Training ===")
     print(f"Model: {config.model}")
     print(f"Experiment: {config.experiment_name}/{config.run_name}")
     print(f"Datapoints: {len(datapoints)}")
@@ -194,7 +209,7 @@ def main():
         )
     )
 
-    print(f"\n=== Training Complete ===")
+    print("\n=== Training Complete ===")
     print(f"Final checkpoint: {final_checkpoint}")
 
 

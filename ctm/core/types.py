@@ -15,6 +15,7 @@ from pydantic import BaseModel
 @dataclass
 class Rollout:
     """A single rollout (sampled response)."""
+
     tokens: list[int]
     logprobs: list[float]
     text: str
@@ -29,30 +30,32 @@ class RolloutResult:
     """Pre-computed result from rollout collection.
     Rates are computed internally so the full rollout data (tokens/logprobs
     for all rollouts) can be freed early. Only gradient rollouts retained."""
-    train_rollouts: list[Rollout]           # Training perturbation gradient rollouts
-    anchor_rollouts: list[Rollout]          # Reference perturbation gradient rollouts (for anchor)
-    rates: dict[int, float | None]          # Trait rate per perturbation index (None if 0 parsed)
-    rate_counts: dict[int, int]             # Number of parsed rollouts per perturbation
-    n_total: int                            # Total raw rollouts (all perturbations)
-    n_parsed: int                           # Parsed rollouts (all perturbations)
+
+    train_rollouts: list[Rollout]  # Training perturbation gradient rollouts
+    anchor_rollouts: list[Rollout]  # Reference perturbation gradient rollouts (for anchor)
+    rates: dict[int, float | None]  # Trait rate per perturbation index (None if 0 parsed)
+    rate_counts: dict[int, int]  # Number of parsed rollouts per perturbation
+    n_total: int  # Total raw rollouts (all perturbations)
+    n_parsed: int  # Parsed rollouts (all perturbations)
     resample_stats: dict = field(default_factory=dict)  # {ref,train}_{want,drawn,gave_up} (resample mode)
 
 
 @dataclass
 class BatchItem:
     """One datapoint's rollout results, ready for reward computation."""
+
     datapoint_idx: int
     datapoint: dict
     train_rollouts: list[Rollout]
     anchor_rollouts: list[Rollout]
-    p_hat: dict[int, float]         # Per-perturbation trait rates (training)
-    p_hat_counts: dict[int, int]    # Per-perturbation parsed rollout counts (for gap SE)
-    p_ref: float                    # Reference perturbation rate
-    p_ref_init: float | None        # Initial (base/anchor) reference rate
-    n_total: int                    # Total raw rollouts
-    n_parsed: int                   # Parsed rollouts
-    n_ref_parsed: int               # Parsed ref rollouts
-    n_training_parsed: int          # Parsed training rollouts
+    p_hat: dict[int, float]  # Per-perturbation trait rates (training)
+    p_hat_counts: dict[int, int]  # Per-perturbation parsed rollout counts (for gap SE)
+    p_ref: float  # Reference perturbation rate
+    p_ref_init: float | None  # Initial (base/anchor) reference rate
+    n_total: int  # Total raw rollouts
+    n_parsed: int  # Parsed rollouts
+    n_ref_parsed: int  # Parsed ref rollouts
+    n_training_parsed: int  # Parsed training rollouts
     n_ref_init_parsed: int | None = None  # Parsed rollouts behind p_ref_init (for anchor-gap SE)
     resample_stats: dict = field(default_factory=dict)  # {ref,train}_{want,drawn,gave_up} (resample mode)
 
@@ -65,7 +68,8 @@ class RolloutRecord(BaseModel):
     can be inspected later without replaying the run. Schema is shared with the
     reader in ``ctm.evals.analysis.rollouts`` — change it only here.
     """
-    step: int                        # global training step (1-based, as logged)
+
+    step: int  # global training step (1-based, as logged)
     epoch: int
     datapoint_idx: int
     perturbation_idx: int
@@ -75,6 +79,6 @@ class RolloutRecord(BaseModel):
     trait_value: float
     reward: float
     advantage: float
-    p_hat: Optional[float] = None    # this rollout's perturbation rate (train role)
+    p_hat: Optional[float] = None  # this rollout's perturbation rate (train role)
     p_ref: float
     p_ref_init: Optional[float] = None

@@ -49,6 +49,7 @@ from ctm.training.run_utils import build_log_dir, get_git_state, get_recommended
 
 class SFTConfig(BaseModel):
     """SFT training configuration."""
+
     experiment_name: str = "sft"
     run_name: str = "default"
     model: str = "meta-llama/Llama-3.1-8B-Instruct"
@@ -165,7 +166,9 @@ async def train_sft(
         random.seed(cfg.lora.seed)
 
     # Determine learning rate: use configured value or get recommended LR for model
-    base_lr: float = cfg.optimizer.learning_rate if cfg.optimizer.learning_rate is not None else get_recommended_lr(cfg.model)
+    base_lr: float = (
+        cfg.optimizer.learning_rate if cfg.optimizer.learning_rate is not None else get_recommended_lr(cfg.model)
+    )
 
     print(f"SFT Training: {n_samples} samples, batch={cfg.batch_size}, {total_steps} steps, lr={base_lr:.2e}")
     logger.log_hparams({"n_samples": n_samples, "total_steps": total_steps, "file": str(file_path), "base_lr": base_lr})
@@ -213,7 +216,7 @@ async def train_sft(
 
         pbar = tqdm(range(0, n_samples, cfg.batch_size), desc=f"Epoch {epoch+1}")
         for batch_start in pbar:
-            batch_samples = epoch_samples[batch_start:batch_start + cfg.batch_size]
+            batch_samples = epoch_samples[batch_start : batch_start + cfg.batch_size]
 
             # Create datums with proper token shifting for next-token prediction
             batch_data = []
@@ -224,11 +227,14 @@ async def train_sft(
             # Compute LR with schedule
             # max(0.0, ...) is belt-and-suspenders against a negative multiplier; the
             # ceil-division total_steps above already keeps step < total_steps.
-            lr_mult = max(0.0, compute_schedule_lr_multiplier(
-                lr_schedule=cfg.optimizer.lr_schedule,
-                step=global_step,
-                total_steps=total_steps,
-            ))
+            lr_mult = max(
+                0.0,
+                compute_schedule_lr_multiplier(
+                    lr_schedule=cfg.optimizer.lr_schedule,
+                    step=global_step,
+                    total_steps=total_steps,
+                ),
+            )
             current_lr = base_lr * lr_mult
 
             # Async: enqueue forward_backward and optim_step before awaiting results (overlapping pattern)

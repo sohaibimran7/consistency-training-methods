@@ -28,6 +28,7 @@ from ctm.core.config import AdamConfig, LoRAConfig
 @dataclass
 class SampledSequence:
     """One sampled completion: tokens plus (optionally) their sampling logprobs."""
+
     tokens: list[int]
     logprobs: Optional[list[float]]
 
@@ -39,6 +40,7 @@ class ForwardBackwardOutput:
     ``logprobs``: per-datum tensor of per-token target logprobs under the current
     policy (used for the sample-vs-train KL diagnostic and SFT NLL).
     """
+
     logprobs: list[torch.Tensor]
     metrics: dict[str, float]
 
@@ -113,9 +115,7 @@ class TrainingBackend(Protocol):
         """Mutate ``datums``' advantages in place with a KL-to-base penalty; return metrics."""
         ...
 
-    async def save_checkpoint(
-        self, *, name: str, log_dir: str | Path, loop_state: dict, kind: str
-    ) -> dict:
+    async def save_checkpoint(self, *, name: str, log_dir: str | Path, loop_state: dict, kind: str) -> dict:
         """Persist weights ("sampler"), optimizer state ("state"), or "both".
         Returns a dict with "sampler_path" / "state_path" entries (backend-native URIs)."""
         ...

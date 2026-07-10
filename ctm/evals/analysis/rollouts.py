@@ -43,9 +43,7 @@ def iter_rollouts(
     for entry in load_index(directory):
         if wanted is not None and entry["step"] not in wanted:
             continue
-        raw = zstandard.ZstdDecompressor().decompress(
-            (directory / entry["file"]).read_bytes()
-        )
+        raw = zstandard.ZstdDecompressor().decompress((directory / entry["file"]).read_bytes())
         for line in raw.decode("utf-8").splitlines():
             if not line.strip():
                 continue

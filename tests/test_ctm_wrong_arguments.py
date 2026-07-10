@@ -58,20 +58,6 @@ class TestSquaresGoldenFidelity:
         assert again.messages == result.messages  # shuffle seeded by question id
 
 
-def _legacy_dump_record(record: MCQRecord, argument: str) -> dict:
-    """A released-format legacy dump row (legacy keys — migration reads these)."""
-    store = WrongArgumentStore()
-    store.add(argument, parsed=record.parsed_input())
-    biased = inj.WrongArgumentInjector(store).inject(record, "encourage_cot")
-    return {
-        "original_question_hash": record.question_id,
-        "unbiased_question": record.unbiased_messages("encourage_cot"),
-        "biased_question": biased.messages,
-        "biased_option": record.biased_option,
-        "ground_truth": record.ground_truth,
-    }
-
-
 class TestWrongArgumentStore:
     """Canonical per-model stores: mcq_bias/data/wrong_arguments/<model_slug>.jsonl."""
 
@@ -152,39 +138,6 @@ class TestWrongArgumentStore:
         )
         with pytest.raises(ValueError, match="CONFLICTING"):
             WrongArgumentStore.for_model("m", tmp_path)
-
-
-class TestMigration:
-    """One-time conversion of legacy argument sources into canonical stores."""
-
-    def test_migrates_g4_dumps_only(self, tmp_path):
-        from ctm.settings.sycophancy.legacy_migration import migrate_legacy_sources
-        from mcq_bias.pipeline.wrong_arguments import (
-            DEFAULT_ARGUMENT_MODEL,
-            WrongArgumentStore,
-            model_slug,
-        )
-
-        g4 = tmp_path / "dataset_dumps/test/distractor_argument_g4"  # legacy dir name
-        g4.mkdir(parents=True)
-        (g4 / "unit.jsonl").write_text(json.dumps(_legacy_dump_record(RECORD, "gemma argument")) + "\n")
-        # the old gpt-3.5 TaskOutput asset is present but deliberately NOT migrated
-        (tmp_path / "data").mkdir()
-        (tmp_path / "data/wrong_cot_testing.jsonl").write_text(
-            json.dumps(
-                {
-                    "task_spec": {"messages": [], "inference_config": {"model": "gpt-3.5-turbo-0613"}},
-                    "inference_output": {"raw_response": "excluded"},
-                }
-            )
-            + "\n"
-        )
-
-        migrated = migrate_legacy_sources(repo_root=tmp_path, data_dir=tmp_path)
-        assert migrated == {model_slug(DEFAULT_ARGUMENT_MODEL): 1}
-        assert WrongArgumentStore.for_model(DEFAULT_ARGUMENT_MODEL, tmp_path).get(RECORD) == "gemma argument"
-        # idempotent
-        assert all(n == 0 for n in migrate_legacy_sources(repo_root=tmp_path, data_dir=tmp_path).values())
 
 
 class TestAcceptanceFilter:

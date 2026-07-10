@@ -25,7 +25,7 @@ def manifest_registry_entry(manifest: dict) -> dict:
     meta = cfg.get("run_metadata", {}) or {}
     return {
         "display_name": cfg.get("run_name") or cfg.get("experiment_name", "unknown"),
-        "training_type": manifest.get("kind"),                # "rl" | "sft"
+        "training_type": manifest.get("kind"),  # "rl" | "sft"
         "base_model": manifest.get("model"),
         "backend": manifest.get("backend"),
         "setting": meta.get("setting"),
