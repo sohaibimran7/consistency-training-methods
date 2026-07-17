@@ -5,7 +5,6 @@ training entry point): one flag group, one builder, no per-script duplication.
 """
 
 import argparse
-from typing import Optional
 
 from ctm.backends.base import TrainingBackend
 
@@ -45,10 +44,17 @@ def add_backend_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def build_backend(args: argparse.Namespace) -> Optional[TrainingBackend]:
-    """Build the backend selected by the CLI args. None = loop default (TinkerBackend)."""
+def build_backend(
+    args: argparse.Namespace,
+    *,
+    consistency_loss_options: dict | None = None,
+) -> TrainingBackend:
+    """Build the concrete backend explicitly selected by the CLI."""
+
     if args.backend == "tinker":
-        return None
+        from ctm.backends.tinker import TinkerBackend
+
+        return TinkerBackend()
     import torch
 
     from ctm.backends.local.engine import LocalBackend
@@ -60,6 +66,7 @@ def build_backend(args: argparse.Namespace) -> Optional[TrainingBackend]:
         use_lora=not args.local_full_finetune,
         sampler=args.local_sampler,
         vllm_options={"gpu_memory_utilization": args.local_gpu_mem_util},
+        consistency_loss_options=consistency_loss_options,
     )
 
 

@@ -1,0 +1,83 @@
+name: internal-consistency-method-comparison
+
+# Replace these values with the exact inputs for one paper figure. The BCT file
+# contains completed conversations. The paired file contains reference and
+# variant prompts and is shared by ACT, AttCT, and MLPCT.
+variables:
+  model: meta-llama/Llama-3.1-8B-Instruct
+  bct_data: /absolute/path/to/bct-train.jsonl
+  paired_data: /absolute/path/to/paired-prompts.jsonl
+
+x-local-training: &local_training
+  backend: local
+  local_sampler: hf
+  model: "${model}"
+  experiment_name: "${experiment}"
+  batch_size: 8
+  epochs: 1
+  lora_rank: 8
+  save_every: 5
+  "yes": true
+
+training:
+  - name: bct
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *local_training
+      method: bct
+      data: ["${bct_data}"]
+      run_name: bct
+
+  - name: act
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *local_training
+      method: act
+      method_config:
+        layer_selection: all
+        normalize: false
+      data: ["${paired_data}"]
+      run_name: act
+
+  - name: attct
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *local_training
+      method: attct
+      method_config:
+        layer_selection: all
+        layer_weights: uniform
+      data: ["${paired_data}"]
+      run_name: attct
+
+  - name: mlpct
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *local_training
+      method: mlpct
+      method_config:
+        variant: hidden
+        layer_selection: all
+        layer_weights: uniform
+        distance_metric: cosine
+        normalize: false
+      data: ["${paired_data}"]
+      run_name: mlpct
+
+# A paper-specific config can append evaluation and analysis entries. Each
+# evaluation can consume its corresponding result without relying on list order:
+#
+# evaluation:
+#   - name: act-benchmark
+#     command: ["${python}", scripts/run_evals.py]
+#     args:
+#       task_factory: benchmark.tasks:suite
+#       local_checkpoint: "${training.act.checkpoint}"
+#       log_dir: logs/evals/internal-consistency-method-comparison/act
+#       "yes": true
+#
+# analysis:
+#   command: ["${python}", path/to/figure_script.py]
+#   args:
+#     input_dir: logs/evals/internal-consistency-method-comparison
+#     output: figures/internal-consistency-method-comparison.pdf

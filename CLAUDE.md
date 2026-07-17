@@ -1,25 +1,29 @@
-# Project Instructions
+# Project instructions
 
-Successor repo to https://github.com/sohaibimran7/cot-transparency (the
-published codebase behind arXiv:2606.02211). **This repo is legacy-free by
-construction**: further experiments and papers happen here; the old repo is
-the frozen paper artifact. Never add backwards-compatibility shims — if old
-code is needed, port it cleanly or leave it behind.
+This repository succeeds the
+[published implementation](https://github.com/sohaibimran7/cot-transparency).
+Treat the published repository as a frozen paper artifact. Do not add
+compatibility shims. Implement required functionality against the current
+interfaces or leave it in the published repository.
 
-## Training & Eval Runs (hard rule)
-- **ALWAYS** show the user the exact command and parameters for every training
-  run and eval run **before** executing. Present multi-step commands upfront.
-- **Do not execute** until the user explicitly approves.
+## Training and evaluation approval
 
-## What this repo is
-Anti-sycophancy / eval-awareness **consistency training** (BCT = SFT, RLCT = RL,
-plus internal-consistency SFT methods ACT/AttCT/MLPCT = activation/attention/MLP
-losses — local backend + LoRA only) on Tinker or self-hosted GPUs, evaluated
-with the published [mcq-bias](https://github.com/sohaibimran7/mcq-bias) Inspect
-eval.
+- Show the exact commands and resolved parameters before every training or
+  evaluation run.
+- Present all commands in a multi-stage run before execution.
+- Do not execute a paid or remote run until the user explicitly approves it.
+
+## Repository scope
+
+CTM supports modular consistency-training research for sycophancy, jailbreak
+robustness, and evaluation awareness. RLCT consumes an explicitly imported
+training `Setting` on Tinker or `LocalBackend`. BCT, ACT, AttCT, and MLPCT are
+file-driven. Evaluation remains independent of the training setting.
 
 ## Environment
-`uv` throughout. `requirements.txt` is the dependency source of truth.
+
+Use `uv` for environment management and command execution. The layered
+requirements files are the dependency source of truth.
 
 ```bash
 uv venv
@@ -27,49 +31,89 @@ uv pip install -r requirements.txt   # includes the mcq-bias git pin
 uv pip install -e . --no-deps
 ```
 
-API keys in `.env` (gitignored): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-`OPENROUTER_API_KEY`, Tinker key. mcq-bias data root: `$MCQ_BIAS_DATA_DIR`
-(default `~/.cache/mcq_bias`) — no data is committed in this repo.
+`requirements-ctm.txt` declares no concrete benchmark/adapter packages;
+`requirements-adapters.txt` contains those optional composition dependencies.
+
+Store API keys in the gitignored `.env` file. Relevant names include
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `TINKER_API_KEY`,
+and `WANDB_API_KEY`. A W&B key does not enable logging by itself; an experiment
+must also set `wandb_project`. No dataset artifacts are committed here.
 
 ## Where things live
-- `ctm/` — the package: `core/` (rewards, advantages/SNR, configs, types),
-  `backends/` (tinker + local GPU seam), `training/` (RL + SFT loops, rollout
-  logs, manifests), `settings/` (sycophancy, eval_awareness), `evals/`.
-- `scripts/` — `train_rlct.py` (RL consistency training), `train_bct.py`
-  (SFT-family consistency training, `--method bct|act|attct|mlpct`),
-  `rlct_smoke_test.py` (live smoke run).
-- ACT/AttCT/MLPCT losses (`ctm/backends/local/consistency_losses.py`,
-  `mlp_hooks.py`, paired-datum adapter in `ctm/training/consistency_data.py`)
-  are **vendored** from https://github.com/c-wei/AttCT @ 79527cf — copied, not
-  pinned: that repo is an unpackaged, unlicensed, fast-moving research monorepo
+
+- `ctm/settings/base.py` — generic `Setting` protocol and explicit
+  `module:callable` construction; `runtime.py` validates the setting-to-trainer handoff and
+  records artifact identities; `families.py` is the strict fixed-K family
+  schema.
+- `ctm_data/adapters/` — concrete mcq-bias, WildJailbreak, and EvalAwareBench
+  adapters and source builders. `ctm/` must never import this directory or its
+  benchmark dependencies.
+- `ctm/training/refusal/` — refusal trait used only by relevant training
+  settings. Official benchmark evaluation remains upstream.
+- `ctm/evals/runner.py` + `tinker_model.py` — task-factory Inspect runner
+  and a validated wrapper around tinker-cookbook's checkpoint adapter.
+- `python -m ctm_data.adapters.wildjailbreak.builder` and
+  `python -m ctm_data.adapters.eval_awareness.builder` — training-artifact
+  builders for explicitly supplied source JSONL files.
+- `scripts/train_rlct.py` — generic `--setting-factory`, `--setting-config`, and
+  `--load-config`.
+- `scripts/train_bct.py` — file-driven SFT/internal-consistency training,
+  `--method bct|act|attct|mlpct`.
+- `scripts/run_evals.py` — runs `module:task_factory` without a benchmark
+  registry or setting coupling.
+- `scripts/run_experiment.py` — minimal YAML command pipeline; training and
+  evaluation entries are independent.
+- ACT/AttCT/MLPCT losses (`ctm/training/consistency_losses.py`, local execution
+  in `ctm/backends/local/engine.py`, and paired-datum construction in
+  `ctm/training/consistency_data.py`)
+  are vendored from [AttCT](https://github.com/c-wei/AttCT) at commit `79527cf`.
+  The code is copied rather than installed because that repository is an
+  unpackaged, unlicensed, fast-moving research monorepo
   (top-level `losses`/`data` modules, hard deps on vllm/bitsandbytes). To pick
   up upstream changes, diff against the noted SHA and port deliberately.
-- Eval tasks/scorers come from the **mcq-bias package** (pinned in
-  requirements.txt; co-develop with `uv pip install -e /Users/work/mcq-bias --no-deps`).
-- `ctm/settings/sycophancy/` is the TRAINING half of the setting (RL cue
-  family, trait classifier for rewards, datapoint perturbations); the EVAL
-  half lives entirely in mcq-bias. Its `data.py` still loads datapoints from
-  the old repo's dumps — dies with port-queue item 1.
+- Sycophancy eval tasks/scorers can come directly from the pinned **mcq-bias package**
+  (co-develop with `uv pip install -e /path/to/mcq-bias --no-deps`). Its
+  training rows are native `mcq_bias` JSONL files selected explicitly in an
+  experiment config; there is no CTM split policy, dump fallback, or runtime
+  prompt conversion.
 
-## Port queue (from the old repo — the only things not yet here)
-1. **Training-data generation**: BCT/VFT datapoints from mcq-bias frozen sets
-   (old scripts built from `dataset_dumps`; frozen rows carry
-   `biased_messages`/`unbiased_messages` — thin adapter needed). Until then
-   `train_rlct.py`'s default `--data_dir` points at a dumps path that does
-   not exist here — pass data explicitly.
-2. **Tinker inference/sampling layer**: `TinkerSamplingClient` etc. still live
-   in the old repo's `cot_transparency/apis/tinker/inference.py` (not a shim);
-   port into `ctm/backends/` without the legacy data models.
-3. **Checkpoint-eval bridge**: old `run_experiment.py` shells out to the legacy
-   `run_tinker_evals`; port to drive `python -m mcq_bias` / inspect directly.
-4. **Experiment analysis**: cross-checkpoint aggregation/plots over mcq-bias
-   eval logs (per-run switch metrics are already in-log; the old
-   `visualize_results` BIR machinery stays behind).
-5. Skills: only `train-tinker` and `model-apis` were carried over; port
-   run-evals/analyze-evals/generate-* once 1–4 land.
+## Frozen artifact rules
 
-## Tests & lint
+- Treat every JSONL and its manifest as an inseparable pair. Loaders verify the
+  schema version, row count, and content SHA-256. Builders refuse to overwrite
+  either path; changed source revision, split, seed, prompt style, or fixed-K
+  choice always gets a new output path.
+- Sycophancy training accepts exact native mcq-bias files through `data_paths`.
+  CTM neither reserves an evaluation prefix nor infers evaluation from them.
+- Jailbreak materialization freezes fixed-K training families from exactly the
+  supplied WildJailbreak rows. Shipped completions are never used. Evaluation
+  datasets and judges come from the chosen upstream task/CLI.
+- The refusal training grader defaults to temperature 0, a 32,768-token
+  ceiling, bounded retries and concurrency, and strict XML parsing. Training
+  manifests record its resolved generation configuration and rubric hash.
+- EvalAwareBench artifacts retain their source revision and CC-BY-NC-4.0
+  license provenance. Evaluation is configured separately through the chosen
+  benchmark task and judge.
+- Family-based runs persist the exact selected source-ID selection and K for run
+  provenance. That record does not restrict later evaluations.
+- RL runs persist every sampled response by default. Each record states whether
+  it was skipped from training and records the reason when applicable.
+
+## Known limitations
+
+1. `train_bct.py` consumes completed response rows; this repository does not
+   generate self-target BCT response data.
+2. Inspect logs can be analyzed individually, but the repository does not yet
+   provide cross-checkpoint aggregation or plotting commands.
+3. The evaluation runner can load LocalBackend LoRA checkpoints directly with
+   `--local-checkpoint`. Full-weight LocalBackend checkpoints are not supported
+   by this evaluation bridge.
+
+## Tests and formatting
+
 ```bash
-pytest            # offline subset (network/gpu/tinker markers excluded)
-uv run black . && uv run ruff check .
+uv run python -m pytest
+uv run python -m pytest tests
+uv run black --check .
+uv run ruff check .
 ```

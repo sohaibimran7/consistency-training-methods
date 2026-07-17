@@ -4,8 +4,6 @@ Canonical home of ``ConsistencyReward`` (previously defined inside
 ``cot_transparency.apis.tinker.rl_training``, which now re-exports from here).
 """
 
-from typing import Optional
-
 from ctm.core.types import Rollout
 
 
@@ -23,8 +21,8 @@ class ConsistencyReward:
         rollouts: list[Rollout],
         p_hat: dict[int, float],
         p_ref: float,
-        gaps: Optional[dict[int, float]] = None,
-        baseline: Optional[float] = None,
+        gaps: dict[int, float] | None = None,
+        baseline: float | None = None,
     ) -> list[float]:
         """Consistency-only rewards for training perturbation rollouts.
 
@@ -39,23 +37,38 @@ class ConsistencyReward:
         """
         if gaps is None:
             gaps = {pert: rate - p_ref for pert, rate in p_hat.items()}
+        if any(r.trait_value is None for r in rollouts):
+            raise ValueError("consistency rewards require non-abstained rollouts")
         return [
-            -gaps[r.perturbation_idx] * (r.trait_value - (p_hat[r.perturbation_idx] if baseline is None else baseline))
+            -gaps[r.perturbation_idx]
+            * (float(r.trait_value) - (p_hat[r.perturbation_idx] if baseline is None else baseline))
             for r in rollouts
         ]
 
     def compute_anchor_rewards(
-        self, ref_rollouts: list[Rollout], p_ref: float, p_ref_initial: Optional[float], gap: Optional[float] = None
+        self,
+        ref_rollouts: list[Rollout],
+        reference_rates: dict[int, float],
+        initial_reference_rates: dict[int, float],
+        gaps: dict[int, float] | None = None,
     ) -> list[float]:
-        """Anchor rewards for reference perturbation rollouts.
+        """Per-reference anchor rewards for reference perturbation rollouts.
 
-        r = -gap * (trait - p_ref), gap = (p_ref - p_ref_initial) by default.
+        ``r[x,i] = -(p_x - p_x_initial) * (trait[x,i] - p_x)``.
 
-        ``gap`` lets the caller substitute a transformed gap. Returns zeros when no
-        anchor target is available (p_ref_initial is None and no gap supplied).
+        ``gaps`` lets the caller substitute a transformed gap per reference index.
+        The caller must exclude rollouts whose current or initial reference rate is
+        unavailable; mixing an aggregate reference rate into this term is incorrect.
         """
-        if gap is None:
-            if p_ref_initial is None:
-                return [0.0] * len(ref_rollouts)
-            gap = p_ref - p_ref_initial
-        return [-gap * (r.trait_value - p_ref) for r in ref_rollouts]
+        if gaps is None:
+            gaps = {
+                idx: rate - initial_reference_rates[idx]
+                for idx, rate in reference_rates.items()
+                if idx in initial_reference_rates
+            }
+        if any(r.trait_value is None for r in ref_rollouts):
+            raise ValueError("anchor rewards require non-abstained rollouts")
+        return [
+            -gaps[r.perturbation_idx] * (float(r.trait_value) - reference_rates[r.perturbation_idx])
+            for r in ref_rollouts
+        ]

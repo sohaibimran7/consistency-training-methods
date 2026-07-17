@@ -1,17 +1,16 @@
-"""Pluggable settings (sycophancy, eval-awareness, ...).
+"""Pluggable consistency-training settings.
 
-A Setting bundles a phenomenon's train datapoints, named perturbations (cues),
-trait classifier, grader prompts, and in-domain Inspect tasks — formalizing the
-injection pattern the training loops already use. See ctm.settings.base.
+A Setting bundles only the training datapoints, prompt perturbations, trait
+classifier, and answer parser. Evaluation is selected independently.
 
-    from ctm.settings import get_setting
-    setting = get_setting("sycophancy", bias_types=["wrong_few_shot"], prompt_style="no_cot")
+    from ctm.settings import create_setting
+    setting = create_setting("my_project.adapters:create_setting", artifact_path="data/train.jsonl")
     trainer.train(datapoints=setting.load_datapoints(n_datapoints=64),
                   perturbation_fns=setting.perturbations(),
                   trait_classifier=setting.trait_classifier(),
                   answer_parser=setting.answer_parser())
 """
 
-from ctm.settings.base import Setting, get_setting, register_setting
+from ctm.settings.base import Setting, create_setting
 
-__all__ = ["Setting", "get_setting", "register_setting"]
+__all__ = ["Setting", "create_setting"]

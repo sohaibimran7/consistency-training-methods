@@ -9,7 +9,7 @@ Usage:
     from ctm.training.rl import RLConfig, RLTrainer
 
     config = RLConfig(model="meta-llama/Llama-3.1-8B-Instruct", experiment_name="rl", run_name="test")
-    trainer = RLTrainer(config=config)              # defaults to TinkerBackend()
+    trainer = RLTrainer(config=config, backend=backend)
     trainer.setup()
     checkpoint = asyncio.run(trainer.train(
         datapoints=[{"question": "What is 2+2?"}],
@@ -26,6 +26,7 @@ import asyncio
 from collections import defaultdict, deque
 import inspect
 import logging
+import math
 import random
 import sys
 import traceback
@@ -45,7 +46,6 @@ from tinker_cookbook.completers import TokensWithLogprobs
 
 from ctm.backends.base import SamplerHandle, TrainingBackend
 from ctm.backends.renderers import decode_response, get_renderer_and_tokenizer
-from ctm.backends.tinker import TinkerBackend
 from ctm.core import advantages as adv_math
 from ctm.core.config import AdamConfig, CheckpointConfig, LoRAConfig
 from ctm.core.rewards import ConsistencyReward
@@ -76,19 +76,23 @@ def _is_async_callable(fn: Callable) -> bool:
     return call is not None and inspect.iscoroutinefunction(call)
 
 
-async def _classify_traits(fn: Callable, raw: list, datapoint: dict) -> list[float]:
-    """Run a (sync or async) classifier over sampled rollouts, returning floats.
+async def _classify_traits(fn: Callable, raw: list, datapoint: dict, messages: list[dict]) -> list[float | None]:
+    """Run a classifier, preserving ``None`` as an explicit abstention.
 
     ``raw`` holds the sampler's ``(tokens, logprobs, full_text, answer_text)`` tuples.
-    Async classifiers (e.g. an LLM judge for eval-awareness misalignment) are awaited
+    Async classifiers (for example, an LLM trait judge) are awaited
     concurrently so network judges don't serialize the rollout loop; sync ones (e.g. an
     answer parser) are called inline.
     """
     if _is_async_callable(fn):
-        values = await asyncio.gather(*[fn(answer_text, datapoint) for _, _, _, answer_text in raw])
+        values = await asyncio.gather(*[fn(answer_text, datapoint, messages) for _, _, _, answer_text in raw])
     else:
-        values = [fn(answer_text, datapoint) for _, _, _, answer_text in raw]
-    return [float(v) for v in values]
+        values = [fn(answer_text, datapoint, messages) for _, _, _, answer_text in raw]
+    traits = [None if value is None else float(value) for value in values]
+    invalid = [value for value in traits if value is not None and (not math.isfinite(value) or not 0.0 <= value <= 1.0)]
+    if invalid:
+        raise ValueError(f"trait_classifier returned values outside finite [0, 1]: {invalid[:5]}")
+    return traits
 
 
 # Module-level aliases kept for the historical import surface
@@ -126,7 +130,9 @@ class TrainingLoopConfig(BaseModel):
     gradient_accumulation_steps: int = 1
     refresh_policy_every_n_steps: int = 1  # 1 = fully on-policy (cookbook contract); all configs set this explicitly
     n_epochs: int = 1
-    normalize: Literal["pooled", "per_item"] = "pooled"  # advantage standardization: whole batch vs per-item group
+    # Normalize each reward population within a datapoint by default. ``pooled``
+    # instead standardizes that population across every datapoint in the batch.
+    normalize: Literal["pooled", "per_item"] = "per_item"
 
 
 class GenerationConfig(BaseModel):
@@ -141,6 +147,7 @@ class RLConfig(BaseModel):
 
     experiment_name: str = "rl"
     run_name: str = "default"
+    wandb_project: Optional[str] = None
     model: str = "meta-llama/Llama-3.1-8B-Instruct"
     lora: LoRAConfig = LoRAConfig()
     optimizer: AdamConfig = AdamConfig()
@@ -156,7 +163,9 @@ class RLConfig(BaseModel):
     )
     anchor_weight: float = 0.5
     anchor_model: Literal["base", "initial_policy"] = "base"
-    # Advantage construction:
+    # Advantage construction. ``grpo_normalized`` is the paper-era/default
+    # estimator. ``snr_scaling`` and ``matched_pair`` are post-paper research
+    # extensions and must remain explicit experiment choices rather than defaults.
     #   "grpo_normalized" — standardize each population to unit variance. With one
     #     datapoint/perturbation per step this divides out (p_hat - p_ref) entirely,
     #     so only the sign of the gap survives (chases sampling noise near convergence).
@@ -199,12 +208,11 @@ class RLConfig(BaseModel):
     #           keeps the output distribution near base where over-refusal would otherwise grow.
     helpfulness_mode: Literal["reward", "anchor", "distill"] = "reward"
     log_base_dir: str = "logs"
-    # Rollout persistence: "gradient" writes every gradient-receiving rollout (consistency +
-    # anchor) per step as compressed JSONL under rollout_dir (default: <log_dir>/rollouts),
-    # with reward/advantage/rate context — see ctm.training.rollout_log. "none" disables.
-    rollout_log: Literal["none", "gradient"] = "gradient"
+    # Rollout persistence: "all" writes every sampled response per step as compressed
+    # JSONL, including rate-only, failed, and zero-signal samples. "none" disables.
+    rollout_log: Literal["none", "all"] = "all"
     rollout_dir: Optional[str] = None
-    # Free-form provenance (setting name, bias types, datasets, ...) set by the CLI;
+    # Free-form provenance supplied by the selected adapter and CLI;
     # flows into the run manifest via the config dump — the registry generator reads it.
     run_metadata: dict = {}
 
@@ -220,16 +228,16 @@ class RLTrainer:
     def __init__(
         self,
         config: RLConfig,
+        backend: TrainingBackend,
         reward_function: Optional[ConsistencyReward] = None,
         resume_from: Optional[str] = None,
         resume_with_optimizer: bool = False,
-        backend: Optional[TrainingBackend] = None,
     ):
         self.config = config
         self.reward_function = reward_function or ConsistencyReward()
         self.resume_from = resume_from
         self.resume_with_optimizer = resume_with_optimizer
-        self.backend: TrainingBackend = backend if backend is not None else TinkerBackend()
+        self.backend = backend
         self.setup_done: bool = False
         self.sampling_client: SamplerHandle | None = None
         self.base_sampling_client: SamplerHandle | None = None
@@ -306,27 +314,34 @@ class RLTrainer:
         self,
         datapoint: dict,
         perturbation_fns: list[Callable[[dict], dict]],
-        trait_classifier: Callable[[str, dict], float],
+        trait_classifier: Callable[[str, dict, list[dict]], float | None],
         sampling_client: Optional[SamplerHandle] = None,
         answer_parser: Optional[Callable[[str], Optional[str]]] = None,
         rates_only: bool = False,
+        requested_indices: Optional[Sequence[int]] = None,
     ) -> RolloutResult:
         """Collect rollouts and compute rates in one pass.
 
-        Rates are computed internally so the full rollout data (tokens/logprobs
-        for all rollouts) can be freed immediately. Only the gradient-selected
-        subset retains tokens/logprobs.
+        Rates are computed internally; every sampled response is retained for
+        the rollout log, alongside the subsets selected as gradient candidates.
 
         Args:
             sampling_client: Explicit sampler handle to sample from. Defaults to
                 self.sampling_client (current policy).
             rates_only: If True, skip gradient rollout selection and return empty
                 rollout lists. Used for anchor/base sampling where only rates are needed.
+            requested_indices: If provided, sample exactly these perturbation indices.
+                Anchor-rate measurement passes only the reference indices so it does
+                not generate and judge training variants that will be discarded.
         """
         n_perts = len(perturbation_fns)
         training_idx = set(_resolve_indices(self.config.training.perturbation_indices, n_perts))
         ref_idx = set(_resolve_indices(self.config.reference_rate.perturbation_indices, n_perts))
-        all_idx = training_idx | ref_idx
+        configured_idx = training_idx | ref_idx
+        all_idx = set(requested_indices) if requested_indices is not None else configured_idx
+        invalid = sorted(idx for idx in all_idx if idx not in configured_idx or idx < 0 or idx >= n_perts)
+        if invalid:
+            raise ValueError(f"requested perturbation indices are not configured: {invalid}")
 
         n_rollouts_per = {
             idx: max(
@@ -340,7 +355,7 @@ class RLTrainer:
 
         resample = self.config.unparsed_handling == "resample" and answer_parser is not None
 
-        async def rollout_perturbation(idx: int) -> tuple[int, list[Rollout], dict]:
+        async def rollout_perturbation(idx: int) -> tuple[int, list[Rollout], list[Rollout], dict]:
             pert_result = perturbation_fns[idx](datapoint)
             messages = pert_result["messages"]
             prompt = self.renderer.build_generation_prompt(messages)
@@ -352,50 +367,68 @@ class RLTrainer:
                 return answer_parser(s[3]) is not None and s[1] is not None
 
             n_drawn, gave_up = 0, 0
+            sampled_raw = []
             if resample and n_want > 0:
                 # Re-sample each slot until its answer is usable, up to max_resample_attempts
                 # rounds. Hedging can't lower the rate; its cost shows up as n_drawn > n_want.
-                raw, rounds = [], 0
-                while len(raw) < n_want and rounds < self.config.max_resample_attempts:
-                    need = n_want - len(raw)
+                rate_raw, rounds = [], 0
+                while len(rate_raw) < n_want and rounds < self.config.max_resample_attempts:
+                    need = n_want - len(rate_raw)
                     batch = await self._sample_from_client(client, prompt, need)
+                    sampled_raw.extend(batch)
                     n_drawn += need
-                    raw.extend(s for s in batch if _usable(s))
+                    rate_raw.extend(s for s in batch if _usable(s))
                     rounds += 1
-                raw = raw[:n_want]
-                gave_up = n_want - len(raw)  # slots never filled within the attempt budget
+                rate_raw = rate_raw[:n_want]
+                gave_up = n_want - len(rate_raw)  # slots never filled within the attempt budget
             else:
-                raw = await self._sample_from_client(client, prompt, n_want)
+                sampled_raw = await self._sample_from_client(client, prompt, n_want)
+                rate_raw = sampled_raw
                 n_drawn = n_want
 
-            trait_values = await _classify_traits(trait_classifier, raw, datapoint)
+            # In resample mode, rejected attempts are still logged but need not incur
+            # a grader call: they already failed answer/logprob usability.
+            graded_raw = rate_raw if resample else sampled_raw
+            trait_values = await _classify_traits(trait_classifier, graded_raw, datapoint, messages)
+            traits_by_sample = {id(sample): value for sample, value in zip(graded_raw, trait_values)}
+            rate_sample_ids = {id(sample) for sample in rate_raw}
 
-            rollouts = []
-            for (tokens, logprobs, full_text, answer_text), trait_value in zip(raw, trait_values):
+            sampled_rollouts = []
+            rate_rollouts = []
+            for sample in sampled_raw:
+                tokens, logprobs, full_text, answer_text = sample
+                grader_evaluated = id(sample) in traits_by_sample
+                trait_value = traits_by_sample.get(id(sample))
                 answer_ok = answer_parser(answer_text) is not None if answer_parser else True
-                parsed_ok = answer_ok and logprobs is not None
-                rollouts.append(
-                    Rollout(
-                        tokens=tokens,
-                        logprobs=logprobs if logprobs is not None else [],
-                        text=full_text,
-                        trait_value=trait_value,
-                        perturbation_idx=idx,
-                        parsed_successfully=parsed_ok,
-                        prompt=prompt,
-                    )
+                parsed_ok = answer_ok and logprobs is not None and trait_value is not None
+                rollout = Rollout(
+                    tokens=tokens,
+                    logprobs=logprobs if logprobs is not None else [],
+                    text=full_text,
+                    trait_value=trait_value,
+                    perturbation_idx=idx,
+                    parsed_successfully=parsed_ok,
+                    answer_parsed=answer_ok,
+                    has_logprobs=logprobs is not None,
+                    grader_evaluated=grader_evaluated,
+                    grader_failed=grader_evaluated and trait_value is None,
+                    prompt=prompt,
                 )
-            return idx, rollouts, {"n_want": n_want, "n_drawn": n_drawn, "gave_up": gave_up}
+                sampled_rollouts.append(rollout)
+                if id(sample) in rate_sample_ids:
+                    rate_rollouts.append(rollout)
+            return idx, rate_rollouts, sampled_rollouts, {"n_want": n_want, "n_drawn": n_drawn, "gave_up": gave_up}
 
-        results = await asyncio.gather(*[rollout_perturbation(idx) for idx in all_idx])
-        all_rollouts = {idx: rolls for idx, rolls, _ in results}
+        results = await asyncio.gather(*[rollout_perturbation(idx) for idx in sorted(all_idx)])
+        all_rollouts = {idx: rolls for idx, rolls, _, _ in results}
+        sampled_rollouts = [rollout for _, _, sampled, _ in results for rollout in sampled]
 
         # Aggregate resample stats into ref/train buckets (resample mode only).
         resample_stats: dict = {}
         if resample:
-            for name, idxs in (("ref", ref_idx), ("train", training_idx)):
+            for name, idxs in (("ref", ref_idx & all_idx), ("train", training_idx & all_idx)):
                 w = d = g = 0
-                for idx, _rolls, s in results:
+                for idx, _rolls, _sampled, s in results:
                     if idx in idxs:
                         w += s["n_want"]
                         d += s["n_drawn"]
@@ -406,23 +439,28 @@ class RLTrainer:
 
         n_total = sum(len(r_list) for r_list in all_rollouts.values())
         n_parsed = sum(sum(1 for r in r_list if r.parsed_successfully) for r_list in all_rollouts.values())
+        n_trait_abstained = sum(sum(1 for r in r_list if r.trait_value is None) for r_list in all_rollouts.values())
 
         if rates_only:
             train_rollouts = []
             anchor_rollouts = []
         else:
             train_rollouts = _select_rollouts(
-                all_rollouts, list(training_idx), self.config.training.n_rollouts_for_consistency
+                all_rollouts, sorted(training_idx & all_idx), self.config.training.n_rollouts_for_consistency
             )
-            anchor_rollouts = _select_rollouts(all_rollouts, list(ref_idx), self.config.training.n_rollouts_for_anchor)
+            anchor_rollouts = _select_rollouts(
+                all_rollouts, sorted(ref_idx & all_idx), self.config.training.n_rollouts_for_anchor
+            )
 
         return RolloutResult(
             train_rollouts=train_rollouts,
             anchor_rollouts=anchor_rollouts,
+            sampled_rollouts=sampled_rollouts,
             rates=rates,
             rate_counts=rate_counts,
             n_total=n_total,
             n_parsed=n_parsed,
+            n_trait_abstained=n_trait_abstained,
             resample_stats=resample_stats,
         )
 
@@ -534,7 +572,9 @@ class RLTrainer:
                 ]
                 return datums, [1.0] * len(datums)  # logged as helpfulness_mean=1.0 (imitating base)
             raw = await self._sample_from_client(self.sampling_client, prompt, n)
-            scores = await _classify_traits(self._help_cls, raw, dp)
+            classified = await _classify_traits(self._help_cls, raw, dp, messages)
+            scored_samples = [(sample, score) for sample, score in zip(raw, classified) if score is not None]
+            scores = [score for _, score in scored_samples]
             if self.config.helpfulness_mode == "anchor":
                 # MATCH this prompt's accuracy to its base level: standardise the scores, then
                 # flip sign by drift direction (p>p_base → discourage high = push down; p<p_base →
@@ -561,7 +601,7 @@ class RLTrainer:
                     ),
                     weight * a,
                 )
-                for (tokens, logprobs, full_text, _ans), a in zip(raw, adv)
+                for ((tokens, logprobs, full_text, _ans), _score), a in zip(scored_samples, adv)
                 if logprobs is not None  # skip missing-logprob samples (would poison the IS ratio)
             ]
             return datums, scores
@@ -578,9 +618,10 @@ class RLTrainer:
         n = self.config.n_helpfulness_rollouts
 
         async def one(dp: dict) -> None:
-            prompt = self.renderer.build_generation_prompt(self._help_fn(dp)["messages"])
+            messages = self._help_fn(dp)["messages"]
+            prompt = self.renderer.build_generation_prompt(messages)
             raw = await self._sample_from_client(self.base_sampling_client, prompt, n)
-            scores = await _classify_traits(self._help_cls, raw, dp)
+            scores = [score for score in await _classify_traits(self._help_cls, raw, dp, messages) if score is not None]
             dp["_help_base_acc"] = (sum(scores) / len(scores)) if scores else 0.0
 
         await asyncio.gather(*[one(dp) for dp in self._help_dps])
@@ -591,11 +632,12 @@ class RLTrainer:
     def _build_training_batch(
         self,
         batch_items: list[BatchItem],
-    ) -> tuple[list, list[float], list[float], list[float], list[tuple]] | None:
+        sampled_items: Optional[list[BatchItem]] = None,
+    ) -> tuple[list, list[float], list[float], list[float], list[tuple]]:
         """Compute rewards, normalize advantages, and build training data.
 
-        Returns (grad_datums, consistency_rewards, anchor_rewards, advantages, policy_grad_data)
-        or None if the batch should be skipped (empty/zero advantages).
+        Returns ``grad_datums=[]`` for an empty/zero-signal batch while retaining
+        its scored rollout context for logging.
         """
         anchor_weight = self.config.anchor_weight
         use_snr = self.config.advantage_estimator == "snr_scaling"
@@ -672,31 +714,41 @@ class RLTrainer:
         anchor_meta = []
         if anchor_weight > 0:
             for item in batch_items:
-                anchor_gap = None
-                anchor_f = 1.0
-                if (use_snr or use_matched) and item.p_ref_init is not None:
-                    raw = item.p_ref - item.p_ref_init
-                    # p_ref_init was sampled with its OWN parsed count (step-0 policy or the
-                    # anchor model), not this step's n_ref_parsed; use the tracked count and
-                    # fall back to the configured budget when unavailable.
-                    n_init = item.n_ref_init_parsed or self.config.reference_rate.n_rollouts
-                    se = self._gap_se(item.p_ref, item.n_ref_parsed, item.p_ref_init, n_init)
-                    if use_snr:
-                        anchor_f = self._snr_shrink_factor(raw, se)  # gate applied after normalization
-                        anchor_gap = raw
-                    else:  # matched_pair: keep the shrunk gap in the reward (div path below)
-                        anchor_gap = self._snr_scale_gap(raw, se)
+                # Each reference is anchored to its own initial rate. The configured
+                # aggregate p_ref remains the consistency target, but does not belong
+                # inside an individual reference's anchor term.
+                valid_indices = set(item.reference_rates) & set(item.initial_reference_rates)
+                valid_rollouts = [r for r in item.anchor_rollouts if r.perturbation_idx in valid_indices]
+                anchor_gaps: dict[int, float] | None = None
+                anchor_factors: dict[int, float] = {}
+                if use_snr or use_matched:
+                    anchor_gaps = {}
+                    for idx in valid_indices:
+                        current = item.reference_rates[idx]
+                        initial = item.initial_reference_rates[idx]
+                        raw = current - initial
+                        n_current = item.reference_rate_counts.get(idx, 0)
+                        n_initial = item.initial_reference_rate_counts.get(idx, self.config.reference_rate.n_rollouts)
+                        se = self._gap_se(current, n_current, initial, n_initial)
+                        if use_snr:
+                            anchor_gaps[idx] = raw
+                            anchor_factors[idx] = self._snr_shrink_factor(raw, se)
+                        else:
+                            anchor_gaps[idx] = self._snr_scale_gap(raw, se)
                 rewards = self.reward_function.compute_anchor_rewards(
-                    item.anchor_rollouts, item.p_ref, item.p_ref_init, gap=anchor_gap
+                    valid_rollouts,
+                    item.reference_rates,
+                    item.initial_reference_rates,
+                    gaps=anchor_gaps,
                 )
                 a_start = len(anchor_rewards)
                 anchor_rewards.extend(rewards)
                 anchor_slices.append((a_start, len(anchor_rewards)))
-                for rollout in item.anchor_rollouts:
+                for rollout in valid_rollouts:
                     anchor_data.append((rollout.prompt, rollout))
                     anchor_meta.append((item, rollout, "anchor"))
-                    anchor_div.append(self._trait_std(item.p_ref))
-                    anchor_snr.append(anchor_f)
+                    anchor_div.append(self._trait_std(item.reference_rates[rollout.perturbation_idx]))
+                    anchor_snr.append(anchor_factors.get(rollout.perturbation_idx, 1.0))
 
         # Form advantages.
         #  - grpo_normalized: standardize each population to unit variance (drops gap magnitude).
@@ -735,34 +787,68 @@ class RLTrainer:
         policy_grad_data = consistency_data + anchor_data
         advantages = consistency_adv + anchor_adv
 
-        # Skip empty batches
-        if not advantages or all(abs(a) < 1e-8 for a in advantages):
-            return None
+        has_signal = bool(advantages) and any(abs(a) >= 1e-8 for a in advantages)
 
-        # Rollout persistence: stash per-rollout context (minus step/epoch, stamped by the
-        # loop) so gradient rollouts can be inspected later with their reward/advantage.
+        # Rollout persistence: every sampled response is recorded. Candidate lookup
+        # adds reward/advantage context where available; everything else carries a
+        # concrete reason for being skipped from training.
         self._pending_rollout_meta = []
         if self._rollout_logger is not None:
-            for (item, rollout, role), reward, advantage in zip(
-                consistency_meta + anchor_meta, all_rewards, advantages
-            ):
-                self._pending_rollout_meta.append(
-                    dict(
-                        datapoint_idx=item.datapoint_idx,
-                        perturbation_idx=rollout.perturbation_idx,
-                        role=role,
-                        prompt_text=self._decode_prompt(rollout.prompt),
-                        completion_text=rollout.text,
-                        trait_value=rollout.trait_value,
-                        reward=reward,
-                        advantage=advantage,
-                        p_hat=item.p_hat.get(rollout.perturbation_idx) if role == "train" else None,
-                        p_ref=item.p_ref,
-                        p_ref_init=item.p_ref_init,
-                    )
+            candidate_info = {
+                id(rollout): (item, role, reward, advantage)
+                for (item, rollout, role), reward, advantage in zip(
+                    consistency_meta + anchor_meta, all_rewards, advantages
                 )
-
-        grad_datums = [self._create_rl_datum(prompt, r, adv) for (prompt, r), adv in zip(policy_grad_data, advantages)]
+            }
+            for item in sampled_items or batch_items:
+                for rollout, sample_source in (
+                    *((rollout, "policy") for rollout in item.sampled_rollouts),
+                    *((rollout, "anchor_model") for rollout in item.initial_rollouts),
+                ):
+                    candidate = candidate_info.get(id(rollout))
+                    if candidate is not None:
+                        _, role, reward, advantage = candidate
+                        skipped = not has_signal
+                        skip_reason = "zero_advantage_batch" if skipped else None
+                    else:
+                        role = "initial_reference" if sample_source == "anchor_model" else "rate"
+                        reward = advantage = None
+                        skipped = True
+                        if rollout.grader_failed:
+                            skip_reason = "grader_failure"
+                        elif not rollout.answer_parsed:
+                            skip_reason = "answer_parse_failure"
+                        elif not rollout.has_logprobs:
+                            skip_reason = "missing_logprobs"
+                        elif sample_source == "anchor_model":
+                            skip_reason = "initial_rate_only"
+                        else:
+                            skip_reason = "rate_only"
+                    self._pending_rollout_meta.append(
+                        dict(
+                            datapoint_idx=item.datapoint_idx,
+                            perturbation_idx=rollout.perturbation_idx,
+                            role=role,
+                            sample_source=sample_source,
+                            prompt_text=self._decode_prompt(rollout.prompt),
+                            completion_text=rollout.text,
+                            trait_value=rollout.trait_value,
+                            parsed_successfully=rollout.parsed_successfully,
+                            grader_failed=rollout.grader_failed,
+                            reward=reward,
+                            advantage=advantage,
+                            skipped_from_training=skipped,
+                            skip_reason=skip_reason,
+                            p_hat=(item.p_hat.get(rollout.perturbation_idx) if role == "train" else None),
+                            p_ref=item.p_ref,
+                            p_ref_init=item.p_ref_init,
+                        )
+                    )
+        grad_datums = (
+            [self._create_rl_datum(prompt, r, adv) for (prompt, r), adv in zip(policy_grad_data, advantages)]
+            if has_signal
+            else []
+        )
         return grad_datums, consistency_rewards, anchor_rewards, advantages, policy_grad_data
 
     def _decode_prompt(self, prompt: Any) -> str:
@@ -773,7 +859,7 @@ class RLTrainer:
             return ""
 
     def _log_rollouts(self, global_step: int, epoch: int) -> None:
-        """Persist the gradient rollouts staged by _build_training_batch (if enabled)."""
+        """Persist every rollout staged by _build_training_batch (if enabled)."""
         if self._rollout_logger is None or not self._pending_rollout_meta:
             return
         try:
@@ -788,14 +874,17 @@ class RLTrainer:
         self,
         datapoints: Sequence[dict],
         perturbation_fns: list[Callable[[dict], dict]],
-        trait_classifier: Callable[[str, dict], float],
-        initial_reference_rates: Optional[dict[int, float]] = None,
+        trait_classifier: Callable[[str, dict, list[dict]], float | None],
+        initial_reference_rates: Optional[dict[int, dict[int, float]]] = None,
         answer_parser: Optional[Callable[[str], Optional[str]]] = None,
         helpfulness_datapoints: Optional[Sequence[dict]] = None,
         helpfulness_perturbation_fn: Optional[Callable[[dict], dict]] = None,
-        helpfulness_classifier: Optional[Callable[[str, dict], float]] = None,
+        helpfulness_classifier: Optional[Callable[[str, dict, list[dict]], float]] = None,
     ) -> str:
         """Run RL consistency training. Returns final checkpoint path.
+
+        ``initial_reference_rates`` maps datapoint index to its explicit
+        ``{reference_index: initial_rate}`` measurements.
 
         If ``helpfulness_weight > 0`` and ``helpfulness_datapoints`` are given, a benign
         GRPO term (reward = ``helpfulness_classifier`` ∈ [0,1]) is mixed into every step's
@@ -822,7 +911,7 @@ class RLTrainer:
         log_dir.mkdir(parents=True, exist_ok=True)
         logger = setup_logging(
             log_dir=str(log_dir),
-            wandb_project=self.config.experiment_name,
+            wandb_project=self.config.wandb_project,
             wandb_name=self.config.run_name,
             config=self.config.model_dump(),
         )
@@ -877,7 +966,7 @@ class RLTrainer:
         datapoints: list[dict],
         perturbation_fns: list[Callable],
         trait_classifier: Callable,
-        initial_reference_rates: dict | None,
+        initial_reference_rates: dict[int, dict[int, float]] | None,
         answer_parser: Callable | None,
     ):
         """Inner training loop."""
@@ -906,7 +995,7 @@ class RLTrainer:
         datapoints: list[dict],
         perturbation_fns: list[Callable],
         trait_classifier: Callable,
-        initial_reference_rates: dict | None,
+        initial_reference_rates: dict[int, dict[int, float]] | None,
         answer_parser: Callable | None,
     ):
         n_datapoints = len(datapoints)
@@ -916,8 +1005,12 @@ class RLTrainer:
 
         if initial_reference_rates is None:
             initial_reference_rates = {}
-        # Parsed-rollout count behind each cached p_ref_init, for a correctly-sized anchor SE.
-        initial_reference_counts: dict[int, int] = {}
+        # Parsed-rollout counts behind the per-reference initial rates. Callers can
+        # supply rates but not counts, so use the configured sampling budget there.
+        initial_reference_counts: dict[int, dict[int, int]] = {
+            dp_idx: {idx: self.config.reference_rate.n_rollouts for idx in rates}
+            for dp_idx, rates in initial_reference_rates.items()
+        }
         need_p_ref_init = self.config.anchor_weight > 0
 
         batch_size = self.config.loop.batch_size
@@ -968,6 +1061,54 @@ class RLTrainer:
         global_step = 0
         accumulated_grads = 0
 
+        def _missing_initial_indices(dp_idx: int) -> list[int]:
+            cached = initial_reference_rates.get(dp_idx, {})
+            return [idx for idx in ref_idx if idx not in cached]
+
+        def _cache_initial_rates(dp_idx: int, result: RolloutResult) -> None:
+            rates = initial_reference_rates.setdefault(dp_idx, {})
+            counts = initial_reference_counts.setdefault(dp_idx, {})
+            for idx in ref_idx:
+                rate = result.rates.get(idx)
+                if rate is not None:
+                    rates[idx] = rate
+                    counts[idx] = result.rate_counts.get(idx, 0)
+
+        pending_initial_rollouts: dict[int, list[Rollout]] = defaultdict(list)
+
+        # Tinker policy samplers are immutable saved-weight snapshots, so initial
+        # rates can be filled lazily without keeping a second trainable model. Local
+        # sampler handles are live; measure their missing initial-policy rates before
+        # the first update so a later datapoint cannot accidentally use trained weights.
+        if (
+            need_p_ref_init
+            and self.config.anchor_model == "initial_policy"
+            and not getattr(self.backend, "policy_samplers_are_snapshots", False)
+        ):
+            missing_datapoints = [idx for idx in range(n_datapoints) if _missing_initial_indices(idx)]
+            if missing_datapoints:
+                print(f"  ⏳ Measuring initial-policy reference rates for {len(missing_datapoints)} datapoint(s)...")
+                assert self.anchor_sampling_client is not None
+                for start in range(0, len(missing_datapoints), batch_size):
+                    chunk = missing_datapoints[start : start + batch_size]
+
+                    async def _measure_initial(dp_idx: int) -> tuple[int, RolloutResult]:
+                        result = await self._collect_rollouts(
+                            datapoints[dp_idx],
+                            perturbation_fns,
+                            trait_classifier,
+                            sampling_client=self.anchor_sampling_client,
+                            answer_parser=answer_parser,
+                            rates_only=True,
+                            requested_indices=_missing_initial_indices(dp_idx),
+                        )
+                        return dp_idx, result
+
+                    measured = await asyncio.gather(*[_measure_initial(dp_idx) for dp_idx in chunk])
+                    for dp_idx, result in measured:
+                        _cache_initial_rates(dp_idx, result)
+                        pending_initial_rollouts[dp_idx].extend(result.sampled_rollouts)
+
         for epoch in range(self.config.loop.n_epochs):
             shuffled = list(range(n_datapoints))
             random.shuffle(shuffled)
@@ -981,7 +1122,7 @@ class RLTrainer:
                 # Step 0 optimization: when the initial policy IS the anchor model,
                 # we can extract p_ref_init from policy rollouts directly (no extra API call).
                 # True for "initial_policy" always; true for "base" only when not resuming.
-                need_anchor = need_p_ref_init and dp_idx not in initial_reference_rates
+                need_anchor = need_p_ref_init and bool(_missing_initial_indices(dp_idx))
                 step0_is_anchor = self.config.anchor_model == "initial_policy" or self.resume_from is None
                 step_snapshot = global_step  # Capture before await; prefetched coroutines read this after yield
                 result = await self._collect_rollouts(
@@ -989,16 +1130,20 @@ class RLTrainer:
                 )
 
                 if need_anchor and step_snapshot == 0 and step0_is_anchor:
-                    # At step 0, policy matches anchor model — extract p_ref_init directly
-                    p_ref_init_val = self._aggregate_ref_rates(result.rates, ref_idx)
-                    if p_ref_init_val is not None:
-                        initial_reference_rates[dp_idx] = p_ref_init_val
-                        initial_reference_counts[dp_idx] = sum(result.rate_counts.get(i, 0) for i in ref_idx)
+                    # At step 0, policy matches the anchor model. Reuse those current
+                    # reference samples as the per-reference initial measurements.
+                    _cache_initial_rates(dp_idx, result)
 
-                p_ref_init = initial_reference_rates.get(dp_idx, None)
+                initial_rates = dict(initial_reference_rates.get(dp_idx, {}))
+                initial_counts = dict(initial_reference_counts.get(dp_idx, {}))
+                p_ref_init = self._aggregate_ref_rates(initial_rates, ref_idx)
                 p_hat = {i: result.rates[i] for i in training_idx if i in result.rates and result.rates[i] is not None}
                 training_counts = {i: result.rate_counts[i] for i in training_idx if i in result.rate_counts}
-                p_ref = self._aggregate_ref_rates(result.rates, ref_idx)
+                reference_rates = {
+                    i: result.rates[i] for i in ref_idx if i in result.rates and result.rates[i] is not None
+                }
+                reference_counts = {i: result.rate_counts[i] for i in reference_rates}
+                p_ref = self._aggregate_ref_rates(reference_rates, ref_idx)
                 if p_ref is None:
                     _log.warning(
                         "All ref rollouts failed to parse for datapoint %d, falling back to p_ref_init=%s",
@@ -1015,15 +1160,21 @@ class RLTrainer:
                     datapoint=dp,
                     train_rollouts=result.train_rollouts,
                     anchor_rollouts=result.anchor_rollouts,
+                    sampled_rollouts=result.sampled_rollouts,
+                    initial_rollouts=pending_initial_rollouts.pop(dp_idx, []),
                     p_hat=p_hat,
                     p_hat_counts=training_counts,
                     p_ref=p_ref,
                     p_ref_init=p_ref_init,
+                    reference_rates=reference_rates,
+                    reference_rate_counts=reference_counts,
+                    initial_reference_rates=initial_rates,
+                    initial_reference_rate_counts=initial_counts,
                     n_total=result.n_total,
                     n_parsed=result.n_parsed,
                     n_ref_parsed=n_ref_parsed,
                     n_training_parsed=n_training_parsed,
-                    n_ref_init_parsed=initial_reference_counts.get(dp_idx),
+                    n_trait_abstained=result.n_trait_abstained,
                     resample_stats=result.resample_stats,
                 )
 
@@ -1109,16 +1260,16 @@ class RLTrainer:
                 # Launch all missing anchor rate samples concurrently
                 if need_p_ref_init:
                     items_needing_anchor = [
-                        item
-                        for item in batch_items
-                        if item.p_ref_init is None and item.datapoint_idx not in initial_reference_rates
+                        item for item in batch_items if _missing_initial_indices(item.datapoint_idx)
                     ]
                     if items_needing_anchor:
                         print(
                             f"  ⏳ Anchor rate missing for {len(items_needing_anchor)} datapoint(s), sampling from {self.config.anchor_model}..."
                         )
 
-                        async def _sample_anchor(item: BatchItem) -> tuple[BatchItem, Optional[float], int]:
+                        async def _sample_anchor(item: BatchItem) -> tuple[BatchItem, RolloutResult]:
+                            missing_indices = _missing_initial_indices(item.datapoint_idx)
+                            assert self.anchor_sampling_client is not None
                             result = await self._collect_rollouts(
                                 datapoints[item.datapoint_idx],
                                 perturbation_fns,
@@ -1126,24 +1277,44 @@ class RLTrainer:
                                 sampling_client=self.anchor_sampling_client,
                                 answer_parser=answer_parser,
                                 rates_only=True,
+                                requested_indices=missing_indices,
                             )
-                            n_init = sum(result.rate_counts.get(i, 0) for i in ref_idx)
-                            return item, self._aggregate_ref_rates(result.rates, ref_idx), n_init
+                            return item, result
 
                         anchor_results = await asyncio.gather(*[_sample_anchor(item) for item in items_needing_anchor])
-                        for item, p_ref_init_val, n_init in anchor_results:
-                            if p_ref_init_val is None:
-                                print(f"  ⚠️  Could not compute base rate for datapoint {item.datapoint_idx}, skipping")
-                            else:
-                                initial_reference_rates[item.datapoint_idx] = p_ref_init_val
-                                initial_reference_counts[item.datapoint_idx] = n_init
+                        for item, result in anchor_results:
+                            _cache_initial_rates(item.datapoint_idx, result)
+                            item.initial_rollouts.extend(result.sampled_rollouts)
+                            still_missing = _missing_initial_indices(item.datapoint_idx)
+                            if still_missing:
+                                print(
+                                    f"  ⚠️  Could not compute initial rate for datapoint "
+                                    f"{item.datapoint_idx}, reference indices {still_missing}"
+                                )
+
+                sampled_items = batch_items
+                grader_rollouts = [
+                    rollout
+                    for item in sampled_items
+                    for rollout in item.sampled_rollouts + item.initial_rollouts
+                    if rollout.grader_evaluated
+                ]
+                grader_sample_count = len(grader_rollouts)
+                total_grader_failures = sum(rollout.grader_failed for rollout in grader_rollouts)
+                grader_failure_rate = total_grader_failures / grader_sample_count if grader_sample_count else 0.0
+                if total_grader_failures:
+                    print(
+                        f"\n⚠️  Grader failed on {total_grader_failures}/{grader_sample_count} "
+                        f"rollouts ({grader_failure_rate:.1%}) at step {global_step + 1}; "
+                        "those rollouts were excluded from rates and gradients"
+                    )
 
                 resolved_items = []
                 for item in batch_items:
-                    if item.p_ref_init is None and need_p_ref_init:
-                        if item.datapoint_idx in initial_reference_rates:
-                            item.p_ref_init = initial_reference_rates[item.datapoint_idx]
-                            item.n_ref_init_parsed = initial_reference_counts.get(item.datapoint_idx)
+                    if need_p_ref_init:
+                        item.initial_reference_rates = dict(initial_reference_rates.get(item.datapoint_idx, {}))
+                        item.initial_reference_rate_counts = dict(initial_reference_counts.get(item.datapoint_idx, {}))
+                        item.p_ref_init = self._aggregate_ref_rates(item.initial_reference_rates, ref_idx)
 
                     if item.p_ref is None:
                         if item.p_ref_init is not None:
@@ -1155,10 +1326,36 @@ class RLTrainer:
                 batch_items = resolved_items
 
                 # ── Compute rewards and advantages ────────────────────────
-                batch_result = self._build_training_batch(batch_items)
-                if batch_result is None:
+                batch_result = self._build_training_batch(batch_items, sampled_items=sampled_items)
+                grad_datums, consistency_rewards, anchor_rewards, advantages, policy_grad_data = batch_result
+                all_rewards = consistency_rewards + anchor_rewards
+                if not grad_datums:
                     global_step += 1
-                    logger.log_metrics({"train/skipped_empty_batch": 1}, step=global_step)
+                    self._log_step_metrics(
+                        logger,
+                        global_step,
+                        epoch,
+                        batch_items,
+                        grad_datums,
+                        consistency_rewards,
+                        anchor_rewards,
+                        advantages,
+                        policy_grad_data,
+                        all_rewards,
+                        [],
+                        {},
+                        parse_rate,
+                        total_grader_failures,
+                        grader_failure_rate,
+                        total_samples,
+                        total_n_ref_parsed,
+                        total_n_training_parsed,
+                        training_idx,
+                        need_p_ref_init,
+                        pbar,
+                        skipped_empty_batch=True,
+                    )
+                    self._log_rollouts(global_step, epoch)
                     await self._maybe_save_checkpoint(
                         global_step, total_steps, epoch, log_dir, checkpoint_paths, logger
                     )
@@ -1166,9 +1363,6 @@ class RLTrainer:
                     next_to_prefetch = await _maybe_refresh_and_refill(i_batch, next_to_prefetch)
                     next_to_prefetch = _fill_prefetch_queue(next_to_prefetch)
                     continue
-
-                grad_datums, consistency_rewards, anchor_rewards, advantages, policy_grad_data = batch_result
-                all_rewards = consistency_rewards + anchor_rewards
 
                 # ── Benign-helpfulness GRPO term (anti refuse-all) ────────────
                 if self.config.helpfulness_weight > 0 and self._help_dps:
@@ -1234,6 +1428,9 @@ class RLTrainer:
                     training_logprobs,
                     {**kl_penalty_metrics, **fwd_bwd_metrics},
                     parse_rate,
+                    total_grader_failures,
+                    grader_failure_rate,
+                    total_samples,
                     total_n_ref_parsed,
                     total_n_training_parsed,
                     training_idx,
@@ -1300,14 +1497,20 @@ class RLTrainer:
         training_logprobs,
         kl_penalty_metrics,
         parse_rate,
+        total_grader_failures,
+        grader_failure_rate,
+        grader_sample_count,
         total_n_ref_parsed,
         total_n_training_parsed,
         training_idx,
         need_p_ref_init,
         pbar,
+        skipped_empty_batch=False,
     ):
-        """Compute and log all metrics for a training step."""
-        kl_sample_train_metrics = compute_kl_sample_train(grad_datums, training_logprobs)
+        """Compute and log all metrics for a training step, including zero-signal skips."""
+        kl_sample_train_metrics = (
+            compute_kl_sample_train(grad_datums, training_logprobs) if grad_datums and training_logprobs else {}
+        )
 
         # Rate variance (consistency measure)
         all_rates = []
@@ -1319,7 +1522,7 @@ class RLTrainer:
             mean_rate = sum(all_rates) / len(all_rates)
             rate_var = sum((r - mean_rate) ** 2 for r in all_rates) / len(all_rates)
 
-        avg_p_ref = sum(item.p_ref for item in batch_items) / len(batch_items)
+        avg_p_ref = sum(item.p_ref for item in batch_items) / len(batch_items) if batch_items else 0.0
         # p_ref_init can be None for an item even when need_p_ref_init (anchor on) — e.g.
         # the anchor model failed to parse all ref rollouts for that datapoint. Average only
         # the resolved ones; None if none resolved. (The reward path already handles None.)
@@ -1346,6 +1549,10 @@ class RLTrainer:
         step_metrics = {
             "train/epoch": epoch,
             "train/parse_rate": parse_rate,
+            "rollout/grader_failure_count": total_grader_failures,
+            "rollout/grader_failure_rate": grader_failure_rate,
+            "rollout/grader_sample_count": grader_sample_count,
+            "train/skipped_empty_batch": int(skipped_empty_batch),
             "train/n_consistency_rollouts": len(consistency_rewards),
             "train/n_anchor_rollouts": len(anchor_rewards),
             "train/avg_response_length": avg_response_len,

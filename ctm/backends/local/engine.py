@@ -31,18 +31,15 @@ import torch
 from tinker_cookbook.rl.metrics import discounted_future_sum_vectorized
 
 from ctm.backends.base import ForwardBackwardOutput, SampledSequence
-from ctm.backends.local import consistency_losses, losses
+from ctm.backends.local import losses
+from ctm.training import consistency_losses
 from ctm.backends.local.mlp_hooks import MLPHookManager
 from ctm.core.config import AdamConfig, LoRAConfig
 
 # Internal-consistency loss_fns (ACT / AttCT / MLPCT) — LocalBackend only: they
 # need paired forward passes with attentions / hidden states / MLP hooks, which
 # the Tinker service API doesn't expose.
-CONSISTENCY_LOSS_CLASSES = {
-    "activation_consistency": consistency_losses.ActivationConsistencyLoss,
-    "attention_consistency": consistency_losses.JSDAttentionConsistencyLoss,
-    "mlp_consistency": consistency_losses.MLPConsistencyLoss,
-}
+CONSISTENCY_LOSS_CLASSES = consistency_losses.CONSISTENCY_LOSS_CLASSES
 
 try:  # optional: LoRA support
     import peft
@@ -89,6 +86,10 @@ class LocalSamplerHandle:
 
 class LocalBackend:
     """TrainingBackend on local hardware (torch + transformers [+ peft])."""
+
+    # Local sampler handles route to the backend's current in-process model or
+    # current vLLM adapter; retaining a handle does not freeze its weights.
+    policy_samplers_are_snapshots = False
 
     def __init__(
         self,
@@ -375,7 +376,9 @@ class LocalBackend:
 
     def _consistency_loss(self, loss_fn: str) -> consistency_losses.ConsistencyLoss:
         if loss_fn not in self._consistency_loss_modules:
-            self._consistency_loss_modules[loss_fn] = CONSISTENCY_LOSS_CLASSES[loss_fn](**self.consistency_loss_options)
+            self._consistency_loss_modules[loss_fn] = consistency_losses.create_consistency_loss(
+                loss_fn, self.consistency_loss_options
+            )
         return self._consistency_loss_modules[loss_fn]
 
     def _consistency_forward_backward(self, datums: Sequence[Any], loss_fn: str) -> _ResolvedPending:

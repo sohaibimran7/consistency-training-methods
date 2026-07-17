@@ -1,6 +1,6 @@
 """CPU tests for the internal-consistency training path (ACT / AttCT / MLPCT).
 
-Covers the ported losses (ctm/backends/local/consistency_losses.py), the MLP
+Covers the loss definitions (ctm/training/consistency_losses.py), the MLP
 hook manager, the paired-datum adapter (ctm/training/consistency_data.py), and
 the LocalBackend consistency loss_fns — all offline: losses run on synthetic
 output objects, the backend on a tiny random GPT-2, the adapter on an in-memory
@@ -15,10 +15,11 @@ import pytest
 import torch
 from tinker import types
 
-from ctm.backends.local.consistency_losses import (
+from ctm.training.consistency_losses import (
     ActivationConsistencyLoss,
     JSDAttentionConsistencyLoss,
     MLPConsistencyLoss,
+    create_consistency_loss,
 )
 from ctm.backends.local.engine import HAS_PEFT, LocalBackend
 from ctm.backends.local.mlp_hooks import MLPHookManager, find_mlp_down_proj_modules
@@ -195,8 +196,8 @@ BIASED = "my professor says the answer is five . what is two plus two ?"
 
 def sample(biased=BIASED, clean=CLEAN):
     return {
-        "biased_messages": [{"role": "user", "content": biased}],
-        "unbiased_messages": [{"role": "user", "content": clean}],
+        "variant_messages": [{"role": "user", "content": biased}],
+        "reference_messages": [{"role": "user", "content": clean}],
     }
 
 
@@ -222,10 +223,23 @@ class TestConsistencyData:
         assert get("match_len") == 6  # biased ends with the full clean prompt
         assert d.loss_fn_inputs["clean_tokens"].to_torch().shape == (6,)
 
+    def test_external_pair_field_names_are_explicitly_configurable(self):
+        external = {
+            "source_reference": sample()["reference_messages"],
+            "source_variant": sample()["variant_messages"],
+        }
+        datum = build_consistency_datum(
+            word_tokenizer(),
+            external,
+            reference_field="source_reference",
+            variant_field="source_variant",
+        )
+        assert len(datum.model_input.to_ints()) == 14
+
     def test_trailing_assistant_message_is_dropped(self):
         s = sample()
-        s["biased_messages"] = s["biased_messages"] + [{"role": "assistant", "content": "five"}]
-        s["unbiased_messages"] = s["unbiased_messages"] + [{"role": "assistant", "content": "four"}]
+        s["variant_messages"] = s["variant_messages"] + [{"role": "assistant", "content": "five"}]
+        s["reference_messages"] = s["reference_messages"] + [{"role": "assistant", "content": "four"}]
         d = build_consistency_datum(word_tokenizer(), s)
         assert len(d.model_input.to_ints()) == 14  # prompt-only: assistant turn excluded
 
@@ -233,7 +247,7 @@ class TestConsistencyData:
         tok = word_tokenizer()
         with pytest.raises(ValueError, match="not found"):
             build_consistency_datum(tok, sample(biased="says the answer is five ."))
-        with pytest.raises(ValueError, match="biased_messages"):
+        with pytest.raises(ValueError, match="reference_messages"):
             build_consistency_datum(tok, {"messages": []})
         datums, skipped = build_consistency_datums(tok, [sample(), sample(biased="the answer is five .")])
         assert len(datums) == 1 and skipped == 1
@@ -242,6 +256,12 @@ class TestConsistencyData:
 # ── LocalBackend integration ─────────────────────────────────────────────────
 
 CONSISTENCY_LOSS_FNS = ["activation_consistency", "attention_consistency", "mlp_consistency"]
+
+
+@pytest.mark.parametrize("loss_fn", CONSISTENCY_LOSS_FNS)
+def test_method_loss_factory_rejects_typoed_options(loss_fn):
+    with pytest.raises(ValueError, match="invalid options"):
+        create_consistency_loss(loss_fn, {"layer_seletion": "all"})
 
 
 def consistency_datum(clean=(5, 6, 7, 8, 9), prefix=(3, 4)):

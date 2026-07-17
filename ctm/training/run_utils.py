@@ -1,8 +1,4 @@
-"""Run bookkeeping shared by the SFT and RL loops: log paths, git state, LR fallback.
-
-Canonical home of helpers previously in ``cot_transparency.apis.tinker.common``
-(which now re-exports from here).
-"""
+"""Run bookkeeping shared by the SFT and RL loops."""
 
 import logging
 import subprocess

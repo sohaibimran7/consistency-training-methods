@@ -9,6 +9,7 @@ test any new backend (local torch/PEFT, vLLM) must also satisfy.
 
 import asyncio
 import json
+import math
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,11 +26,24 @@ from ctm.training.rl import (
     RLTrainer,
     TrainingLoopConfig,
     TrainingSamplingConfig,
+    _classify_traits,
 )
 from ctm.training.sft import SFTConfig, train_sft
 from ctm.core.config import AdamConfig, CheckpointConfig, LoRAConfig
 
 A_TOKEN, B_TOKEN = 65, 66  # completions: "(A)" (biased) vs "(B)"
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -0.01, 1.01])
+def test_trait_classification_rejects_non_probability_values(value):
+    raw = [([], [], "full", "answer")]
+    with pytest.raises(ValueError, match=r"finite \[0, 1\]"):
+        asyncio.run(_classify_traits(lambda _answer, _datapoint, _messages: value, raw, {}, []))
+
+
+def test_trait_classification_preserves_abstention():
+    raw = [([], [], "full", "answer")]
+    assert asyncio.run(_classify_traits(lambda _answer, _datapoint, _messages: None, raw, {}, [])) == [None]
 
 
 class FakeTokenizer:
@@ -132,12 +146,12 @@ def _perturbations():
     ]
 
 
-def _trait(answer_text, dp):
+def _trait(answer_text, dp, realized_messages):
     return 1.0 if "(A)" in answer_text else 0.0
 
 
 class TestRLEndToEnd:
-    def _run(self, tmp_path, **config_overrides):
+    def _run(self, tmp_path, *, trait_classifier=_trait, **config_overrides):
         cfg = dict(
             experiment_name="itest",
             run_name="rl",
@@ -172,18 +186,19 @@ class TestRLEndToEnd:
 
         datapoints = [{"question": f"Q{i}"} for i in range(4)]
         with patch("ctm.training.rl.setup_logging") as mock_logging:
-            mock_logging.return_value = MagicMock()
+            logger = MagicMock()
+            mock_logging.return_value = logger
             final = asyncio.run(
                 trainer.train(
                     datapoints=datapoints,
                     perturbation_fns=_perturbations(),
-                    trait_classifier=_trait,
+                    trait_classifier=trait_classifier,
                 )
             )
-        return final, backend, trainer
+        return final, backend, trainer, logger
 
     def test_full_loop_trains_and_checkpoints(self, tmp_path):
-        final, backend, _ = self._run(tmp_path)
+        final, backend, _, _ = self._run(tmp_path)
         assert final == "fake://checkpoint/itest_rl"
         # provenance manifest written into the run's log dir
         from ctm.training.manifest import read_run_manifest
@@ -203,21 +218,22 @@ class TestRLEndToEnd:
         assert advs.abs().sum() > 0
 
     def test_rollouts_persisted_with_context(self, tmp_path):
-        _, _, trainer = self._run(tmp_path)
+        _, _, trainer, _ = self._run(tmp_path)
         rollout_dir = tmp_path / "rollouts"
         index = load_index(rollout_dir)
         assert [e["step"] for e in index] == [1, 2]
 
         records = list(iter_rollouts(rollout_dir))
         roles = {r.role for r in records}
-        assert roles == {"train", "anchor"}  # anchor_weight > 0 → both populations logged
+        assert roles == {"train", "anchor", "initial_reference"}
+        assert len(records) == 80  # 64 policy samples + 16 lazy initial-reference samples
         for r in records:
             assert "(A)" in r.completion_text or "(B)" in r.completion_text
             assert 0.0 <= r.p_ref <= 1.0
             assert r.trait_value in (0.0, 1.0)
             if r.role == "train":
                 assert r.perturbation_idx == 1 and r.p_hat is not None
-            else:
+            elif r.role in {"anchor", "initial_reference"}:
                 assert r.perturbation_idx == 0 and r.p_hat is None
         # advantage/reward context survives: cued trait=1 rollouts are discouraged (adv < 0)
         cued_biased = [r for r in records if r.role == "train" and r.trait_value == 1.0]
@@ -226,6 +242,54 @@ class TestRLEndToEnd:
     def test_rollout_log_none_writes_nothing(self, tmp_path):
         self._run(tmp_path, rollout_log="none")
         assert not (tmp_path / "rollouts").exists()
+
+    def test_rate_only_surplus_is_persisted(self, tmp_path):
+        training = TrainingSamplingConfig(
+            perturbation_indices=[1],
+            n_rollouts_for_rate=8,
+            n_rollouts_for_consistency=2,
+            n_rollouts_for_anchor=0,
+        )
+        self._run(tmp_path, training=training, anchor_weight=0.0)
+
+        records = list(iter_rollouts(tmp_path / "rollouts"))
+        assert len(records) == 64
+        selected = [record for record in records if record.role == "train"]
+        rate_only = [record for record in records if record.role == "rate"]
+        assert len(selected) == 8  # 2 selected variants × 4 datapoints
+        assert len(rate_only) == 56
+        assert all(record.skipped_from_training for record in rate_only)
+        assert all(record.skip_reason == "rate_only" for record in rate_only)
+
+    def test_zero_signal_batch_keeps_rollouts_and_full_diagnostics(self, tmp_path):
+        _, backend, _, logger = self._run(
+            tmp_path,
+            trait_classifier=lambda _answer, _dp, _messages: 0.0,
+            anchor_weight=0.0,
+        )
+
+        assert backend.fb_datums == []
+        records = list(iter_rollouts(tmp_path / "rollouts"))
+        assert len(records) == 64
+        assert all(record.skipped_from_training for record in records)
+        train_records = [record for record in records if record.role == "train"]
+        rate_records = [record for record in records if record.role == "rate"]
+        assert train_records and all(record.advantage == 0.0 for record in train_records)
+        assert all(record.skip_reason == "zero_advantage_batch" for record in train_records)
+        assert rate_records and all(record.advantage is None for record in rate_records)
+        assert all(record.skip_reason == "rate_only" for record in rate_records)
+
+        step_metrics = [call.args[0] for call in logger.log_metrics.call_args_list if "train/p_ref" in call.args[0]]
+        assert len(step_metrics) == 2
+        assert all(metrics["train/skipped_empty_batch"] == 1 for metrics in step_metrics)
+        assert all(metrics["train/advantage_abs_mean"] == 0.0 for metrics in step_metrics)
+        assert all(metrics["rollout/grader_failure_count"] == 0 for metrics in step_metrics)
+        assert all(metrics["rollout/grader_failure_rate"] == 0.0 for metrics in step_metrics)
+        assert all(metrics["rollout/grader_sample_count"] == 32 for metrics in step_metrics)
+
+    def test_wandb_is_opt_in(self):
+        assert RLConfig().wandb_project is None
+        assert SFTConfig().wandb_project is None
 
 
 class TestSFTEndToEnd:

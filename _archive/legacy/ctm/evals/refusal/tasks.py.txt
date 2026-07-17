@@ -1,0 +1,43 @@
+"""Archived public entry points for Inspect refusal evaluation."""
+
+from __future__ import annotations
+
+from collections.abc import Collection
+from pathlib import Path
+from typing import Any, Optional
+
+from ctm.evals.refusal.judge import CompletionCallback, RefusalJudge
+
+
+def refusal_task_from_frozen(
+    path: str | Path,
+    *,
+    name: Optional[str] = None,
+    display_name: Optional[str] = None,
+    model: Optional[str] = None,
+    completion: Optional[CompletionCallback] = None,
+    judge: Optional[RefusalJudge] = None,
+    metadata: Optional[dict[str, Any]] = None,
+    include_sample_ids: Collection[str] | None = None,
+):
+    """Create an Inspect ``Task`` from already-frozen refusal records.
+
+    Inspect is imported only when the task is constructed. The function never
+    materializes or downloads source data; the builder script owns that step.
+    """
+
+    from ctm.evals.refusal._inspect import build_refusal_task
+
+    return build_refusal_task(
+        path,
+        name=name,
+        display_name=display_name,
+        model=model,
+        completion=completion,
+        judge=judge,
+        metadata=metadata,
+        include_sample_ids=include_sample_ids,
+    )
+
+
+__all__ = ["refusal_task_from_frozen"]

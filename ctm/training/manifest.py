@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ctm.cli_safety import redact_secrets
 from ctm.training.run_utils import get_git_state
 
 MANIFEST_NAME = "manifest.json"
@@ -34,15 +35,17 @@ def write_run_manifest(
 ) -> Path:
     git = get_git_state()
     git.pop("git_diff", None)  # the full diff already goes to WandB; keep the manifest small
+    redacted_config = redact_secrets(config_dump)
+    redacted_extra = redact_secrets(extra or {})
     manifest = {
         "kind": kind,
         "model": model,
         "backend": type(backend).__name__,
-        "config_hash": config_hash(config_dump),
-        "config": config_dump,
+        "config_hash": config_hash(redacted_config),
+        "config": redacted_config,
         "git": git,
         "written_at": datetime.now(timezone.utc).isoformat(),
-        **(extra or {}),
+        **redacted_extra,
     }
     path = Path(log_dir) / MANIFEST_NAME
     path.write_text(json.dumps(manifest, indent=1, default=str))

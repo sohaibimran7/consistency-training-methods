@@ -1,0 +1,11 @@
+"""Archived compatibility shim — answer parsing is owned by the published eval package
+(single source of truth shared by eval scoring and RL trait classification)."""
+
+from mcq_bias.parsers import *  # noqa: F401,F403
+from mcq_bias.parsers import (  # noqa: F401
+    cot_answer_parser,
+    parse_answer,
+)
+
+# Legacy alias (the pre-rename name) for the old sycophancy_eval_inspect stack.
+fallback_answer_parser = parse_answer

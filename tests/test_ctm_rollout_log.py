@@ -16,11 +16,15 @@ def make_record(
         datapoint_idx=dp,
         perturbation_idx=pert,
         role=role,
+        sample_source="policy",
         prompt_text="Q: pick one\n(A) x (B) y",
         completion_text="The best answer is: (A)",
         trait_value=trait,
+        parsed_successfully=True,
+        grader_failed=False,
         reward=reward,
         advantage=advantage,
+        skipped_from_training=False,
         p_hat=p_hat if role == "train" else None,
         p_ref=p_ref,
         p_ref_init=0.25,
@@ -55,6 +59,7 @@ class TestRolloutLogRoundTrip:
         assert len(list(iter_rollouts(tmp_path, perturbation_idx=1))) == 2
         assert len(list(iter_rollouts(tmp_path, trait=0.0))) == 1
         assert len(list(iter_rollouts(tmp_path, role="anchor"))) == 0
+        assert len(list(iter_rollouts(tmp_path, skipped_from_training=False))) == 3
 
     def test_empty_step_writes_nothing(self, tmp_path):
         logger = RolloutLogger(tmp_path)

@@ -2,7 +2,7 @@
 
 Methods (``SFTConfig.method``):
     bct    — supervised cross-entropy on messages (any backend)
-    act    — activation (residual stream) consistency   ┐ paired biased/clean
+    act    — activation (residual stream) consistency   ┐ paired variant/reference
     attct  — attention (JSD) consistency                 │ prompts; LocalBackend
     mlpct  — MLP post-activation consistency             ┘ only (needs internals)
 
@@ -25,10 +25,9 @@ Usage:
 
 Training data format (JSONL):
     bct:             {"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}
-    act/attct/mlpct: {"biased_messages": [...], "unbiased_messages": [...]}
+    act/attct/mlpct: {"variant_messages": [...], "reference_messages": [...]}
                      (prompt pairs; see ctm/training/consistency_data.py)
 
-(Old import path ``cot_transparency.apis.tinker.finetune`` re-exports from here.)
 """
 
 import asyncio
@@ -54,7 +53,8 @@ from ctm.training.consistency_data import build_consistency_datums
 from ctm.training.manifest import write_run_manifest
 from ctm.training.run_utils import build_log_dir, get_git_state, get_recommended_lr, warn_if_dirty
 
-# Method → backend loss_fn. The consistency loss_fns are implemented by LocalBackend only.
+# Method to backend operation. Internal-consistency operations are available on
+# LocalBackend because they require model activations that remote APIs do not expose.
 METHOD_LOSS_FNS = {
     "bct": "cross_entropy",
     "act": "activation_consistency",
@@ -68,6 +68,7 @@ class SFTConfig(BaseModel):
 
     experiment_name: str = "sft"
     run_name: str = "default"
+    wandb_project: Optional[str] = None
     method: Literal["bct", "act", "attct", "mlpct"] = "bct"
     model: str = "meta-llama/Llama-3.1-8B-Instruct"
     lora: LoRAConfig = LoRAConfig()
@@ -76,6 +77,9 @@ class SFTConfig(BaseModel):
     batch_size: int = 128
     checkpoint: CheckpointConfig = CheckpointConfig()
     log_base_dir: str = "logs"
+    reference_messages_field: str = "reference_messages"
+    variant_messages_field: str = "variant_messages"
+    method_config: dict = {}
     # Free-form provenance (setting name, data files, ...) set by the CLI;
     # flows into the run manifest via the config dump — the registry generator reads it.
     run_metadata: dict = {}
@@ -154,7 +158,7 @@ async def train_sft(
     # Setup logging (writes to files + WandB with experiment_name as project, run_name as name)
     logger = setup_logging(
         log_dir=str(log_dir),
-        wandb_project=cfg.experiment_name,
+        wandb_project=cfg.wandb_project,
         wandb_name=cfg.run_name,
         config=cfg.model_dump(),
     )
@@ -171,16 +175,22 @@ async def train_sft(
 
     renderer, tokenizer = get_renderer_and_tokenizer(cfg.model)
 
-    # Consistency methods train on paired biased/clean prompts: build the datums
+    # Consistency methods train on paired variant/reference prompts: build the datums
     # once up front (dropping unalignable rows) and shuffle datums per epoch.
     # BCT keeps building datums per batch from messages.
     train_items: list = samples
     if cfg.method != "bct":
-        train_items, _ = build_consistency_datums(tokenizer, samples)
+        train_items, _ = build_consistency_datums(
+            tokenizer,
+            samples,
+            reference_field=cfg.reference_messages_field,
+            variant_field=cfg.variant_messages_field,
+        )
         if not train_items:
             raise ValueError(
-                f"No usable consistency pairs in {file_path} — rows need biased_messages/unbiased_messages "
-                "with the clean user content contained verbatim in the biased prompt."
+                f"No usable consistency pairs in {file_path} — rows need "
+                f"{cfg.reference_messages_field}/{cfg.variant_messages_field} with the reference user "
+                "content contained verbatim in the variant prompt."
             )
 
     n_samples = len(train_items)

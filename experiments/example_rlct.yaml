@@ -1,0 +1,45 @@
+name: example-rlct
+
+# Training selects exact native mcq-bias files. It says nothing about evaluation.
+training:
+  command: ["${python}", scripts/train_rlct.py]
+  args:
+    model: meta-llama/Llama-3.1-8B-Instruct
+    setting_factory: ctm_data.adapters.mcq_bias:create_setting
+    setting_config:
+      data_paths:
+        - "${training_data}"
+    load_config:
+      n_datapoints: 100
+    experiment_name: "${experiment}"
+    run_name: main
+    n_ref_rollouts: 8
+    n_train_rollouts: 8
+    "yes": true
+
+# Evaluation independently selects the upstream task factory, data, and metrics.
+# Change these arguments freely; they are not checked against the training data.
+evaluation:
+  - name: mcq-bias-official
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: mcq_bias.tasks:suite_tasks
+      task_args:
+        bias_types: [suggested_answer]
+        datasets: [truthfulqa, logiqa]
+        prompt_style: none
+        n_questions: 250
+        seed: "42"
+        # mcq_bias's switch scorer reads the unbiased task logs from here.
+        unbiased_log: logs/evals/example-rlct/mcq-bias
+      tinker_checkpoint: "${checkpoint}"
+      log_dir: logs/evals/example-rlct/mcq-bias
+      generation_config:
+        max_tokens: 16384
+      "yes": true
+
+  # An evaluation can instead call any benchmark's own CLI directly:
+  # - name: official-other-benchmark
+  #   command: ["${python}", -m, benchmark_package]
+  #   args:
+  #     model: "${checkpoint}"

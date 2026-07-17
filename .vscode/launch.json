@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CTM: F6 two-item probe",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/scripts/run_experiment.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "subProcess": true,
+      "envFile": "${input:ctmEnvFile}",
+      "args": [
+        "${workspaceFolder}/experiments/eval_awareness/debug/qwen_f6_snr_per_item_two_items.yaml",
+        "--training-data", "${workspaceFolder}/ctm_data/frozen/evalawarebench-f6-neutral.jsonl"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "ctmEnvFile",
+      "type": "promptString",
+      "description": "Absolute path to the local env file containing TINKER_API_KEY and grader-provider credentials",
+      "default": "${workspaceFolder}/.env"
+    }
+  ]
+}

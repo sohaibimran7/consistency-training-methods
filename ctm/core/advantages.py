@@ -42,9 +42,9 @@ def compute_rates(
     rates: dict[int, float | None] = {}
     counts = {}
     for idx in indices:
-        parsed = [r for r in rollouts.get(idx, []) if r.parsed_successfully]
+        parsed = [r for r in rollouts.get(idx, []) if r.parsed_successfully and r.trait_value is not None]
         counts[idx] = len(parsed)
-        rates[idx] = sum(r.trait_value for r in parsed) / len(parsed) if parsed else None
+        rates[idx] = sum(float(r.trait_value) for r in parsed) / len(parsed) if parsed else None
     return rates, counts
 
 
@@ -81,8 +81,7 @@ def binom_var(p: float, n: int, pseudocount: float = 1.0) -> float:
     """Laplace/Beta(pseudocount, pseudocount)-smoothed binomial variance p(1-p)/n.
 
     Smoothing keeps the boundary (p=0 or p=1) from looking like zero uncertainty: the
-    raw normal-approx variance collapses to 0 at an observed rate of exactly 0 (common
-    for p_ref in sycophancy: 0/N ref rollouts pick the biased option), which would make
+    raw normal-approx variance collapses to 0 at an observed rate of exactly 0, which would make
     a tiny empirical gap look infinitely significant. The rule of three says 0/n carries
     uncertainty ~3/n, not 0. Interior proportions are ~unchanged.
     """
@@ -180,7 +179,7 @@ def normalize_advantages(rewards: list[float]) -> list[float]:
 
 
 def normalize_grouped(
-    rewards: list[float], slices: list[tuple[int, int]], mode: Literal["pooled", "per_item"] = "pooled"
+    rewards: list[float], slices: list[tuple[int, int]], mode: Literal["pooled", "per_item"] = "per_item"
 ) -> list[float]:
     """Unit-variance standardization, pooled over the whole batch or per-item (per group).
 

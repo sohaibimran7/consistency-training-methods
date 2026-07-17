@@ -7,6 +7,6 @@ Package layout (grown strangler-fig style; old import paths in
 - ``ctm.backends``  — the compute seam: Tinker service adapter + local (torch/PEFT) engine,
                       behind one protocol (sample / forward_backward / optim_step / checkpoints).
 - ``ctm.training``  — the RL (RLCT) and SFT (BCT) loops, backend-injected.
-- ``ctm.settings``  — pluggable phenomena (sycophancy, eval-awareness, ...); phase 2.
+- ``ctm.settings``  — generic setting protocol, runtime validation, and prompt families.
 - ``ctm.evals``     — setting-agnostic eval machinery and analysis.
 """

@@ -6,15 +6,16 @@ injection pattern the training loops already use (``perturbation_fns`` +
 
 - ``load_datapoints``    — training datapoints (dicts; schema is setting-internal)
 - ``perturbations``      — index 0 = reference (neutral) prompt builder, 1..N = cued
-- ``trait_classifier``   — (answer_text, datapoint) -> float in [0,1]
+- ``trait_classifier``   — (answer_text, datapoint, realized_messages) -> float in [0,1] or None to abstain
 - ``answer_parser``      — optional; gates rollouts on a committed answer
-- ``tasks``              — the setting's in-domain Inspect tasks
 
-The training loops never import a setting's internals; scripts construct a
-concrete Setting (or use ``get_setting``) and hand its pieces to the trainer.
+Evaluation is intentionally separate: experiment configs select upstream task
+factories independently of the training setting.
 """
 
-from typing import Any, Callable, Optional, Protocol, runtime_checkable
+from typing import Callable, Optional, Protocol, runtime_checkable
+
+from ctm.importing import load_callable
 
 
 @runtime_checkable
@@ -34,40 +35,24 @@ class Setting(Protocol):
         """Which perturbation indices receive the consistency gradient (default 1..N)."""
         ...
 
-    def trait_classifier(self) -> Callable[[str, dict], Any]:
-        """(answer_text, datapoint) -> trait in [0,1]; may be sync or async."""
+    def trait_classifier(self) -> Callable[[str, dict, list[dict]], float | None]:
+        """Classify the realized response; None excludes an unjudgeable rollout."""
         ...
 
     def answer_parser(self) -> Optional[Callable[[str], Optional[str]]]:
         """Optional parser gating rollouts on a committed answer (None = accept all)."""
         ...
 
-    def tasks(self, **kwargs) -> list:
-        """The setting's in-domain Inspect tasks (kwargs are setting-specific)."""
-        ...
+
+def create_setting(factory_spec: str, **kwargs) -> Setting:
+    """Construct a setting from an explicit ``module:callable`` factory."""
+
+    setting = load_callable(factory_spec, label="setting_factory")(**kwargs)
+    if not isinstance(setting, Setting):
+        raise TypeError(
+            f"setting factory {factory_spec!r} returned an object that does not satisfy the Setting protocol"
+        )
+    return setting
 
 
-_SETTING_FACTORIES: dict[str, Callable[..., Setting]] = {}
-
-
-def register_setting(name: str, factory: Callable[..., Setting]) -> None:
-    _SETTING_FACTORIES[name] = factory
-
-
-def get_setting(name: str, **kwargs) -> Setting:
-    """Construct a registered setting by name (kwargs go to its constructor)."""
-    # Lazy imports keep heavy/optional deps out of `import ctm.settings`.
-    if name not in _SETTING_FACTORIES:
-        if name == "sycophancy":
-            from ctm.settings.sycophancy.setting import SycophancySetting
-
-            register_setting("sycophancy", SycophancySetting)
-        elif name == "eval_awareness":
-            from ctm.settings.eval_awareness.setting import EvalAwarenessSetting
-
-            register_setting("eval_awareness", EvalAwarenessSetting)
-        else:
-            raise KeyError(
-                f"Unknown setting: {name!r}. Known: {sorted(_SETTING_FACTORIES) + ['sycophancy', 'eval_awareness']}"
-            )
-    return _SETTING_FACTORIES[name](**kwargs)
+__all__ = ["Setting", "create_setting"]

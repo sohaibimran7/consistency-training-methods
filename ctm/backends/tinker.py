@@ -11,7 +11,7 @@ from typing import Any, Optional, Sequence
 
 import tinker
 from tinker import types
-from tinker_cookbook import checkpoint_utils
+from tinker_cookbook import checkpoint_utils, model_info
 from tinker_cookbook.rl.metrics import incorporate_kl_penalty as _cookbook_incorporate_kl_penalty
 from tinker_cookbook.rl.train import _remove_mask as remove_mask
 
@@ -68,6 +68,8 @@ class _TinkerPendingOptimStep:
 class TinkerBackend:
     """TrainingBackend implementation on the Tinker service (LoRA training)."""
 
+    policy_samplers_are_snapshots = True
+
     def __init__(self, service_client: Optional[tinker.ServiceClient] = None):
         self._service_client = service_client
         self.training_client: Optional[tinker.TrainingClient] = None
@@ -86,8 +88,14 @@ class TinkerBackend:
         self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False
     ) -> None:
         self.model = model
+        user_metadata: dict[str, str] = {}
+        checkpoint_utils.add_renderer_name_to_user_metadata(
+            user_metadata,
+            model_info.get_recommended_renderer_name(model),
+        )
         self.training_client = self.service_client.create_lora_training_client(
             base_model=model,
+            user_metadata=user_metadata,
             **lora.model_dump(),
         )
         if resume_from:

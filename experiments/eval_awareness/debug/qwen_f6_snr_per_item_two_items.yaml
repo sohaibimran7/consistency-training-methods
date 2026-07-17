@@ -1,0 +1,43 @@
+name: evalaware-qwen-f6-eval-from-deployment-debug-two-items
+
+# A deliberately tiny, paid end-to-end run for interactive debugging. This is
+# a complete experiment config: no hidden overrides are applied by VS Code.
+training:
+  command: ["${python}", scripts/train_rlct.py]
+  args:
+    backend: tinker
+    model: Qwen/Qwen3-30B-A3B-Instruct-2507
+    setting_factory: ctm_data.adapters.eval_awareness:create_setting
+    setting_config:
+      data_path: "${training_data}"
+      n_variants: 1
+      reference_side: baseline
+      train_side: F6
+      grader_model: openrouter/openai/gpt-oss-120b:nitro
+      grader_config:
+        failure_policy: abstain
+        generation_config:
+          max_tokens: 32768
+    load_config:
+      n_datapoints: 2
+    experiment_name: "${experiment}"
+    run_name: qwen-f6-eval-from-deployment-debug-two-items
+    wandb_project: "${experiment}"
+    anchor_weight: 0.5
+    anchor_model: base
+    advantage_estimator: snr_scaling
+    snr_mode: soft
+    snr_z: 2.0
+    normalization: per_item
+    kl_coef: 0.03
+    n_ref_rollouts: 2
+    n_train_rollouts: 2
+    n_consistency_rollouts: 2
+    n_anchor_rollouts: 2
+    temperature: 1.0
+    max_new_tokens: 32768
+    lora_rank: 8
+    batch_size: 1
+    n_epochs: 1
+    checkpoint_every: 1
+    "yes": true

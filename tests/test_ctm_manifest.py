@@ -37,5 +37,24 @@ class TestRunManifest:
         assert config_hash(a) == config_hash(b)
         assert config_hash(a) != config_hash(c)
 
+    def test_training_manifest_recursively_redacts_secrets(self, tmp_path):
+        write_run_manifest(
+            tmp_path,
+            kind="rl",
+            model="some/model",
+            backend=DummyBackend(),
+            config_dump={
+                "run_metadata": {
+                    "grader": {"api_key": "must-not-persist"},
+                    "generation": {"extra_headers": {"Authorization": "must-not-persist"}},
+                }
+            },
+            extra={"auth_token": "must-not-persist"},
+        )
+        manifest = read_run_manifest(tmp_path)
+        assert manifest["config"]["run_metadata"]["grader"]["api_key"] == "<redacted>"
+        assert manifest["config"]["run_metadata"]["generation"]["extra_headers"] == "<redacted>"
+        assert manifest["auth_token"] == "<redacted>"
+
     def test_read_missing_returns_none(self, tmp_path):
         assert read_run_manifest(tmp_path) is None

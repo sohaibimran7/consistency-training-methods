@@ -1,12 +1,13 @@
-"""Internal-consistency losses: ACT, AttCT, and MLPCT (torch/HF-native, LocalBackend only).
+"""Loss definitions for ACT, AttCT, and MLPCT.
 
-Ported from https://github.com/c-wei/AttCT ``losses/losses.py`` @ 79527cf
-(2026-07-10). Only the paper methods are ported — JSD attention consistency
-(AttCT), residual-stream activation consistency (ACT, Irpan et al. 2025 Eq. 1),
-and SwiGLU post-activation MLP consistency (MLPCT). Upstream's six ablated
-attention variants (its README: they "diverge or grow exponentially"), its
-SFTLoss (BCT here is the ``cross_entropy`` loss_fn), and its legacy knobs
-(``loss_formulation="mse"``, ``layer_selection="all_with_embedding"``) stay behind.
+The definitions are adapted from ``losses/losses.py`` in
+https://github.com/c-wei/AttCT at commit ``79527cf``. The implemented methods
+are Jensen-Shannon attention consistency (AttCT), residual-stream activation
+consistency (ACT), and SwiGLU post-activation MLP consistency (MLPCT).
+
+The local backend executes these losses because their inputs require direct
+access to model internals. The mathematical definitions remain in the training
+layer so they are independent of the backend implementation.
 
 All losses compare a differentiable forward pass on the biased/wrapped prompt
 against a no-grad reference pass on the clean prompt (the frozen base model —
@@ -21,6 +22,7 @@ diagnostics (``layer_losses``, ``mean_layer_loss``, ...).
 """
 
 from abc import ABC, abstractmethod
+import math
 from typing import Optional
 
 import torch
@@ -39,6 +41,8 @@ class ConsistencyLoss(nn.Module, ABC):
 
     def __init__(self, weight: float = 1.0):
         super().__init__()
+        if not isinstance(weight, (int, float)) or isinstance(weight, bool) or not math.isfinite(weight) or weight < 0:
+            raise ValueError("weight must be a finite non-negative number")
         self.weight = weight
 
     @abstractmethod
@@ -80,7 +84,9 @@ def _get_layer_weight(layer_weights_type: str, layer_idx: int, total_layers: int
         return (layer_idx + 1) / total_layers
     elif layer_weights_type == "exponential_decay":
         return 2 ** (layer_idx / total_layers) - 1
-    return 1.0
+    raise ValueError(
+        "layer_weights must be 'uniform', 'linear_decay', or " f"'exponential_decay', got {layer_weights_type!r}"
+    )
 
 
 def _resolve_layer_indices(layer_selection, num_layers: int, first: int = 0) -> list[int]:
@@ -103,6 +109,19 @@ def _resolve_layer_indices(layer_selection, num_layers: int, first: int = 0) -> 
     )
 
 
+def _validate_layer_selection(value) -> None:
+    names = {"all", "last", "middle", "last_half", "last_quarter"}
+    if isinstance(value, str) and value in names:
+        return
+    if (
+        isinstance(value, (list, tuple))
+        and value
+        and all(isinstance(index, int) and not isinstance(index, bool) for index in value)
+    ):
+        return
+    raise ValueError(f"layer_selection must be one of {sorted(names)} or a non-empty integer list")
+
+
 class JSDAttentionConsistencyLoss(ConsistencyLoss):
     """AttCT: Jensen-Shannon Divergence on per-head attention weights.
 
@@ -117,8 +136,13 @@ class JSDAttentionConsistencyLoss(ConsistencyLoss):
         layer_selection: "all", "last_half", "last_quarter", or a list of layer indices.
     """
 
-    def __init__(self, weight: float = 1.0, layer_weights: str = "uniform", layer_selection="all", **kwargs):
+    def __init__(self, weight: float = 1.0, layer_weights: str = "uniform", layer_selection="all"):
         super().__init__(weight)
+        _validate_layer_selection(layer_selection)
+        if layer_weights not in {"uniform", "linear_decay", "exponential_decay"}:
+            raise ValueError(
+                "layer_weights must be 'uniform', 'linear_decay', or " f"'exponential_decay', got {layer_weights!r}"
+            )
         self.layer_weights_type = layer_weights
         self.layer_selection = layer_selection
 
@@ -206,8 +230,11 @@ class ActivationConsistencyLoss(ConsistencyLoss):
         normalize:       If True, L2-normalize activations before comparison.
     """
 
-    def __init__(self, weight: float = 1.0, layer_selection="all", normalize: bool = False, **kwargs):
+    def __init__(self, weight: float = 1.0, layer_selection="all", normalize: bool = False):
         super().__init__(weight)
+        _validate_layer_selection(layer_selection)
+        if not isinstance(normalize, bool):
+            raise ValueError("normalize must be a boolean")
         self.layer_selection = layer_selection
         self.normalize = normalize
 
@@ -301,11 +328,19 @@ class MLPConsistencyLoss(ConsistencyLoss):
         layer_weights: str = "uniform",
         distance_metric: str = "cosine",
         normalize: bool = False,
-        **kwargs,
     ):
         super().__init__(weight)
         if variant not in ("hidden", "output"):
             raise ValueError(f"variant must be 'hidden' or 'output', got '{variant}'")
+        _validate_layer_selection(layer_selection)
+        if layer_weights not in {"uniform", "linear_decay", "exponential_decay"}:
+            raise ValueError(
+                "layer_weights must be 'uniform', 'linear_decay', or " f"'exponential_decay', got {layer_weights!r}"
+            )
+        if distance_metric not in {"cosine", "mse", "smooth_l1"}:
+            raise ValueError("distance_metric must be 'cosine', 'mse', or 'smooth_l1'")
+        if not isinstance(normalize, bool):
+            raise ValueError("normalize must be a boolean")
         self.variant = variant
         self.layer_selection = layer_selection
         self.layer_weights_type = layer_weights
@@ -367,3 +402,23 @@ class MLPConsistencyLoss(ConsistencyLoss):
         elif self.distance_metric == "smooth_l1":
             return F.smooth_l1_loss(adv, clean)
         raise ValueError(f"Unknown distance_metric: '{self.distance_metric}'")
+
+
+CONSISTENCY_LOSS_CLASSES = {
+    "activation_consistency": ActivationConsistencyLoss,
+    "attention_consistency": JSDAttentionConsistencyLoss,
+    "mlp_consistency": MLPConsistencyLoss,
+}
+
+
+def create_consistency_loss(name: str, options: Optional[dict] = None) -> ConsistencyLoss:
+    """Construct one method loss and reject unknown names or option keys."""
+
+    try:
+        loss_class = CONSISTENCY_LOSS_CLASSES[name]
+    except KeyError as exc:
+        raise ValueError(f"unknown consistency loss {name!r}") from exc
+    try:
+        return loss_class(**dict(options or {}))
+    except TypeError as exc:
+        raise ValueError(f"invalid options for {name}: {exc}") from exc

@@ -1,43 +1,19 @@
 """
 RL Consistency Training CLI.
 
-Launch RLCT runs with flexible bias type, dataset, and hyperparameter configuration.
-Supports single-bias, multi-bias, and control runs.
-
-Usage:
-    # Single bias, 100 total datapoints (50 per dataset)
-    python scripts/train_rlct.py \\
-        --bias-types suggested_answer \\
-        --experiment-name rl_test \\
-        --run-name llama-rlct-sa-s100
-
-    # Multi-bias, 200 total datapoints (50 per dataset x bias_type combo)
-    python scripts/train_rlct.py \\
-        --bias-types distractor_argument,wrong_few_shot \\
-        --n-datapoints 200 \\
-        --experiment-name rl-da-wfs \\
-        --run-name gpt-rlct-da-wfs-s200
-
-    # Control run
-    python scripts/train_rlct.py \\
-        --bias-types distractor_argument \\
-        --experiment-name rl-distractor-argument \\
-        --run-name gpt-rl-control-da-s100 --control
-
-    # Explicit LR (default: auto from Tinker's get_recommended_lr)
-    python scripts/train_rlct.py \\
-        --bias-types distractor_argument \\
-        --experiment-name rl-distractor-argument \\
-        --run-name gpt-rlct-da-s100 \\
-        --lr 1e-4
+Launch RLCT against any explicitly imported training Setting. Setting-specific choices
+belong in ``--setting-config`` and ``--load-config``; the usual entry point is
+``scripts/run_experiment.py CONFIG.yaml``.
 """
 
-import asyncio
 import argparse
+import asyncio
+import shlex
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv
 
@@ -53,18 +29,62 @@ from ctm.training.rl import (
 )
 from ctm.core.config import CheckpointConfig, AdamConfig, LoRAConfig
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend
-from ctm.evals.parsers import fallback_answer_parser
-from ctm.settings.sycophancy import (
-    attach_wrong_cots,
-    load_datapoints,
-    make_distractor_cue_perturbations,
-    make_perturbation_fns,
-    resolve_distractor_cues,
-    trait_classifier,
-)
+from ctm.cli_safety import parse_json_object, reject_inline_secrets
+from ctm.settings.runtime import prepare_setting, setting_run_metadata
 
 
-def main():
+def _exact_command(argv: list[str]) -> str:
+    return "python scripts/train_rlct.py " + " ".join(shlex.quote(value) for value in argv)
+
+
+def _validate_numeric_args(args: argparse.Namespace) -> None:
+    positive = {
+        "--batch-size": args.batch_size,
+        "--gradient-accumulation-steps": args.gradient_accumulation_steps,
+        "--refresh-every": args.refresh_every,
+        "--n-epochs": args.n_epochs,
+        "--checkpoint-every": args.checkpoint_every,
+        "--lora-rank": args.lora_rank,
+        "--n-ref-rollouts": args.n_ref_rollouts,
+        "--n-train-rollouts": args.n_train_rollouts,
+        "--max-new-tokens": args.max_new_tokens,
+        "--max-resample-attempts": args.max_resample_attempts,
+    }
+    invalid = [f"{flag}={value}" for flag, value in positive.items() if value <= 0]
+    if invalid:
+        raise ValueError("these values must be positive: " + ", ".join(invalid))
+    for flag, value in (
+        ("--n-consistency-rollouts", args.n_consistency_rollouts),
+        ("--n-anchor-rollouts", args.n_anchor_rollouts),
+    ):
+        if value is not None and value < 0:
+            raise ValueError(f"{flag} must be non-negative")
+    if args.n_consistency_rollouts is not None and args.n_consistency_rollouts > args.n_train_rollouts:
+        raise ValueError("--n-consistency-rollouts cannot exceed --n-train-rollouts")
+    if args.n_anchor_rollouts is not None and args.n_anchor_rollouts > args.n_ref_rollouts:
+        raise ValueError("--n-anchor-rollouts cannot exceed --n-ref-rollouts")
+    if args.lr is not None and args.lr <= 0:
+        raise ValueError("--lr must be positive")
+    if args.temperature < 0:
+        raise ValueError("--temperature must be non-negative")
+    if args.kl_coef < 0:
+        raise ValueError("--kl-coef must be non-negative")
+    if not 0 <= args.anchor_weight <= 1:
+        raise ValueError("--anchor-weight must be within [0, 1]")
+    if args.snr_z < 0:
+        raise ValueError("--snr-z must be non-negative")
+    n_consistency = args.n_consistency_rollouts if args.n_consistency_rollouts is not None else args.n_train_rollouts
+    n_anchor = args.n_anchor_rollouts if args.n_anchor_rollouts is not None else args.n_ref_rollouts
+    consistency_active = args.anchor_weight < 1 and n_consistency > 0
+    anchor_active = args.anchor_weight > 0 and n_anchor > 0
+    if not consistency_active and not anchor_active:
+        raise ValueError(
+            "rollout/weight configuration has no active gradient term; increase the rollout count for a "
+            "non-zero-weight consistency or anchor term"
+        )
+
+
+def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(
         description="RL Consistency Training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -73,26 +93,30 @@ def main():
     # === Model & data ===
     parser.add_argument("--model", default="meta-llama/Llama-3.1-8B-Instruct", help="Base model name")
     parser.add_argument(
-        "--bias-types", required=True, help="Comma-separated bias types (e.g. distractor_argument,wrong_few_shot)"
+        "--setting-factory",
+        required=True,
+        help="Training adapter factory in module:callable form",
     )
-    parser.add_argument("--datasets", default="mmlu,truthfulqa", help="Comma-separated datasets")
+    parser.add_argument(
+        "--setting-config",
+        help="Inline JSON object or JSON-file path passed to the setting constructor",
+    )
+    parser.add_argument(
+        "--load-config",
+        help="Inline JSON object or JSON-file path passed to setting.load_datapoints; "
+        "--n-datapoints is added unless this object already sets it",
+    )
     parser.add_argument(
         "--n-datapoints",
         type=int,
         default=100,
-        help="Total number of datapoints (split evenly across dataset x bias_type combinations)",
-    )
-    parser.add_argument("--data-dir", default=None, help="Override default dataset_dumps/test directory")
-    parser.add_argument(
-        "--prompt-style",
-        choices=["cot", "no_cot"],
-        default="cot",
-        help="Strip CoT instructions for reasoning models (e.g. gpt-oss)",
+        help="Maximum training datapoints to load",
     )
 
     # === Naming ===
     parser.add_argument("--experiment-name", required=True, help="Experiment name")
     parser.add_argument("--run-name", required=True, help="Run name (used in checkpoint path)")
+    parser.add_argument("--wandb-project", help="Explicitly enable W&B logging to this project")
 
     # === Optimiser ===
     parser.add_argument(
@@ -130,10 +154,11 @@ def main():
         "--advantage-estimator",
         default="grpo_normalized",
         choices=["grpo_normalized", "snr_scaling", "matched_pair"],
-        help="Advantage construction: 'grpo_normalized' (std-normalize; drops gap magnitude, keeps only its sign), "
-        "'snr_scaling' (still GRPO; keep gap magnitude, shrunk toward 0 by its sampling SNR), or "
-        "'matched_pair' (pool the cued rate across the cue family into one gap vs the neutral control; "
-        "use with --distractor-cues and a small --n-train-rollouts)",
+        help="Advantage construction: 'grpo_normalized' is the paper-era default "
+        "(std-normalize; drops gap magnitude, keeps only its sign). The explicit post-paper extensions are "
+        "'snr_scaling' (GRPO gated toward 0 by sampling SNR) and "
+        "'matched_pair' (pool the rate across a setting's prompt family into one gap vs the reference; "
+        "use a small --n-train-rollouts for multi-variant families)",
     )
     parser.add_argument(
         "--snr-mode",
@@ -191,28 +216,21 @@ def main():
     parser.add_argument("--batch-size", type=int, default=1, help="Datapoints per gradient step")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--refresh-every", type=int, default=1, help="Refresh policy every N steps")
+    parser.add_argument(
+        "--normalization",
+        default="per_item",
+        choices=["pooled", "per_item"],
+        help="Advantage normalization scope: within each datapoint (default) or across the whole batch",
+    )
 
     # === Checkpointing ===
     parser.add_argument("--checkpoint-every", type=int, default=50, help="Save checkpoint every N steps")
     parser.add_argument("--save-state", action="store_true", help="Save full optimizer state (for resuming)")
 
-    # === Distractor cue family (matched-pair / RLOO) ===
-    parser.add_argument(
-        "--distractor-cues",
-        default="none",
-        help="Cue family for matched-pair training: 'none' (single biased prompt), "
-        "'all'/'train'/'holdout' (registry splits), or a comma-list of cue keys. "
-        "When set, the cued side becomes N re-framings of each item's wrong argument "
-        "(idx 1..N); pair with --advantage-estimator matched_pair and a small --n-train-rollouts.",
-    )
-
     # === Backend ===
     add_backend_args(parser)
 
     # === Run modes ===
-    parser.add_argument(
-        "--control", action="store_true", help="Control: use unbiased perturbation for both ref and train"
-    )
     parser.add_argument("--resume-from", default=None, help="Tinker checkpoint path to resume from")
     parser.add_argument(
         "--resume-with-optimizer",
@@ -222,75 +240,41 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Load data and print config, don't train")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    bias_types = [b.strip() for b in args.bias_types.split(",")]
-    datasets = [d.strip() for d in args.datasets.split(",")]
+    try:
+        if args.n_datapoints <= 0:
+            raise ValueError("--n-datapoints must be positive")
+        _validate_numeric_args(args)
+        setting_config = parse_json_object(args.setting_config, label="--setting-config")
+        load_config = parse_json_object(args.load_config, label="--load-config")
+        reject_inline_secrets(setting_config, path="setting_config")
+        reject_inline_secrets(load_config, path="load_config")
+        load_config.setdefault("n_datapoints", args.n_datapoints)
+        prepared = prepare_setting(
+            args.setting_factory,
+            setting_config=setting_config,
+            load_config=load_config,
+        )
+    except (KeyError, NotImplementedError, OSError, TypeError, ValueError) as exc:
+        parser.error(str(exc))
+
+    datapoints = prepared.datapoints
+    perturbation_fns = prepared.perturbations
+    train_indices = prepared.training_indices
+    setting = prepared.setting
     # `is not None` (not `or`) so an explicit --n-consistency-rollouts 0 isn't silently
     # overridden to n_train_rollouts.
     n_consistency = args.n_consistency_rollouts if args.n_consistency_rollouts is not None else args.n_train_rollouts
 
-    data_dir = Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "dataset_dumps" / "test"
-    n_combos = len(bias_types) * len(datasets)
-    per_combo = args.n_datapoints // n_combos if n_combos > 0 else args.n_datapoints
-    print(f"\nLoading datapoints: {args.n_datapoints} total across {n_combos} combos ({per_combo} per combo)")
-
-    datapoints = load_datapoints(bias_types, datasets, args.n_datapoints, data_dir)
-
-    if not datapoints:
-        print("Error: no datapoints loaded. Check --bias-types and --datasets.")
-        sys.exit(1)
-
-    distractor_cues = resolve_distractor_cues(args.distractor_cues)
-    if distractor_cues and args.control:
-        print("Error: --distractor-cues is incompatible with --control.")
-        sys.exit(1)
-    if distractor_cues:
-        from collections import Counter
-
-        n_before = len(datapoints)
-        before_by_bias = Counter(dp.get("bias_name", "?") for dp in datapoints)
-        datapoints = attach_wrong_cots(datapoints)
-        after_by_bias = Counter(dp.get("bias_name", "?") for dp in datapoints)
-        print(
-            f"  Distractor cue family: {len(distractor_cues)} cues; kept "
-            f"{len(datapoints)}/{n_before} datapoints with an extractable <argument>"
-        )
-        # The cue family only supports <argument>-bearing data (distractor_argument).
-        # Other bias types (distractor_fact=<fun_fact>, etc.) would be silently dropped,
-        # collapsing a mixed --bias-types run to a different composition than requested.
-        for bias, n0 in before_by_bias.items():
-            n1 = after_by_bias.get(bias, 0)
-            if n1 == 0:
-                print(
-                    f"  ⚠️  WARNING: bias type {bias!r} has NO <argument> blocks (0/{n0} kept) "
-                    f"and is being DROPPED ENTIRELY — the cue family only supports "
-                    f"distractor_argument. Your trained mix no longer matches --bias-types."
-                )
-            elif n1 < n0:
-                print(f"     {bias}: kept {n1}/{n0}")
-        if not datapoints:
-            print(
-                "Error: no datapoints have an extractable <argument>. The distractor-cue "
-                "family requires distractor_argument data."
-            )
-            sys.exit(1)
-        train_indices = list(range(1, len(distractor_cues) + 1))
-    else:
-        train_indices = [1]
-
-    n_steps = len(datapoints) // args.batch_size
+    n_steps = (len(datapoints) + args.batch_size - 1) // args.batch_size
     total_steps = n_steps * args.n_epochs
-    if args.control:
-        pert_desc = "unbiased (ref) + unbiased (train) [CONTROL]"
-    elif distractor_cues:
-        pert_desc = f"unbiased (ref) + {len(distractor_cues)} distractor cues (train)"
-    else:
-        pert_desc = "unbiased (ref) + biased (train)"
+    pert_desc = f"reference + {len(train_indices)} training variant(s)"
 
     config = RLConfig(
         experiment_name=args.experiment_name,
         run_name=args.run_name,
+        wandb_project=args.wandb_project,
         model=args.model,
         lora=LoRAConfig(rank=args.lora_rank, seed=args.seed),
         optimizer=AdamConfig(
@@ -312,6 +296,7 @@ def main():
             gradient_accumulation_steps=args.gradient_accumulation_steps,
             refresh_policy_every_n_steps=args.refresh_every,
             n_epochs=args.n_epochs,
+            normalize=args.normalization,
         ),
         generation=GenerationConfig(
             max_new_tokens=args.max_new_tokens,
@@ -333,28 +318,28 @@ def main():
         max_resample_attempts=args.max_resample_attempts,
         log_base_dir="logs",
         run_metadata={
-            "setting": "sycophancy",
-            "bias_types": bias_types,
-            "datasets": datasets,
-            "prompt_style": args.prompt_style,
-            "distractor_cues": distractor_cues,
-            "control": args.control,
+            **setting_run_metadata(
+                setting,
+                setting_config=setting_config,
+                load_config=load_config,
+            ),
+            "setting_factory": args.setting_factory,
             "backend": args.backend,
         },
     )
 
+    print("\nExact training command:")
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
+    print(f"  {_exact_command(effective_argv)}")
     print(f"\n{'='*60}")
     print("RL Training Configuration")
     print(f"{'='*60}")
+    print(f"  Setting:            {setting.name}")
     print(f"  Model:              {args.model}")
     print(f"  Backend:            {describe_backend(args)}")
     print(f"  Experiment:         {args.experiment_name}/{args.run_name}")
-    print(f"  Bias types:         {bias_types}")
-    print(f"  Datasets:           {datasets}")
     print(f"  Total datapoints:   {len(datapoints)}")
     print(f"  Perturbations:      {pert_desc}")
-    if distractor_cues:
-        print(f"  Distractor cues:    {', '.join(distractor_cues)}")
     print(f"  LR:                 {args.lr} ({args.lr_schedule})")
     print(f"  LoRA rank:          {args.lora_rank}")
     if args.seed is not None:
@@ -368,18 +353,19 @@ def main():
     print(f"  n_train_rollouts:   {args.n_train_rollouts}")
     print(f"  n_consistency_rollouts: {n_consistency}")
     print(f"  n_anchor_rollouts:  {args.n_anchor_rollouts}")
-    # Surface the per-datapoint sampling cost: each training perturbation (cue) samples
-    # n_train_rollouts. With the full cue family this multiplies fast.
+    print(f"  Normalization:      {args.normalization}")
+    # Surface the per-datapoint sampling cost: every setting variant samples
+    # n_train_rollouts, so fixed-K prompt families can multiply cost quickly.
     n_train_perts = len(train_indices)
     eff_rollouts = args.n_ref_rollouts + n_train_perts * args.n_train_rollouts
     print(
         f"  Rollouts/datapoint: {eff_rollouts} (= {args.n_ref_rollouts} ref + {n_train_perts}×{args.n_train_rollouts} cued)"
     )
-    if distractor_cues and args.n_train_rollouts > 8:
+    if n_train_perts > 1 and args.n_train_rollouts > 8:
         print(
-            f"  ⚠️  WARNING: {n_train_perts} cues × {args.n_train_rollouts} rollouts/cue is a large "
+            f"  ⚠️  WARNING: {n_train_perts} variants × {args.n_train_rollouts} rollouts/variant is a large "
             f"per-datapoint sampling cost (×{eff_rollouts // (args.n_ref_rollouts + args.n_train_rollouts)} "
-            f"vs single-cue). matched_pair targets ~1-2 rollouts/cue — consider --n-train-rollouts 2."
+            f"vs single-variant). matched_pair targets ~1-2 rollouts/variant — consider --n-train-rollouts 2."
         )
     print(f"  KL coef:            {args.kl_coef}")
     print(f"  Anchor weight:      {args.anchor_weight}")
@@ -387,22 +373,17 @@ def main():
     if args.advantage_estimator == "snr_scaling":
         _adv_desc = f"snr_scaling ({args.snr_mode}, z={args.snr_z}, norm={args.snr_normalizer})"
     elif args.advantage_estimator == "matched_pair":
-        _adv_desc = (
-            f"matched_pair (pooled gap, z={args.snr_z}, norm={args.snr_normalizer}, {len(distractor_cues) or 1} cue(s))"
-        )
+        _adv_desc = f"matched_pair (pooled gap, z={args.snr_z}, norm={args.snr_normalizer}, {n_train_perts} variant(s))"
     else:
         _adv_desc = args.advantage_estimator
     print(f"  Advantage est.:     {_adv_desc}")
-    if distractor_cues and args.advantage_estimator != "matched_pair":
+    if n_train_perts > 1 and args.advantage_estimator != "matched_pair":
         print(
-            "  NOTE: --distractor-cues set but estimator is not matched_pair; "
-            "the cue family will be pooled by your chosen estimator instead."
+            "  NOTE: this setting has multiple variants but the estimator is not matched_pair; "
+            "the family will be handled by your chosen estimator instead."
         )
-    if args.advantage_estimator == "matched_pair" and not distractor_cues:
-        print(
-            "  NOTE: matched_pair with no --distractor-cues pools over a single cue "
-            "(equivalent to a 1-cue gap vs the reference)."
-        )
+    if args.advantage_estimator == "matched_pair" and n_train_perts == 1:
+        print("  NOTE: matched_pair over one variant is equivalent to a single gap vs the reference.")
     print(f"  Loss fn:            {args.loss_fn}")
     if args.resume_from:
         print(f"  Resume from:        {args.resume_from}")
@@ -414,9 +395,6 @@ def main():
         if datapoints:
             dp = datapoints[0]
             print(f"\nSample datapoint keys: {list(dp.keys())}")
-            print(f"  biased_option: {dp.get('biased_option')}")
-            print(f"  ground_truth:  {dp.get('ground_truth')}")
-            print(f"  bias_name:     {dp.get('bias_name', 'n/a')}")
         return
 
     if not args.yes:
@@ -424,15 +402,6 @@ def main():
         if response != "y":
             print("Aborted.")
             sys.exit(0)
-
-    if distractor_cues:
-        perturbation_fns = make_distractor_cue_perturbations(distractor_cues, args.prompt_style)
-    else:
-        unbiased_perturbation, biased_perturbation = make_perturbation_fns(args.prompt_style)
-        if args.control:
-            perturbation_fns = [unbiased_perturbation, unbiased_perturbation]
-        else:
-            perturbation_fns = [unbiased_perturbation, biased_perturbation]
 
     trainer = RLTrainer(
         config=config,
@@ -446,8 +415,8 @@ def main():
         trainer.train(
             datapoints=datapoints,
             perturbation_fns=perturbation_fns,
-            trait_classifier=trait_classifier,
-            answer_parser=fallback_answer_parser,
+            trait_classifier=prepared.trait_classifier,
+            answer_parser=prepared.answer_parser,
         )
     )
 
@@ -455,6 +424,7 @@ def main():
     print("Training Complete")
     print(f"Final checkpoint: {final_checkpoint}")
     print(f"{'='*60}")
+    print(f"CTM_FINAL_CHECKPOINT={final_checkpoint}")
 
 
 if __name__ == "__main__":

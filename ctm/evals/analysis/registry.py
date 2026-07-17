@@ -2,9 +2,8 @@
 
 Every training run writes ``manifest.json`` into its log dir
 (ctm.training.manifest). This module turns those into
-``sycophancy_eval_inspect/model_registry.json``-style entry *suggestions*, so
-"which biases was this checkpoint trained on" comes from the run itself instead
-of a hand-maintained field.
+generic registry-entry suggestions while preserving adapter-owned metadata as
+an opaque object.
 
 Suggestions are meant to be merged (styling like color/hatch stays human-chosen):
 
@@ -29,10 +28,7 @@ def manifest_registry_entry(manifest: dict) -> dict:
         "base_model": manifest.get("model"),
         "backend": manifest.get("backend"),
         "setting": meta.get("setting"),
-        "training_biases": meta.get("bias_types", []),
-        "datasets": meta.get("datasets", []),
-        "prompt_style": meta.get("prompt_style"),
-        "control": meta.get("control", False),
+        "setting_metadata": meta.get("setting_metadata", {}),
         "config_hash": manifest.get("config_hash"),
         "written_at": manifest.get("written_at"),
     }

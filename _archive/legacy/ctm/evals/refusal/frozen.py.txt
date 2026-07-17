@@ -1,0 +1,114 @@
+"""Archived frozen records for refusal and expected-behavior evaluation."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+from ctm.artifacts import artifact_manifest_path, read_verified_artifact_manifest
+
+REFUSAL_RECORD_SCHEMA_VERSION = 1
+VALENCES = frozenset({"harmful", "benign"})
+
+
+class RefusalRecordError(ValueError):
+    """A frozen refusal-eval row does not satisfy the schema."""
+
+
+def validate_refusal_record(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate and shallow-copy one refusal-eval record."""
+
+    if row.get("schema_version") != REFUSAL_RECORD_SCHEMA_VERSION:
+        raise RefusalRecordError(
+            f"unsupported schema_version {row.get('schema_version')!r}; expected {REFUSAL_RECORD_SCHEMA_VERSION}"
+        )
+    for field in ("sample_id", "source", "slice", "prompt"):
+        if not isinstance(row.get(field), str) or not row[field].strip():
+            raise RefusalRecordError(f"{field} must be a non-empty string")
+    if row.get("valence") not in VALENCES:
+        raise RefusalRecordError(f"valence must be one of {sorted(VALENCES)}, got {row.get('valence')!r}")
+    if "category" in row and not isinstance(row["category"], str):
+        raise RefusalRecordError("category must be a string when present")
+    if "metadata" in row and not isinstance(row["metadata"], dict):
+        raise RefusalRecordError("metadata must be an object when present")
+    leaked = sorted({"completion", "response", "target_completion", "gen_target"} & set(row))
+    if leaked:
+        raise RefusalRecordError(f"frozen eval rows must not carry shipped completions: {leaked}")
+    return dict(row)
+
+
+def load_refusal_records(path: str | Path) -> list[dict[str, Any]]:
+    """Load a frozen JSONL artifact without touching any live dataset source."""
+
+    read_verified_artifact_manifest(
+        path,
+        expected_schema="ctm.refusal_eval",
+        expected_schema_version=REFUSAL_RECORD_SCHEMA_VERSION,
+    )
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    with Path(path).open() as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                raw = json.loads(line)
+                row = validate_refusal_record(raw)
+            except (json.JSONDecodeError, RefusalRecordError) as exc:
+                raise RefusalRecordError(f"{path}:{line_number}: {exc}") from exc
+            if row["sample_id"] in seen:
+                raise RefusalRecordError(f"{path}:{line_number}: duplicate sample_id {row['sample_id']!r}")
+            seen.add(row["sample_id"])
+            rows.append(row)
+    return rows
+
+
+def _jsonl_bytes(rows: Iterable[Mapping[str, Any]]) -> bytes:
+    return b"".join(
+        (json.dumps(dict(row), sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+        for row in rows
+    )
+
+
+def write_refusal_artifact(
+    path: str | Path,
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    provenance: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Write immutable eval JSONL and a content-addressed manifest."""
+
+    target = Path(path)
+    manifest_path = artifact_manifest_path(target)
+    if target.exists() or manifest_path.exists():
+        raise FileExistsError(f"refusing to overwrite frozen artifact or manifest: {target}")
+
+    validated = [validate_refusal_record(row) for row in rows]
+    sample_ids = [row["sample_id"] for row in validated]
+    if len(sample_ids) != len(set(sample_ids)):
+        raise RefusalRecordError("sample_id values must be unique within an artifact")
+    payload = _jsonl_bytes(validated)
+    manifest = {
+        "artifact_schema": "ctm.refusal_eval",
+        "schema_version": REFUSAL_RECORD_SCHEMA_VERSION,
+        "row_count": len(validated),
+        "sample_ids_sha256": hashlib.sha256("\n".join(sorted(sample_ids)).encode()).hexdigest(),
+        "content_sha256": hashlib.sha256(payload).hexdigest(),
+        "provenance": dict(provenance),
+    }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return manifest
+
+
+__all__ = [
+    "REFUSAL_RECORD_SCHEMA_VERSION",
+    "RefusalRecordError",
+    "load_refusal_records",
+    "validate_refusal_record",
+    "write_refusal_artifact",
+]

@@ -23,9 +23,7 @@ class AdamConfig(BaseModel):
     """Adam optimizer and learning rate schedule configuration."""
 
     learning_rate: Optional[float] = None  # None = use get_recommended_lr(model)
-    lr_schedule: Literal["constant", "linear", "cosine"] = (
-        "linear"  # shared SFT+RL default; train_sft/train_rl/train_evalaware CLIs mirror it
-    )
+    lr_schedule: Literal["constant", "linear", "cosine"] = "linear"  # shared SFT+RL default; training CLIs mirror it
     beta1: float = 0.9
     beta2: float = 0.95  # cookbook default
     eps: float = 1e-8

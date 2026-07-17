@@ -1,4 +1,4 @@
-"""Persist RL gradient rollouts for later inspection.
+"""Persist every RL sampling response for later inspection.
 
 Layout (under the run's log dir by default, ``experiments/<name>/rollouts/`` later):
 
@@ -7,10 +7,9 @@ Layout (under the run's log dir by default, ``experiments/<name>/rollouts/`` lat
       step_000001.jsonl.zst # one RolloutRecord per line (zstd-compressed JSONL)
 
 Modes (``RLConfig.rollout_log``):
-    "none"     — off.
-    "gradient" — every gradient-receiving rollout (consistency + anchor) each step.
-                 Rate-estimation-only rollouts are freed early by the loop for
-                 memory and are not currently retained.
+    "none" — off.
+    "all"  — every sampled response, including rate-only, unusable, anchor-model,
+             and zero-signal rollouts.
 
 Read side: ``ctm.evals.analysis.rollouts.iter_rollouts`` / ``load_index``.
 """
@@ -59,6 +58,8 @@ class RolloutLogger:
             f.write(zstandard.ZstdCompressor().compress(payload.encode("utf-8")))
 
         p_hats = [r.p_hat for r in records if r.p_hat is not None]
+        p_refs = [r.p_ref for r in records if r.p_ref is not None]
+        traits = [r.trait_value for r in records if r.trait_value is not None]
         self._index = [e for e in self._index if e.get("step") != step]  # resume overwrite
         self._index.append(
             {
@@ -67,9 +68,10 @@ class RolloutLogger:
                 "n_records": len(records),
                 "n_train": sum(1 for r in records if r.role == "train"),
                 "n_anchor": sum(1 for r in records if r.role == "anchor"),
-                "p_ref_mean": sum(r.p_ref for r in records) / len(records),
+                "n_skipped": sum(r.skipped_from_training for r in records),
+                "p_ref_mean": (sum(p_refs) / len(p_refs)) if p_refs else None,
                 "p_hat_mean": (sum(p_hats) / len(p_hats)) if p_hats else None,
-                "trait_mean": sum(r.trait_value for r in records) / len(records),
+                "trait_mean": (sum(traits) / len(traits)) if traits else None,
             }
         )
         self._index.sort(key=lambda e: e["step"])

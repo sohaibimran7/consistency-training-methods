@@ -1,248 +1,88 @@
 ---
 name: train-tinker
-description: Launch SFT or RL consistency training on Tinker. Supports BCT (supervised) and RLCT (reinforcement learning) methods.
-argument-hint: [sft|rl] [options]
+description: Preview and launch CTM SFT, representation-consistency, RL, or YAML-defined experiment runs with explicit data, backend, logging, and approval settings.
 ---
 
-# Train on Tinker
+# Train CTM models
 
-Launch supervised fine-tuning (SFT/BCT) or RL consistency training (RLCT) via the Tinker API.
+Use the repository's generic training entry points. Specify benchmark-specific
+data through explicit paths and adapter factories.
 
-## Arguments
+## Safety gate
 
-- `$0` — Training type: `sft` or `rl`
-- `$1` — (Optional) Additional context (e.g., data path, experiment name)
+Before a paid run:
 
-## Before running
+1. Collect the model, exact data paths, experiment/run names, backend, and
+   non-default hyperparameters.
+2. Run the applicable RL dry run or experiment preview. For SFT, print the
+   command and rely on the CLI's pre-training confirmation.
+3. Show the exact command and configuration to the user.
+4. Launch only after the user approves, or by passing `-y` when approval was
+   already explicit.
 
-**Confirm with the user:**
-1. Training type: SFT (for BCT) or RL (for RLCT)
-2. Training data file(s)
-3. Model (default: `meta-llama/Llama-3.1-8B-Instruct`)
-4. Experiment and run names
-5. Key hyperparameters (see defaults below)
-6. Checkpoint save frequency
+## Preferred: experiment config
 
-**Explain the full training configuration** before executing, including:
-- Data file and sample count
-- All hyperparameters that differ from defaults
-- Estimated training steps
-- Checkpoint save schedule
-
-## Known issues
-
-### Auto LR (Llama/Qwen only)
-`get_recommended_lr()` uses the formula: `5e-5 × 10 × (2000/hidden_size)^exponent` where exponent is 0.781 (Llama) or 0.0775 (Qwen). For Llama-3.1-8B this gives **~0.000286**.
-
-For models not in `hyperparam_utils` (e.g., `openai/gpt-oss-120b`), it crashes with `AssertionError`. **Always pass `--lr` explicitly** for non-Llama/Qwen models:
 ```bash
---lr 1e-4   # Standard LoRA fallback for GPT-OSS
+uv run python scripts/run_experiment.py experiments/example_rlct.yaml \
+  --training-data /absolute/path/to/train.jsonl
 ```
 
-## Naming convention
+The config owns which adapter provides training data and which upstream task
+factory provides each evaluation. `${checkpoint}` may appear in evaluations
+only when the selected config has a single training stage.
 
-Follow the pattern from `sycophancy_eval_inspect/logs/cot_100samples/`:
-- `{model}-{method}-{details}` e.g. `gpt-bct-mti-4k`, `llama-rlct-s50`
-- `mti` = mmlu+truthfulqa+instruct, `mt` = mmlu+truthfulqa only
-- `4k` = ~4000 samples, `s50` = 50 total datapoints
-- Control runs: `gpt-control-mti-4k`, `gpt-rl-control-s50`
+## RLCT
 
-The `--run-name` should NOT include checkpoint step info (e.g., don't use `-s50`). Steps are appended automatically by `build_checkpoint_name()` → `{experiment_name}_{run_name}_step{N}`.
-
-The eval `--name` flag should be `{model}-{experiment}_{run}_step{N}` to match the checkpoint label.
-
-## SFT (BCT / VFT) Training
-
-Used for Bias Consistency Training (BCT) or Verbalization Fine-Tuning (VFT) — both use SFT on different data formats.
-
-### Preferred CLI: `train_bct.py`
-Use the unified CLI script rather than writing custom Python scripts:
 ```bash
-python scripts/train_bct.py \
-    --model openai/gpt-oss-120b \
-    --data path/to/data.jsonl \
-    --experiment-name bct-suggested-answer \
-    --run-name gpt-bct-mti-4k \
-    --batch-size 128 --lora-rank 8 --save-every 8 --skip-near-final 21 --lr 1e-4 -y
+uv run python scripts/train_rlct.py \
+  --setting-factory package.adapter:create_setting \
+  --setting-config '{"data_paths":["/absolute/path/to/train.jsonl"]}' \
+  --experiment-name EXPERIMENT --run-name RUN \
+  --dry-run
 ```
 
-### Selective checkpointing with `--skip-near-final`
-`skip_near_final_steps` skips intermediate checkpoints within N steps of the final step.
-Use it to keep only early + final checkpoints. Logic: `steps_remaining <= skip_near_final → skip`.
+Important current defaults:
 
-Example: 30 total steps, save_every=8 → checkpoints at 8, 16, 24, final.
-To keep only step 8 + final: `--skip-near-final 21` (step 16 has 14 remaining ≤ 21 → skipped).
+- `--backend tinker`
+- `--normalization per_item`
+- `--anchor-weight 0.5`
+- `--anchor-model base`
+- `--n-ref-rollouts 128` and `--n-train-rollouts 128`
+- complete rollout persistence under `logs/<experiment>/<run>/rollouts/`
+- no W&B logging unless `--wandb-project` is supplied
 
-### Config defaults
-```python
-SFTConfig(
-    model="meta-llama/Llama-3.1-8B-Instruct",
-    lora=LoRAConfig(rank=8),                    # LoRA rank (8 or 32)
-    optimizer=AdamConfig(lr_schedule="linear"),   # LR auto-detected from model
-    batch_size=128,                               # or 16 for small datasets
-    n_epochs=1,
-    checkpoint=CheckpointConfig(
-        save_every_n_steps=5,                     # Checkpoint frequency
-        skip_near_final_steps=0,                  # Skip checkpoints near end
-    ),
-)
-```
+Use `--load-config` for adapter loading options such as `path_limits`. Training
+data selection belongs to the setting configuration rather than generic RLCT
+arguments.
 
-### Training data format (JSONL)
-```json
-{"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
-```
+## SFT / representation consistency
 
-### Command pattern
-```python
-# In a script:
-from ctm.training.sft import train_sft, SFTConfig
-checkpoint = asyncio.run(train_sft(Path("data/train.jsonl"), config=config))
-```
-
-### Existing training scripts
-- `scripts/train_bct.py` — Full-featured SFT (supports BCT and VFT data)
-- `scripts/train_bct_suggested_answer.py` — BCT on suggested answer data
-- `scripts/simple_sft_train.py` — Generic SFT training
-
-### VFT-specific notes
-- VFT training uses the same `train_bct.py` script with VFT data from `generate_vft_data.py`
-- The final checkpoint is always saved with full state (`kind="both"`) for resuming
-- To measure obfuscation: train BCT/RLCT on top of a VFT checkpoint using `--checkpoint`
-
-## RL (RLCT) Training
-
-RL Consistency Training — GRPO rate-matching to reduce sycophancy without labels.
-
-### Preferred CLI: `train_rlct.py`
-Use the unified RL CLI script rather than `test_rl_training.py`:
 ```bash
-python scripts/train_rlct.py \
-    --model meta-llama/Llama-3.1-8B-Instruct \
-    --bias-types suggested_answer \
-    --datasets mmlu,truthfulqa \
-    --n-datapoints 50 \
-    --experiment-name rl_suggested_answer \
-    --run-name llama-rlct-sa \
-    --lora-rank 8 --refresh-every 1 --checkpoint-every 50 -y
-```
-Note: No `--lr` for Llama — auto LR (~0.000286) is preferred. Only pass `--lr` explicitly for non-Llama/Qwen models.
-
-### Config defaults
-```python
-RLConfig(
-    model="meta-llama/Llama-3.1-8B-Instruct",
-    lora=LoRAConfig(rank=8),
-    optimizer=AdamConfig(lr_schedule="constant"),
-    reference_rate=RateEstimationConfig(
-        perturbation_indices=[0],    # Index 0 = unbiased
-        n_rollouts=128,
-    ),
-    training=TrainingSamplingConfig(
-        perturbation_indices=[1],    # Index 1 = biased
-        n_rollouts_for_rate=128,
-        n_rollouts_for_consistency=128,
-    ),
-    loop=TrainingLoopConfig(
-        batch_size=1,
-        gradient_accumulation_steps=1,
-        refresh_policy_every_n_steps=1,
-    ),
-    generation=GenerationConfig(
-        max_new_tokens=16384,
-        temperature=1.0,
-    ),
-    checkpoint=CheckpointConfig(save_every_n_steps=50),
-    kl_coef=0.05,
-    loss_fn="ppo",
-)
+uv run python scripts/train_bct.py \
+  --method bct \
+  --data /absolute/path/to/train.jsonl \
+  --experiment-name EXPERIMENT --run-name RUN
 ```
 
-### RLCT requires
-1. **Datapoints**: List of dicts with `unbiased_question`, `biased_question`, `biased_option`, `ground_truth`
-2. **Perturbation functions**: Map datapoint -> prompt (unbiased and biased variants)
-3. **Trait classifier**: Detect whether model follows biased suggestion
+`act`, `attct`, and `mlpct` require the local backend and generic pair fields by
+default. Supply method-specific loss settings through `--method-config` or the
+corresponding YAML argument. Native mcq-bias rows must map their fields
+explicitly:
 
-### Key RL flags
-| Flag | Description |
-|------|-------------|
-| `--model MODEL` | Base model |
-| `--bias-types TYPES` | Comma-separated bias types (e.g. `suggested_answer,wrong_few_shot`) |
-| `--datasets DATASETS` | Comma-separated datasets (default: `mmlu,truthfulqa`) |
-| `--n-datapoints N` | Total datapoints (split evenly across dataset × bias_type combos, default: 100) |
-| `--experiment-name NAME` | Experiment name |
-| `--run-name NAME` | Run name (used in checkpoint path and eval `--name`) |
-| `--lr RATE` | Learning rate (default: auto from Tinker's `get_recommended_lr`; pass explicitly for non-Llama models) |
-| `--lr-schedule SCHED` | `constant`, `linear`, or `cosine` |
-| `--lora-rank N` | LoRA rank (default: 8) |
-| `--kl-coef FLOAT` | KL penalty coefficient (default: 0.05) |
-| `--loss-fn FN` | `ppo` or `reinforce` |
-| `--n-ref-rollouts N` | Rollouts for reference rate estimation (default: 128) |
-| `--n-train-rollouts N` | Rollouts for training rate estimation (default: 128) |
-| `--n-consistency-rollouts N` | Consistency gradient rollouts (default: same as `--n-train-rollouts`) |
-| `--n-anchor-rollouts N` | Anchor gradient rollouts (default: all parsed ref rollouts) |
-| `--temperature FLOAT` | Sampling temperature (default: 1.0) |
-| `--max-new-tokens N` | Max generation tokens (default: 16384) |
-| `--batch-size N` | Datapoints per gradient step (default: 1) |
-| `--gradient-accumulation-steps N` | Gradient accumulation (default: 1) |
-| `--refresh-every N` | Refresh sampling policy every N steps (default: 1). Higher values enable deeper prefetch pipelining but use slightly staler samples. |
-| `--checkpoint-every N` | Save checkpoint every N steps (default: 50) |
-| `--save-state` | Save full optimizer state for resuming |
-| `--control` | Control run (unbiased for both ref and train) |
-| `--resume-from PATH` | Tinker checkpoint to resume from |
-| `--dry-run` | Load data and print config, don't train |
-| `-y` | Skip confirmation prompt |
-
-### Legacy script
-`test_rl_training.py` is the older RL script with fewer CLI options. Use `train_rlct.py` for new runs.
-
-## Resuming from a checkpoint (e.g., obfuscation: BCT/RLCT on VFT)
-
-Both SFT and RL scripts support `--resume-from` / `--resume_from` to load weights from a previous checkpoint before training.
-
-### How it works
-- If the path contains `/weights/` (not `/sampler_weights/`), it uses `load_state_with_optimizer` (full resume with optimizer momentum)
-- Otherwise (sampler weights or unknown), it uses `load_state` (weights only, optimizer resets)
-- The Tinker API: `training_client.load_state(path)` or `training_client.load_state_with_optimizer(path)`
-
-### SFT example (BCT on VFT)
 ```bash
-# 1. Generate BCT data from VFT model
-python scripts/generate_bct_from_test.py \
-    --model meta-llama/Llama-3.1-8B-Instruct \
-    --checkpoint "tinker://...sampler_weights/vft-suggested-answer_train" \
-    --datasets truthfulqa mmlu --bias suggested_answer \
-    --output-name bct-on-vft
-
-# 2. Train BCT starting from VFT weights
-python scripts/train_bct.py \
-    --model meta-llama/Llama-3.1-8B-Instruct \
-    --resume-from "tinker://...weights/vft-suggested-answer_train" \
-    --data path/to/bct_cot.jsonl \
-    --experiment-name bct-on-vft --run-name train -y
+uv run python scripts/train_bct.py \
+  --backend local --method act \
+  --data /absolute/path/to/native-mcq-bias.jsonl \
+  --reference-messages-field unbiased_messages \
+  --variant-messages-field biased_messages \
+  --experiment-name EXPERIMENT --run-name RUN
 ```
 
-### RLCT example (RLCT on VFT)
-```bash
-python scripts/train_rlct.py \
-    --model meta-llama/Llama-3.1-8B-Instruct \
-    --resume-from "tinker://...weights/vft-suggested-answer_train" \
-    --bias-types suggested_answer \
-    --experiment-name rlct-on-vft --run-name suggested_answer \
-    --lr 1e-4 -y
-```
+Use `--resume-from` to restore weights. Add `--resume-with-optimizer` only when
+the run must continue with the saved optimizer state. Consult `--help` for the
+complete current interface and resolved defaults.
 
-## Key modules
-
-- `ctm/training/sft.py` — SFT loop (`train_sft`, `SFTConfig`)
-- `ctm/training/rl.py` — RL loop (`RLTrainer`, `RLConfig`); gradient rollouts are
-  persisted per step to `logs/<exp>/<run>/rollouts/` (see `ctm/evals/analysis/rollouts.py`)
-- `ctm/core/config.py` — Shared configs (`LoRAConfig`, `AdamConfig`, `CheckpointConfig`)
-- `ctm/backends/` — compute backends; both CLIs accept `--backend {tinker,local}`
-  (local = self-hosted GPUs, see `infra/`); default is tinker
-- Old paths under `cot_transparency/apis/tinker/` are re-export shims — imports
-  still work, but edit code in `ctm/`
-
-## User preference
-
-When creating new training scripts, **create a new file** rather than editing existing working scripts. This preserves working baselines.
+For a multi-method paper comparison, start from
+`experiments/internal_consistency/method_comparison.yaml`. Named training
+results are referenced as `${training.NAME.checkpoint}` and persisted under
+`logs/experiments/<experiment>/outputs.json` for later evaluation stages.

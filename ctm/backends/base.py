@@ -77,6 +77,9 @@ class SamplerHandle(Protocol):
 class TrainingBackend(Protocol):
     """Everything a training loop needs from the compute substrate."""
 
+    policy_samplers_are_snapshots: bool
+    """Whether an existing policy sampler stays frozen after optimizer updates."""
+
     def setup(
         self,
         *,

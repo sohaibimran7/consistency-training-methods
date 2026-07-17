@@ -36,6 +36,8 @@ def iter_rollouts(
     role: Optional[str] = None,
     trait: Optional[float] = None,
     datapoint_idx: Optional[int] = None,
+    skipped_from_training: Optional[bool] = None,
+    skip_reason: Optional[str] = None,
 ) -> Iterator[RolloutRecord]:
     """Stream records, decompressing only the step files that match ``steps``."""
     directory = Path(directory)
@@ -55,5 +57,9 @@ def iter_rollouts(
             if trait is not None and record.trait_value != trait:
                 continue
             if datapoint_idx is not None and record.datapoint_idx != datapoint_idx:
+                continue
+            if skipped_from_training is not None and record.skipped_from_training != skipped_from_training:
+                continue
+            if skip_reason is not None and record.skip_reason != skip_reason:
                 continue
             yield record

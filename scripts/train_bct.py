@@ -6,7 +6,7 @@ Trains on arbitrary data files with flexible mixing and hyperparameters.
 Methods (--method):
     bct    — supervised cross-entropy on {"messages": [...]} rows (default; any backend)
     act    — activation (residual stream) consistency  ┐ paired-prompt rows
-    attct  — attention (JSD) consistency                │ {"biased_messages", "unbiased_messages"};
+    attct  — attention (JSD) consistency                │ {"variant_messages", "reference_messages"};
     mlpct  — MLP post-activation consistency            ┘ --backend local + LoRA only
 
 Usage:
@@ -50,13 +50,15 @@ import asyncio  # noqa: E402
 
 import tinker  # noqa: E402
 
-from ctm.training.sft import SFTConfig, train_sft  # noqa: E402
+from ctm.training.sft import METHOD_LOSS_FNS, SFTConfig, train_sft  # noqa: E402
 from ctm.core.config import (  # noqa: E402
     LoRAConfig,
     AdamConfig,
     CheckpointConfig,
 )
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend  # noqa: E402
+from ctm.cli_safety import parse_json_object, reject_inline_secrets  # noqa: E402
+from ctm.training.consistency_losses import create_consistency_loss  # noqa: E402
 
 
 def list_available_models() -> list[str]:
@@ -128,7 +130,7 @@ def load_and_combine(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Unified SFT training script using Tinker API",
+        description="Train BCT, ACT, AttCT, or MLPCT with an explicit compute backend",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -140,16 +142,31 @@ def main():
         choices=["bct", "act", "attct", "mlpct"],
         help="Training method: bct (SFT cross-entropy on messages, default) or "
         "act/attct/mlpct (activation/attention/MLP consistency on "
-        "biased_messages/unbiased_messages prompt pairs; requires --backend local)",
+        "variant_messages/reference_messages prompt pairs; requires --backend local)",
     )
 
     # Data
     parser.add_argument("--data", nargs="+", metavar="FILE[:N]", help="Data files with optional sample limits")
     parser.add_argument("--interleave", action="store_true", help="Round-robin interleave samples across files")
+    parser.add_argument(
+        "--reference-messages-field",
+        default="reference_messages",
+        help="Reference-prompt field for act/attct/mlpct rows",
+    )
+    parser.add_argument(
+        "--variant-messages-field",
+        default="variant_messages",
+        help="Variant-prompt field for act/attct/mlpct rows",
+    )
+    parser.add_argument(
+        "--method-config",
+        help="JSON object or JSON file containing ACT, AttCT, or MLPCT loss options",
+    )
 
     # Naming
     parser.add_argument("--experiment-name", default="sft_experiment")
     parser.add_argument("--run-name", default="default")
+    parser.add_argument("--wandb-project", help="Explicitly enable W&B logging to this project")
 
     # Hyperparameters
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (default: auto-detect from model)")
@@ -175,7 +192,9 @@ def main():
 
     # Resume from checkpoint
     parser.add_argument(
-        "--resume-from", default=None, help="Tinker checkpoint path to load before training (tinker://...)"
+        "--resume-from",
+        default=None,
+        help="Checkpoint to load before training (tinker://... or file://... for the matching backend)",
     )
     parser.add_argument(
         "--resume-with-optimizer",
@@ -218,6 +237,15 @@ def main():
         parser.error(
             f"--method {args.method} needs the frozen base for the clean pass — LoRA only (drop --local-full-finetune)"
         )
+    try:
+        method_config = parse_json_object(args.method_config, label="method_config")
+        reject_inline_secrets(method_config, path="method_config")
+        if args.method == "bct" and method_config:
+            raise ValueError("--method-config applies only to act, attct, and mlpct")
+        if args.method != "bct":
+            create_consistency_loss(METHOD_LOSS_FNS[args.method], method_config)
+    except (OSError, TypeError, ValueError) as exc:
+        parser.error(str(exc))
 
     # Parse and validate files
     file_specs = [parse_file_spec(spec) for spec in args.data]
@@ -246,6 +274,7 @@ def main():
     config = SFTConfig(
         experiment_name=args.experiment_name,
         run_name=args.run_name,
+        wandb_project=args.wandb_project,
         method=args.method,
         model=args.model,
         lora=LoRAConfig(rank=args.lora_rank, seed=args.seed),
@@ -257,6 +286,9 @@ def main():
             save_state=args.save_state,
             skip_near_final_steps=args.skip_near_final,
         ),
+        reference_messages_field=args.reference_messages_field,
+        variant_messages_field=args.variant_messages_field,
+        method_config=method_config,
         run_metadata={
             "data_files": [str(p) for p, _ in file_specs],
             "interleave": args.interleave,
@@ -298,10 +330,11 @@ def main():
             config,
             resume_from=args.resume_from,
             resume_with_optimizer=args.resume_with_optimizer,
-            backend=build_backend(args),
+            backend=build_backend(args, consistency_loss_options=method_config),
         )
     )
     print(f"\nDone! Final checkpoint: {final_checkpoint}")
+    print(f"CTM_FINAL_CHECKPOINT={final_checkpoint}")
 
 
 if __name__ == "__main__":

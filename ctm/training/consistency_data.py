@@ -3,14 +3,13 @@
 Boundary-finding helpers ported from https://github.com/c-wei/AttCT
 ``data/attct_datasets.py`` @ 79527cf (2026-07-10).
 
-Consistency methods train on paired PROMPTS (no assistant response): a biased
-prompt and its clean counterpart, formatted with the generation header so the
-model is primed to generate. Each JSONL sample carries both sides — the shape
-mcq-bias frozen rows already have:
+Consistency methods train on paired PROMPTS (no assistant response): a variant
+prompt and its reference counterpart, formatted with the generation header so
+the model is primed to generate. Each JSONL sample carries both sides:
 
-    {"biased_messages": [...], "unbiased_messages": [...]}
+    {"variant_messages": [...], "reference_messages": [...]}
 
-The clean user content must appear verbatim inside the biased prompt (cue
+The reference user content must appear verbatim inside the variant prompt (cue
 wrapped around the question). Samples where it doesn't (e.g. answer-order
 perturbations) raise ValueError — callers skip and count them.
 
@@ -24,6 +23,9 @@ from typing import Optional
 
 import torch
 from tinker import types
+
+DEFAULT_REFERENCE_FIELD = "reference_messages"
+DEFAULT_VARIANT_FIELD = "variant_messages"
 
 
 def longest_matching_suffix_len(seq_a: list, seq_b: list) -> int:
@@ -101,40 +103,46 @@ def _format_prompt(tokenizer, messages: list[dict]) -> str:
     return "\n\n".join(str(m["content"]) for m in messages)
 
 
-def build_consistency_datum(tokenizer, sample: dict) -> types.Datum:
-    """Turn one {biased_messages, unbiased_messages} sample into a paired Datum.
+def build_consistency_datum(
+    tokenizer,
+    sample: dict,
+    *,
+    reference_field: str = DEFAULT_REFERENCE_FIELD,
+    variant_field: str = DEFAULT_VARIANT_FIELD,
+) -> types.Datum:
+    """Turn one reference/variant prompt pair into a paired Datum.
 
-    The datum's ``model_input`` is the biased (wrapped) prompt; ``loss_fn_inputs``
+    The datum's ``model_input`` is the variant prompt; ``loss_fn_inputs``
     carries the clean prompt tokens and the alignment indices the consistency
     losses slice with (all as 1-element int tensors except ``clean_tokens``):
 
         clean_tokens, start_index, clean_start_index, clean_len, match_len
 
-    Raises ValueError for samples that can't be aligned (missing keys, clean
-    content not contained verbatim in the biased prompt).
+    Raises ValueError for samples that can't be aligned (missing keys, reference
+    content not contained verbatim in the variant prompt).
     """
     try:
-        biased_messages = sample["biased_messages"]
-        unbiased_messages = sample["unbiased_messages"]
+        reference_messages = sample[reference_field]
+        variant_messages = sample[variant_field]
     except KeyError as e:
         raise ValueError(f"consistency sample missing {e.args[0]!r} key") from e
 
-    clean_prompt = _prompt_messages(unbiased_messages)
-    biased_prompt = _prompt_messages(biased_messages)
-    content = str(clean_prompt[-1]["content"])
+    reference_prompt = _prompt_messages(reference_messages)
+    variant_prompt = _prompt_messages(variant_messages)
+    content = str(reference_prompt[-1]["content"])
 
-    clean_formatted = _format_prompt(tokenizer, clean_prompt)
-    biased_formatted = _format_prompt(tokenizer, biased_prompt)
+    clean_formatted = _format_prompt(tokenizer, reference_prompt)
+    variant_formatted = _format_prompt(tokenizer, variant_prompt)
 
     clean_ids, clean_start_index, clean_len = find_content_token_boundary(clean_formatted, content, tokenizer)
-    biased_ids, start_index, _ = find_content_token_boundary(biased_formatted, content, tokenizer)
-    match_len = longest_matching_suffix_len(clean_ids, biased_ids)
+    variant_ids, start_index, _ = find_content_token_boundary(variant_formatted, content, tokenizer)
+    match_len = longest_matching_suffix_len(clean_ids, variant_ids)
 
     def _scalar(v: int) -> types.TensorData:
         return types.TensorData.from_torch(torch.tensor([v], dtype=torch.long))
 
     return types.Datum(
-        model_input=types.ModelInput.from_ints(tokens=biased_ids),
+        model_input=types.ModelInput.from_ints(tokens=variant_ids),
         loss_fn_inputs={
             "clean_tokens": types.TensorData.from_torch(torch.tensor(clean_ids, dtype=torch.long)),
             "start_index": _scalar(start_index),
@@ -145,14 +153,27 @@ def build_consistency_datum(tokenizer, sample: dict) -> types.Datum:
     )
 
 
-def build_consistency_datums(tokenizer, samples: list[dict]) -> tuple[list[types.Datum], int]:
+def build_consistency_datums(
+    tokenizer,
+    samples: list[dict],
+    *,
+    reference_field: str = DEFAULT_REFERENCE_FIELD,
+    variant_field: str = DEFAULT_VARIANT_FIELD,
+) -> tuple[list[types.Datum], int]:
     """Build datums for all alignable samples. Returns (datums, n_skipped)."""
     datums: list[types.Datum] = []
     skipped = 0
     first_error: Optional[str] = None
     for sample in samples:
         try:
-            datums.append(build_consistency_datum(tokenizer, sample))
+            datums.append(
+                build_consistency_datum(
+                    tokenizer,
+                    sample,
+                    reference_field=reference_field,
+                    variant_field=variant_field,
+                )
+            )
         except ValueError as e:
             skipped += 1
             if first_error is None:

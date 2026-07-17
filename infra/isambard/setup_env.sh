@@ -3,13 +3,14 @@
 # Run from the repo root on a login node (or inside an interactive job).
 #
 # Notes:
-# - Everything must be aarch64: torch, vllm, flash-attn etc. ship arm64 wheels,
-#   but pin versions you have verified on the system if resolution misbehaves.
-# - Put API keys in .env at the repo root (OPENAI_API_KEY for LLM judges, WANDB_API_KEY).
+# - Every compiled dependency must support AArch64. Pin system-verified versions
+#   if the standard dependency resolver cannot select compatible wheels.
+# - Put grader-provider keys in .env at the repo root. Add WANDB_API_KEY only
+#   when the training command explicitly enables W&B with --wandb-project.
 #   Tinker credentials are NOT needed for --backend local runs.
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."   # repo root
+cd "$(dirname "$0")/../.."   # repository root
 
 # uv (static binary, works on aarch64)
 if ! command -v uv >/dev/null 2>&1; then
@@ -17,13 +18,11 @@ if ! command -v uv >/dev/null 2>&1; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-uv venv --python 3.12 || uv venv   # fall back to system python if 3.12 unavailable
+uv venv --python 3.12 || uv venv   # use the system Python if 3.12 is unavailable
 
-# Repo deps, following CLAUDE.md (grugstream excluded — fails to build, unused)
-grep -v '^grugstream' requirements.txt | uv pip install -r /dev/stdin
-uv pip install inspect-ai
+# Complete repository environment (the top-level file includes both layers).
+uv pip install -r requirements.txt
 uv pip install -e . --no-deps
-uv pip install -e '.[local]'          # peft (LoRA for LocalBackend)
 uv run python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 
 # vLLM: aarch64 wheels exist but are version-sensitive on GH200 — install last and

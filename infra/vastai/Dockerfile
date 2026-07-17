@@ -12,16 +12,14 @@ FROM vllm/vllm-openai:latest
 ENTRYPOINT []
 CMD ["/bin/bash"]
 
-RUN apt-get update && apt-get install -y --no-install-recommends git tmux rsync \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git tmux rsync
 
 RUN pip install --no-cache-dir uv
 
-# Pre-bake the heavy Python deps so instance start is fast. requirements.txt is
-# copied alone first to keep this layer cacheable across code changes.
+# Pre-bake the heavy Python deps so instance start is fast. Requirement files
+# are copied alone first to keep this layer cacheable across code changes.
 WORKDIR /opt/ctm-deps
-COPY requirements.txt .
-RUN grep -v '^grugstream' requirements.txt | pip install --no-cache-dir -r /dev/stdin \
-    && pip install --no-cache-dir inspect-ai peft
+COPY requirements*.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 WORKDIR /workspace

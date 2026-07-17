@@ -1,0 +1,271 @@
+"""Materialize disjoint sycophancy training sets with mcq-bias.
+
+The canonical source shuffle is shared with evaluation. Its prefix is reserved
+for eval, and only the suffix is passed to bias injectors, so every written
+training row is question-disjoint from eval runs whose ``n_questions`` does not
+exceed ``--eval-reserve``.
+"""
+
+import argparse
+import hashlib
+import json
+import sys
+from collections.abc import Sequence
+from itertools import islice
+from pathlib import Path
+from typing import TypeVar
+
+from mcq_bias.pipeline.build import iter_matched
+from mcq_bias.pipeline.injectors import default_injectors
+from mcq_bias.pipeline.sources import load_records
+from mcq_bias.pipeline.wrong_arguments import (
+    DEFAULT_ARGUMENT_MODEL,
+    WrongArgumentStore,
+    arguments_path,
+)
+from mcq_bias.tasks import BIAS_TYPES
+
+from ctm.settings.sycophancy.constants import MCQ_BIAS_REVISION
+from ctm.settings.sycophancy.data import default_data_dir
+
+T = TypeVar("T")
+
+
+def slice_training_records(records: Sequence[T], eval_reserve: int) -> list[T]:
+    """Return the source suffix after the eval-reserved prefix.
+
+    This helper is deliberately independent of source and injector types: the
+    disjointness rule can be verified offline with ordinary sentinel values.
+    """
+    if eval_reserve < 0:
+        raise ValueError("eval_reserve must be non-negative")
+    return list(records[eval_reserve:])
+
+
+def _csv_values(value: str, flag: str) -> list[str]:
+    values = [item.strip() for item in value.split(",") if item.strip()]
+    if not values:
+        raise ValueError(f"{flag} must name at least one value")
+    if len(values) != len(set(values)):
+        raise ValueError(f"{flag} contains duplicates: {value}")
+    return values
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Build eval-disjoint mcq-bias frozen rows for sycophancy training",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--bias-types", required=True, help="Comma-separated native mcq-bias bias types")
+    parser.add_argument("--datasets", default="mmlu,truthfulqa", help="Comma-separated source datasets")
+    parser.add_argument(
+        "--n-datapoints",
+        type=int,
+        default=100,
+        help="Total rows, split evenly across bias-type x dataset combinations",
+    )
+    parser.add_argument(
+        "--prompt-style",
+        choices=["none", "encourage_cot"],
+        default="none",
+        help="Prompt style baked into every frozen row",
+    )
+    parser.add_argument(
+        "--eval-reserve",
+        type=int,
+        default=1000,
+        help="Canonical shuffled-pool prefix reserved exclusively for evaluation",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=default_data_dir(),
+        help="Output root ($CTM_DATA_DIR/sycophancy, with CTM_DATA_DIR defaulting to ~/.cache/ctm)",
+    )
+    parser.add_argument(
+        "--seed",
+        default="42",
+        help="mcq-bias source-shuffle seed; eval must use the same seed for the reserve guarantee",
+    )
+    return parser
+
+
+def _wrong_argument_store() -> WrongArgumentStore:
+    path = arguments_path(DEFAULT_ARGUMENT_MODEL)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"missing wrong_argument asset {path} for mcq-bias's default argument model " f"{DEFAULT_ARGUMENT_MODEL!r}"
+        )
+    store = WrongArgumentStore.for_model(DEFAULT_ARGUMENT_MODEL)
+    if not len(store):
+        raise ValueError(f"wrong_argument asset {path} is empty")
+    return store
+
+
+def _write_combo(
+    *,
+    records: list,
+    bias_type: str,
+    dataset: str,
+    prompt_style: str,
+    n_rows: int,
+    out_dir: Path,
+    wrong_arguments: WrongArgumentStore | None,
+    seed: str,
+    eval_reserve: int,
+) -> Path:
+    path = out_dir / bias_type / f"{dataset}_{bias_type}.jsonl"
+    manifest_path = path.with_suffix(".manifest.json")
+    existing = [candidate for candidate in (path, manifest_path) if candidate.exists()]
+    if existing:
+        raise FileExistsError(
+            "refusing to overwrite existing frozen artifact(s): " + ", ".join(str(candidate) for candidate in existing)
+        )
+
+    injectors = default_injectors(records, wrong_arguments=wrong_arguments)
+    try:
+        injector = injectors[bias_type]
+    except KeyError as exc:
+        raise ValueError(f"mcq-bias has no training injector for {bias_type!r}") from exc
+
+    matched = list(islice(iter_matched(records, injector, prompt_style), n_rows))
+    if len(matched) < n_rows:
+        detail = ""
+        if bias_type == "wrong_argument":
+            detail = f"; argument coverage comes from {arguments_path(DEFAULT_ARGUMENT_MODEL)}"
+        raise ValueError(
+            f"only {len(matched)}/{n_rows} injectable rows remain after the eval reserve for "
+            f"{dataset}/{bias_type}{detail}"
+        )
+
+    # Keep this field set and order byte-compatible with write_frozen at the
+    # pinned mcq-bias revision while materializing each injection only once.
+    rows = []
+    for record, injection in matched:
+        rows.append(
+            {
+                "question": record.question,
+                "question_id": record.question_id,
+                "source_dataset": record.dataset,
+                "prompt_style": prompt_style,
+                "unbiased_messages": record.unbiased_messages(prompt_style),
+                "biased_messages": injection.messages,
+                "bias_type": injector.name,
+                "ground_truth": record.ground_truth,
+                "biased_option": injection.biased_option,
+                "biasing_text": injection.biasing_text,
+            }
+        )
+    serialized = [json.dumps(row) for row in rows]
+    payload = "".join(line + "\n" for line in serialized)
+    manifest = {
+        "artifact_schema": "ctm.sycophancy_frozen",
+        "schema_version": 1,
+        "row_count": n_rows,
+        "content_sha256": hashlib.sha256(payload.encode()).hexdigest(),
+        "provenance": {
+            "mcq_bias_revision": MCQ_BIAS_REVISION,
+            "dataset": dataset,
+            "bias_type": bias_type,
+            "prompt_style": prompt_style,
+            "seed": seed,
+            "eval_reserve": eval_reserve,
+        },
+        "question_ids": [row["question_id"] for row in rows],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "x", encoding="utf-8") as f:
+        f.write(payload)
+    with open(manifest_path, "x", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return path
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        bias_types = _csv_values(args.bias_types, "--bias-types")
+        datasets = _csv_values(args.datasets, "--datasets")
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    unknown = sorted(set(bias_types) - set(BIAS_TYPES))
+    if unknown:
+        parser.error(f"unknown mcq-bias bias type(s): {unknown}; known: {BIAS_TYPES}")
+    if "are_you_sure" in bias_types:
+        parser.error("are_you_sure is multi-turn and unsupported by static-prompt consistency training")
+    if args.eval_reserve < 0:
+        parser.error("--eval-reserve must be non-negative")
+
+    n_combos = len(bias_types) * len(datasets)
+    if args.n_datapoints <= 0:
+        parser.error("--n-datapoints must be positive")
+    if args.n_datapoints % n_combos:
+        parser.error(
+            f"--n-datapoints ({args.n_datapoints}) must be divisible by the {n_combos} "
+            "bias-type x dataset combinations"
+        )
+    per_combo = args.n_datapoints // n_combos
+    out_dir = args.out_dir.expanduser()
+
+    wrong_arguments = None
+    wrong_argument_error: Exception | None = None
+    if "wrong_argument" in bias_types:
+        try:
+            wrong_arguments = _wrong_argument_store()
+        except (OSError, ValueError) as exc:
+            wrong_argument_error = exc
+
+    failures: list[str] = []
+    written_total = 0
+    for dataset in datasets:
+        try:
+            source_records = load_records(dataset, n_questions=None, seed=args.seed)
+            training_records = slice_training_records(source_records, args.eval_reserve)
+        except Exception as exc:
+            for bias_type in bias_types:
+                failure = f"{dataset}/{bias_type}: source unavailable: {type(exc).__name__}: {exc}"
+                failures.append(failure)
+                print(f"ERROR: {failure}", file=sys.stderr)
+            continue
+
+        for bias_type in bias_types:
+            try:
+                if bias_type == "wrong_argument" and wrong_argument_error is not None:
+                    raise wrong_argument_error
+                path = _write_combo(
+                    records=training_records,
+                    bias_type=bias_type,
+                    dataset=dataset,
+                    prompt_style=args.prompt_style,
+                    n_rows=per_combo,
+                    out_dir=out_dir,
+                    wrong_arguments=wrong_arguments,
+                    seed=args.seed,
+                    eval_reserve=args.eval_reserve,
+                )
+            except Exception as exc:
+                failure = f"{dataset}/{bias_type}: {type(exc).__name__}: {exc}"
+                failures.append(failure)
+                print(f"ERROR: {failure}", file=sys.stderr)
+                continue
+            written_total += per_combo
+            print(f"Wrote {per_combo} frozen rows -> {path} (identity: {path.with_suffix('.manifest.json')})")
+
+    if failures:
+        print(
+            f"Failed {len(failures)}/{n_combos} combo(s); wrote {written_total}/{args.n_datapoints} rows.",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"Wrote {written_total} rows across {n_combos} combo(s). "
+        f"The first {args.eval_reserve} source records per dataset remain eval-only."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

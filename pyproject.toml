@@ -5,24 +5,31 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "consistency-training-methods"
 version = "0.1.0"
-description = "Consistency training (BCT/RLCT) across settings — successor to the arXiv:2606.02211 codebase, legacy-free"
+description = "Modular reinforcement, supervised, and representation-consistency training"
 requires-python = ">=3.11"
-# requirements.txt is the dependency source of truth for the dev environment
-# (install with `uv pip install -r requirements.txt`, then `uv pip install -e . --no-deps`).
+# Layered requirements files are the dependency source of truth. requirements.txt
+# installs the complete experiment environment; requirements-ctm.txt excludes
+# direct concrete benchmark and adapter dependencies.
 dependencies = []
 
 [tool.setuptools.packages.find]
-include = ["ctm*", "scripts*", "tests*"]
-namespaces = true
+include = ["ctm*", "ctm_data", "ctm_data.adapters*"]
+exclude = ["ctm_data.adapters.*.tests*"]
+namespaces = false
 
 [tool.black]
 line-length = 120
 target-version = ['py311']
+extend-exclude = '(^|/)(_archive|\.claude/worktrees)/'
 
 [tool.ruff]
 line-length = 300
+extend-exclude = ["_archive", ".claude/worktrees"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests", "ctm_data/adapters"]
+pythonpath = ["."]
+norecursedirs = ["_archive", "*/_archive"]
 markers = [
     "network: needs live API access",
     "gpu: needs a GPU",

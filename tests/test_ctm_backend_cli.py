@@ -6,6 +6,8 @@ import torch
 
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend
 from ctm.backends.local.engine import LocalBackend
+from ctm.backends.tinker import TinkerBackend
+from ctm.core.config import LoRAConfig
 
 
 def parse(argv):
@@ -15,10 +17,10 @@ def parse(argv):
 
 
 class TestBackendCLI:
-    def test_default_is_tinker_and_builds_none(self):
+    def test_default_is_tinker_and_builds_tinker_backend(self):
         args = parse([])
         assert args.backend == "tinker"
-        assert build_backend(args) is None  # loop default = TinkerBackend
+        assert isinstance(build_backend(args), TinkerBackend)
         assert "tinker" in describe_backend(args)
 
     def test_local_builds_localbackend_with_options(self):
@@ -57,3 +59,15 @@ class TestBackendCLI:
         backend = build_backend(args)
         assert backend.use_lora is False
         assert "full-finetune" in describe_backend(args)
+
+
+def test_tinker_training_run_records_renderer_metadata(monkeypatch):
+    class Service:
+        def create_lora_training_client(self, **kwargs):
+            self.kwargs = kwargs
+            return object()
+
+    service = Service()
+    monkeypatch.setattr("ctm.backends.tinker.model_info.get_recommended_renderer_name", lambda _: "unit-renderer")
+    TinkerBackend(service).setup(model="unit/model", lora=LoRAConfig(rank=4))
+    assert service.kwargs["user_metadata"] == {"renderer_name": "unit-renderer"}
