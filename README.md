@@ -49,6 +49,13 @@ uv pip install -r requirements.txt
 uv pip install -e . --no-deps
 ```
 
+Experiments that render charts with Flint also require the pinned JavaScript
+dependencies:
+
+```bash
+npm ci
+```
+
 For the generic CTM library without repository-provided adapter dependencies,
 install `requirements-ctm.txt` instead of `requirements.txt`.
 
@@ -121,6 +128,12 @@ Named checkpoints are persisted in
 these values. The runner does not infer task dependencies or skip completed
 commands; stage selection remains explicit.
 
+An optional `target` field labels where a command is intended to run. Select
+only matching entries with `--target NAME`. The runner performs no remote
+dispatch and does not compare target configurations; run it in the named
+environment or through that environment's scheduler. When `--target` is set,
+unlabelled entries and entries with other labels are skipped.
+
 ## RL consistency training
 
 RLCT consumes a `Setting` factory in `module:callable` form. A setting supplies
@@ -186,6 +199,41 @@ uv run python scripts/train_bct.py \
 explicit. Native `mcq-bias` files use `unbiased_messages` and
 `biased_messages`; see [ctm_data/README.md](ctm_data/README.md).
 
+BCT can use targets sampled from the same frozen base model used by the
+consistency methods. `scripts/prepare_bct_targets.py` reads arbitrary paired
+prompt fields, samples each reference prompt exactly once through the selected
+CTM backend, and emits matched main/control SFT files. The assistant completion
+is identical in both outputs; only the selected prompt side differs. Generation
+finishes before either optimizer is initialized, and a shared manifest records
+the input hashes and generation configuration.
+
+The supervised trainer accepts complete portable LoRA and Adam objects from
+YAML. These values are passed to either Tinker or the local backend:
+
+```yaml
+lora_config:
+  rank: 8
+  train_mlp: true
+  train_attn: true
+  train_unembed: false
+  seed: 42
+optimizer_config:
+  learning_rate: null  # resolve the model recommendation in shared CTM code
+  lr_schedule: linear
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1.0e-8
+  weight_decay: 0.0
+  grad_clip_norm: 1.0
+```
+
+`train_mlp`, `train_attn`, and `train_unembed` use the same portable component
+names for both backends. The model selects the tokenizer and recommended chat
+renderer through the shared renderer code, so runs using the same `model` value
+use the same tokenization path. Scalar `--lora-rank`, `--seed`, `--lr`, and
+`--lr-schedule` arguments remain available and override corresponding nested
+values when supplied.
+
 Select an internal-consistency method and its loss options directly in YAML:
 
 ```yaml
@@ -207,6 +255,12 @@ See
 [experiments/internal_consistency/README.md](experiments/internal_consistency/README.md)
 for the method boundary, supported options, a four-method YAML matrix, and
 named checkpoint routing.
+
+The complete
+[`wrong_argument_cross_bias` experiment](experiments/mcq_bias/wrong_argument_cross_bias/README.md)
+shows data materialization, shared BCT target generation, six local training
+runs, seven official evaluations, strict aggregation, and Flint SVG rendering
+in one YAML file.
 
 ## Evaluation
 

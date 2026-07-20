@@ -69,5 +69,15 @@ def test_tinker_training_run_records_renderer_metadata(monkeypatch):
 
     service = Service()
     monkeypatch.setattr("ctm.backends.tinker.model_info.get_recommended_renderer_name", lambda _: "unit-renderer")
-    TinkerBackend(service).setup(model="unit/model", lora=LoRAConfig(rank=4))
+    TinkerBackend(service).setup(
+        model="unit/model",
+        lora=LoRAConfig(rank=4, train_mlp=False, train_attn=True, train_unembed=False, seed=9),
+    )
     assert service.kwargs["user_metadata"] == {"renderer_name": "unit-renderer"}
+    assert {key: service.kwargs[key] for key in ("rank", "train_mlp", "train_attn", "train_unembed", "seed")} == {
+        "rank": 4,
+        "train_mlp": False,
+        "train_attn": True,
+        "train_unembed": False,
+        "seed": 9,
+    }

@@ -1,0 +1,12 @@
+[
+  {
+    "condition": "base",
+    "bias_type": "suggested_answer",
+    "mean": 0.75
+  },
+  {
+    "condition": "rlct",
+    "bias_type": "suggested_answer",
+    "mean": 0.25
+  }
+]

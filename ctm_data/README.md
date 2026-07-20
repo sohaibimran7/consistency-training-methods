@@ -51,6 +51,43 @@ uv run python scripts/train_bct.py \
   --run-name main
 ```
 
+Materialize a balanced training file without running an evaluation:
+
+```bash
+uv run python -m ctm_data.adapters.mcq_bias.materialize \
+  --bias-type wrong_argument \
+  --datasets logiqa hellaswag \
+  --n-questions 250 \
+  --dataset-dir artifacts/mcq_bias/train \
+  --output artifacts/data/wrong-argument-pairs.jsonl \
+  --manifest-output artifacts/data/wrong-argument-pairs.manifest.json
+```
+
+The command asks the public `mcq_bias` task constructor to materialize each
+native frozen file, then round-robin interleaves those files into the explicit
+training output. Interleaving prevents a smaller global training prefix from
+silently containing only the first dataset.
+
+`mcq_bias` does not generate BCT responses. CTM samples them through its frozen
+base sampler:
+
+```bash
+uv run python scripts/prepare_bct_targets.py \
+  --backend local \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --data artifacts/data/wrong-argument-pairs.jsonl \
+  --source-messages-field unbiased_messages \
+  --main-messages-field biased_messages \
+  --control-messages-field unbiased_messages \
+  --main-output artifacts/data/bct.jsonl \
+  --control-output artifacts/data/bct-control.jsonl \
+  --manifest-output artifacts/data/bct-targets.manifest.json
+```
+
+Every source row is validated before the backend is initialized. CTM samples
+one reference completion per row and reuses it in both output files. Existing
+outputs are never overwritten.
+
 ## WildJailbreak families
 
 The WildJailbreak builder expects JSONL rows containing:

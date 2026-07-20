@@ -1,0 +1,25 @@
+{
+  "semantic_types": {
+    "condition": "Category",
+    "bias_type": "Category",
+    "mean": "Percentage"
+  },
+  "chart_spec": {
+    "chartType": "Grouped Bar Chart",
+    "encodings": {
+      "x": {
+        "field": "bias_type"
+      },
+      "y": {
+        "field": "mean"
+      },
+      "color": {
+        "field": "condition"
+      }
+    },
+    "baseSize": {
+      "width": 900,
+      "height": 480
+    }
+  }
+}

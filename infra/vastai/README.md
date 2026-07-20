@@ -51,6 +51,15 @@ python scripts/train_rlct.py \
 After approving that output, rerun the same command with `--dry-run` replaced
 by `-y`.
 
+For an experiment YAML containing platform-labelled entries, select the Vast.ai
+commands inside the provisioned instance:
+
+```bash
+python scripts/run_experiment.py \
+    experiments/mcq_bias/wrong_argument_cross_bias/bct_backends.yaml \
+    --target vast --yes
+```
+
 Outputs mirror Tinker runs: `logs/<exp>/<run>/` contains local metrics,
 `manifest.json`, complete `rollouts/` records, and `checkpoints/<name>/` adapter
 directories. W&B is used only when `--wandb-project` is supplied. Copy artifacts

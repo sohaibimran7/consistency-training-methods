@@ -29,6 +29,12 @@ All three internal-consistency methods require LoRA. Their clean pass uses the
 recorded base model with the adapter disabled, while the variant pass is
 differentiable through the adapter.
 
+`lora_config` and `optimizer_config` expose the complete shared training
+configuration. The portable LoRA module fields are `train_mlp`, `train_attn`,
+and `train_unembed`. Adam fields are `learning_rate`, `lr_schedule`, `beta1`,
+`beta2`, `eps`, `weight_decay`, and `grad_clip_norm`. These objects are recorded
+in the run manifest and passed to the selected backend.
+
 ## Run the matrix
 
 Copy the YAML into a plot-specific directory, replace its data paths and

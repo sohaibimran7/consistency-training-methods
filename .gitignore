@@ -2,6 +2,7 @@
 .env
 dist/
 build/
+node_modules/
 *.egg-info/
 logs/
 # Dataset/artifact payloads stay local; adapter code is tracked.

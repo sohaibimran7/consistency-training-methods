@@ -16,7 +16,7 @@ from tinker_cookbook.rl.data_processing import trajectory_to_data
 from tinker_cookbook.rl.types import Trajectory, Transition
 from tinker_cookbook.supervised.common import datum_from_model_input_weights
 
-from ctm.backends.local.engine import HAS_PEFT, LocalBackend
+from ctm.backends.local.engine import HAS_PEFT, LocalBackend, _lora_target_module_names
 from ctm.core.config import AdamConfig, LoRAConfig
 
 VOCAB = 128
@@ -217,6 +217,25 @@ class TestLocalCheckpoint:
 
 @pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
 class TestLocalLoRA:
+    def test_portable_component_flags_select_expected_modules(self):
+        model = tiny_model()
+        attention = _lora_target_module_names(
+            model,
+            LoRAConfig(train_mlp=False, train_attn=True, train_unembed=False),
+        )
+        mlp = _lora_target_module_names(
+            model,
+            LoRAConfig(train_mlp=True, train_attn=False, train_unembed=False),
+        )
+        unembed = _lora_target_module_names(
+            model,
+            LoRAConfig(train_mlp=False, train_attn=False, train_unembed=True),
+        )
+
+        assert attention and all("attn" in name for name in attention)
+        assert mlp and all("attn" not in name and name != "lm_head" for name in mlp)
+        assert unembed == ["lm_head"]
+
     def test_lora_wraps_and_trains(self):
         backend = LocalBackend(device="cpu", use_lora=True, model_instance=tiny_model())
         backend.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=4, seed=0))

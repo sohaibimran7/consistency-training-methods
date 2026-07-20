@@ -1,0 +1,273 @@
+name: wrong-argument-cross-bias-method-comparison
+
+# One local-GPU pipeline for the base model, three training methods, and their
+# matched controls. Run this file from inside a provisioned Vast.ai instance.
+variables:
+  model: meta-llama/Llama-3.1-8B-Instruct
+  paired_data: artifacts/data/wrong-argument-cross-bias/pairs.jsonl
+  paired_manifest: artifacts/data/wrong-argument-cross-bias/pairs.manifest.json
+  bct_data: artifacts/data/wrong-argument-cross-bias/bct.jsonl
+  bct_control_data: artifacts/data/wrong-argument-cross-bias/bct-control.jsonl
+  bct_manifest: artifacts/data/wrong-argument-cross-bias/bct-targets.manifest.json
+  aggregate_data: artifacts/results/wrong-argument-cross-bias/matches-bias.json
+  figure: figures/wrong-argument-cross-bias/matches-bias.svg
+
+x-local: &local
+  backend: local
+  local_dtype: bfloat16
+  local_sampler: vllm
+  local_gpu_mem_util: 0.45
+
+x-sft: &sft
+  <<: *local
+  model: "${model}"
+  experiment_name: "${experiment}"
+  batch_size: 8
+  epochs: 1
+  lora_config:
+    rank: 8
+    train_mlp: true
+    train_attn: true
+    train_unembed: false
+    seed: 42
+  optimizer_config:
+    learning_rate: null
+    lr_schedule: linear
+    beta1: 0.9
+    beta2: 0.95
+    eps: 1.0e-8
+    weight_decay: 0.0
+    grad_clip_norm: 1.0
+  save_every: 25
+  "yes": true
+
+x-rlct: &rlct
+  <<: *local
+  model: "${model}"
+  setting_factory: ctm_data.adapters.mcq_bias:create_setting
+  load_config:
+    n_datapoints: 500
+  experiment_name: "${experiment}"
+  seed: 42
+  lora_rank: 8
+  lr_schedule: constant
+  kl_coef: 0.05
+  anchor_weight: 0.0
+  advantage_estimator: grpo_normalized
+  normalization: per_item
+  n_ref_rollouts: 128
+  n_train_rollouts: 128
+  n_consistency_rollouts: 128
+  temperature: 1.0
+  max_new_tokens: 32768
+  batch_size: 4
+  n_epochs: 1
+  checkpoint_every: 25
+  "yes": true
+
+x-eval-task-args: &eval_task_args
+  bias_types: [suggested_answer, distractor_fact, wrong_few_shot, post_hoc, are_you_sure, spurious_few_shot_squares]
+  datasets: [mmlu, truthfulqa]
+  prompt_style: none
+  n_questions: 250
+  seed: "42"
+  dataset_dir: artifacts/mcq_bias/eval
+
+x-eval: &eval
+  task_factory: mcq_bias.tasks:suite_tasks
+  generation_config:
+    max_tokens: 32768
+  "yes": true
+
+data_generation:
+  name: wrong-argument-pairs
+  command: ["${python}", -m, ctm_data.adapters.mcq_bias.materialize]
+  args:
+    bias_type: wrong_argument
+    datasets: [logiqa, hellaswag]
+    prompt_style: none
+    n_questions: 250
+    seed: "42"
+    argument_model: openrouter/google/gemma-4-31b-it
+    generate_missing_arguments: true
+    dataset_dir: artifacts/mcq_bias/train
+    output: "${paired_data}"
+    manifest_output: "${paired_manifest}"
+    "yes": true
+
+data_preparation:
+  name: shared-bct-targets
+  command: ["${python}", scripts/prepare_bct_targets.py]
+  args:
+    <<: *local
+    model: "${model}"
+    data: ["${paired_data}"]
+    limit: 500
+    source_messages_field: unbiased_messages
+    main_messages_field: biased_messages
+    control_messages_field: unbiased_messages
+    main_output: "${bct_data}"
+    control_output: "${bct_control_data}"
+    manifest_output: "${bct_manifest}"
+    max_tokens: 32768
+    temperature: 0.0
+    max_concurrency: 1
+    "yes": true
+
+training:
+  - name: rlct
+    command: ["${python}", scripts/train_rlct.py]
+    args:
+      <<: *rlct
+      setting_config:
+        data_paths: ["${paired_data}"]
+      run_name: rlct
+
+  - name: rlct_control
+    command: ["${python}", scripts/train_rlct.py]
+    args:
+      <<: *rlct
+      setting_config:
+        data_paths: ["${paired_data}"]
+        control: true
+      run_name: rlct-control
+
+  - name: act
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *sft
+      method: act
+      method_config:
+        layer_selection: all
+        normalize: false
+      data: ["${paired_data}"]
+      data_manifest: ["${paired_manifest}"]
+      reference_messages_field: unbiased_messages
+      variant_messages_field: biased_messages
+      run_name: act
+
+  - name: act_control
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *sft
+      method: act
+      method_config:
+        layer_selection: all
+        normalize: false
+      data: ["${paired_data}"]
+      data_manifest: ["${paired_manifest}"]
+      reference_messages_field: unbiased_messages
+      variant_messages_field: unbiased_messages
+      run_name: act-control
+
+  - name: bct
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *sft
+      method: bct
+      data: ["${bct_data}"]
+      data_manifest: ["${bct_manifest}"]
+      run_name: bct
+
+  - name: bct_control
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *sft
+      method: bct
+      data: ["${bct_control_data}"]
+      data_manifest: ["${bct_manifest}"]
+      run_name: bct-control
+
+evaluation:
+  - name: base
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      model: "hf/${model}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/base
+      log_dir: logs/evals/${experiment}/base
+
+  - name: rlct
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.rlct.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/rlct
+      log_dir: logs/evals/${experiment}/rlct
+
+  - name: rlct-control
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.rlct_control.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/rlct-control
+      log_dir: logs/evals/${experiment}/rlct-control
+
+  - name: act
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.act.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/act
+      log_dir: logs/evals/${experiment}/act
+
+  - name: act-control
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.act_control.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/act-control
+      log_dir: logs/evals/${experiment}/act-control
+
+  - name: bct
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.bct.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/bct
+      log_dir: logs/evals/${experiment}/bct
+
+  - name: bct-control
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.bct_control.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/bct-control
+      log_dir: logs/evals/${experiment}/bct-control
+
+analysis:
+  - name: aggregate
+    command: ["${python}", -m, ctm_data.adapters.mcq_bias.analysis]
+    args:
+      run:
+        - base=logs/evals/${experiment}/base
+        - rlct=logs/evals/${experiment}/rlct
+        - rlct-control=logs/evals/${experiment}/rlct-control
+        - act=logs/evals/${experiment}/act
+        - act-control=logs/evals/${experiment}/act-control
+        - bct=logs/evals/${experiment}/bct
+        - bct-control=logs/evals/${experiment}/bct-control
+      metric: matches_bias
+      output: "${aggregate_data}"
+      "yes": true
+
+  - name: render
+    command: [node, scripts/render_flint.mjs]
+    args:
+      data: "${aggregate_data}"
+      spec: experiments/mcq_bias/wrong_argument_cross_bias/chart.json
+      output: "${figure}"

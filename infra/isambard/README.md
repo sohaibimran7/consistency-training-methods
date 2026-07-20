@@ -52,6 +52,18 @@ Outputs are written to `logs/<experiment>/<run>/`, including local metrics,
 `manifest.json`, complete `rollouts/`, and `checkpoints/<name>/` adapter
 directories. W&B receives metrics only when `--wandb-project` is supplied.
 
+For a multi-platform experiment YAML, use the generic launcher instead:
+
+```bash
+sbatch infra/isambard/run_experiment.sbatch \
+    experiments/mcq_bias/wrong_argument_cross_bias/bct_backends.yaml \
+    --target isambard --yes
+```
+
+This allocates the node and forwards the remaining arguments to
+`scripts/run_experiment.py`. The target selector does not submit remote jobs or
+copy artifacts.
+
 ## Platform notes
 
 - **Architecture:** PyTorch and vLLM wheels must support AArch64.

@@ -1,0 +1,132 @@
+name: wrong-argument-bct-backend-comparison
+
+# Materialize these two files once with experiment.yaml's data_generation and
+# data_preparation stages, then copy the identical files to each execution
+# platform. The target field selects commands; it does not validate equality.
+variables:
+  model: meta-llama/Llama-3.1-8B-Instruct
+  bct_data: artifacts/data/wrong-argument-cross-bias/bct.jsonl
+  bct_manifest: artifacts/data/wrong-argument-cross-bias/bct-targets.manifest.json
+  aggregate_data: artifacts/results/wrong-argument-bct-backends/matches-bias.json
+  figure: figures/wrong-argument-bct-backends/matches-bias.svg
+
+x-bct: &bct
+  model: "${model}"
+  method: bct
+  data: ["${bct_data}"]
+  data_manifest: ["${bct_manifest}"]
+  experiment_name: "${experiment}"
+  batch_size: 8
+  epochs: 1
+  lora_config:
+    rank: 8
+    train_mlp: true
+    train_attn: true
+    train_unembed: false
+    seed: 42
+  optimizer_config:
+    learning_rate: null
+    lr_schedule: linear
+    beta1: 0.9
+    beta2: 0.95
+    eps: 1.0e-8
+    weight_decay: 0.0
+    grad_clip_norm: 1.0
+  save_every: 25
+  "yes": true
+
+x-eval-task-args: &eval_task_args
+  bias_types: [suggested_answer, distractor_fact, wrong_few_shot, post_hoc, are_you_sure, spurious_few_shot_squares]
+  datasets: [mmlu, truthfulqa]
+  prompt_style: none
+  n_questions: 250
+  seed: "42"
+  dataset_dir: artifacts/mcq_bias/eval
+
+x-eval: &eval
+  task_factory: mcq_bias.tasks:suite_tasks
+  generation_config:
+    max_tokens: 32768
+  "yes": true
+
+training:
+  - name: bct_tinker
+    target: tinker
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *bct
+      backend: tinker
+      run_name: bct-tinker
+
+  - name: bct_vast
+    target: vast
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *bct
+      backend: local
+      local_dtype: bfloat16
+      run_name: bct-vast
+
+  - name: bct_isambard
+    target: isambard
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      <<: *bct
+      backend: local
+      local_dtype: bfloat16
+      run_name: bct-isambard
+
+evaluation:
+  - name: bct-tinker
+    target: tinker
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      tinker_checkpoint: "${training.bct_tinker.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/bct-tinker
+      log_dir: logs/evals/${experiment}/bct-tinker
+
+  - name: bct-vast
+    target: vast
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.bct_vast.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/bct-vast
+      log_dir: logs/evals/${experiment}/bct-vast
+
+  - name: bct-isambard
+    target: isambard
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      <<: *eval
+      local_checkpoint: "${training.bct_isambard.checkpoint}"
+      task_args:
+        <<: *eval_task_args
+        unbiased_log: logs/evals/${experiment}/bct-isambard
+      log_dir: logs/evals/${experiment}/bct-isambard
+
+analysis:
+  - name: aggregate
+    target: controller
+    command: ["${python}", -m, ctm_data.adapters.mcq_bias.analysis]
+    args:
+      run:
+        - bct-tinker=logs/evals/${experiment}/bct-tinker
+        - bct-vast=logs/evals/${experiment}/bct-vast
+        - bct-isambard=logs/evals/${experiment}/bct-isambard
+      metric: matches_bias
+      output: "${aggregate_data}"
+      "yes": true
+
+  - name: render
+    target: controller
+    command: [node, scripts/render_flint.mjs]
+    args:
+      data: "${aggregate_data}"
+      spec: experiments/mcq_bias/wrong_argument_cross_bias/chart.json
+      output: "${figure}"

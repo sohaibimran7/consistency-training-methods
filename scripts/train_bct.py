@@ -51,6 +51,7 @@ import asyncio  # noqa: E402
 import tinker  # noqa: E402
 
 from ctm.training.sft import METHOD_LOSS_FNS, SFTConfig, train_sft  # noqa: E402
+from ctm.artifacts import plain_file_identity  # noqa: E402
 from ctm.core.config import (  # noqa: E402
     LoRAConfig,
     AdamConfig,
@@ -128,6 +129,44 @@ def load_and_combine(
     return result
 
 
+def resolve_lora_config(raw: dict, *, rank: int | None, seed: int | None) -> LoRAConfig:
+    """Build the portable LoRA configuration, with scalar CLI overrides."""
+
+    unknown = sorted(set(raw) - set(LoRAConfig.model_fields))
+    if unknown:
+        raise ValueError(f"lora_config has unknown field(s): {unknown}")
+    values = {"rank": 8, **raw}
+    if rank is not None:
+        values["rank"] = rank
+    if seed is not None:
+        values["seed"] = seed
+    config = LoRAConfig(**values)
+    if config.rank < 1:
+        raise ValueError("lora_config.rank must be >= 1")
+    if not (config.train_mlp or config.train_attn or config.train_unembed):
+        raise ValueError("lora_config must enable at least one of train_mlp, train_attn, or train_unembed")
+    return config
+
+
+def resolve_optimizer_config(
+    raw: dict,
+    *,
+    learning_rate: float | None,
+    lr_schedule: str | None,
+) -> AdamConfig:
+    """Build the shared Adam configuration, with scalar CLI overrides."""
+
+    unknown = sorted(set(raw) - set(AdamConfig.model_fields))
+    if unknown:
+        raise ValueError(f"optimizer_config has unknown field(s): {unknown}")
+    values = dict(raw)
+    if learning_rate is not None:
+        values["learning_rate"] = learning_rate
+    if lr_schedule is not None:
+        values["lr_schedule"] = lr_schedule
+    return AdamConfig(**values)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Train BCT, ACT, AttCT, or MLPCT with an explicit compute backend",
@@ -147,6 +186,12 @@ def main():
 
     # Data
     parser.add_argument("--data", nargs="+", metavar="FILE[:N]", help="Data files with optional sample limits")
+    parser.add_argument(
+        "--data-manifest",
+        nargs="+",
+        type=Path,
+        help="Optional provenance manifest(s) associated with --data; paths and hashes are recorded",
+    )
     parser.add_argument("--interleave", action="store_true", help="Round-robin interleave samples across files")
     parser.add_argument(
         "--reference-messages-field",
@@ -169,17 +214,25 @@ def main():
     parser.add_argument("--wandb-project", help="Explicitly enable W&B logging to this project")
 
     # Hyperparameters
+    parser.add_argument(
+        "--lora-config",
+        help="JSON object or JSON file with rank, train_mlp, train_attn, train_unembed, and seed",
+    )
+    parser.add_argument(
+        "--optimizer-config",
+        help="JSON object or JSON file with Adam learning_rate, lr_schedule, betas, epsilon, weight decay, and clipping",
+    )
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (default: auto-detect from model)")
     parser.add_argument(
         "--lr-schedule",
-        default="linear",
+        default=None,
         choices=["constant", "linear", "cosine"],
-        help="LR schedule (shared SFT+RL default: linear)",
+        help="Override optimizer_config.lr_schedule (effective default: linear)",
     )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--lora-rank", type=int, default=8)
-    parser.add_argument("--seed", type=int, default=None, help="Random seed for training reproducibility")
+    parser.add_argument("--lora-rank", type=int, default=None, help="Override lora_config.rank (effective default: 8)")
+    parser.add_argument("--seed", type=int, default=None, help="Override lora_config.seed")
     parser.add_argument("--save-every", type=int, default=5)
     parser.add_argument(
         "--save-state",
@@ -239,11 +292,21 @@ def main():
         )
     try:
         method_config = parse_json_object(args.method_config, label="method_config")
+        raw_lora_config = parse_json_object(args.lora_config, label="lora_config")
+        raw_optimizer_config = parse_json_object(args.optimizer_config, label="optimizer_config")
         reject_inline_secrets(method_config, path="method_config")
+        reject_inline_secrets(raw_lora_config, path="lora_config")
+        reject_inline_secrets(raw_optimizer_config, path="optimizer_config")
         if args.method == "bct" and method_config:
             raise ValueError("--method-config applies only to act, attct, and mlpct")
         if args.method != "bct":
             create_consistency_loss(METHOD_LOSS_FNS[args.method], method_config)
+        lora_config = resolve_lora_config(raw_lora_config, rank=args.lora_rank, seed=args.seed)
+        optimizer_config = resolve_optimizer_config(
+            raw_optimizer_config,
+            learning_rate=args.lr,
+            lr_schedule=args.lr_schedule,
+        )
     except (OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
 
@@ -252,6 +315,9 @@ def main():
     for path, _ in file_specs:
         if not path.exists():
             parser.error(f"File not found: {path}")
+    for path in args.data_manifest or []:
+        if not path.is_file():
+            parser.error(f"Data manifest not found: {path}")
 
     # Load samples
     print("Loading samples...")
@@ -277,8 +343,8 @@ def main():
         wandb_project=args.wandb_project,
         method=args.method,
         model=args.model,
-        lora=LoRAConfig(rank=args.lora_rank, seed=args.seed),
-        optimizer=AdamConfig(learning_rate=args.lr, lr_schedule=args.lr_schedule),
+        lora=lora_config,
+        optimizer=optimizer_config,
         n_epochs=args.epochs,
         batch_size=args.batch_size,
         checkpoint=CheckpointConfig(
@@ -291,6 +357,8 @@ def main():
         method_config=method_config,
         run_metadata={
             "data_files": [str(p) for p, _ in file_specs],
+            "data_artifacts": [plain_file_identity(path) for path, _ in file_specs],
+            "data_manifests": [plain_file_identity(path) for path in (args.data_manifest or [])],
             "interleave": args.interleave,
             "backend": args.backend,
             "method": args.method,
@@ -305,10 +373,17 @@ def main():
     print(f"Method: {config.method}")
     print(f"Backend: {describe_backend(args)}")
     print(f"Experiment: {config.experiment_name} / {config.run_name}")
-    seed_str = f", seed={args.seed}" if args.seed is not None else ""
+    seed_str = f", seed={config.lora.seed}" if config.lora.seed is not None else ""
+    learning_rate = config.optimizer.learning_rate
     print(
-        f"Hyperparams: lr={args.lr or 'auto'}, batch={args.batch_size}, "
-        f"epochs={args.epochs}, lora_rank={args.lora_rank}{seed_str}"
+        f"Hyperparams: lr={learning_rate if learning_rate is not None else 'auto'}, "
+        f"schedule={config.optimizer.lr_schedule}, batch={args.batch_size}, "
+        f"epochs={args.epochs}, lora_rank={config.lora.rank}{seed_str}"
+    )
+    print(
+        "LoRA modules: "
+        f"mlp={config.lora.train_mlp}, attn={config.lora.train_attn}, "
+        f"unembed={config.lora.train_unembed}"
     )
     print(f"Steps: {n_steps}, checkpoints: ~{n_ckpts} intermediate + 1 final")
     if args.save_state:

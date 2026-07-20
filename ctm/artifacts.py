@@ -92,6 +92,28 @@ def artifact_identity(path: str | Path, manifest: dict[str, Any]) -> dict[str, A
     }
 
 
+def plain_file_identity(path: str | Path) -> dict[str, Any]:
+    """Record the path, digest, and non-empty line count of a plain file."""
+
+    target = Path(path)
+    payload = target.read_bytes()
+    return {
+        "path": str(target.resolve()),
+        "content_sha256": hashlib.sha256(payload).hexdigest(),
+        "row_count": sum(1 for line in payload.splitlines() if line.strip()),
+    }
+
+
+def write_atomic_bytes(path: str | Path, payload: bytes) -> None:
+    """Publish bytes by replacing the destination with a completed temporary file."""
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(target.name + ".tmp")
+    temporary.write_bytes(payload)
+    temporary.replace(target)
+
+
 def artifact_selection_identity(source_ids: Sequence[str], *, n_variants: int | None = None) -> dict[str, Any]:
     """Identity of the exact ordered family prefix consumed by one training run."""
 
@@ -118,5 +140,7 @@ __all__ = [
     "artifact_identity",
     "artifact_manifest_path",
     "artifact_selection_identity",
+    "plain_file_identity",
     "read_verified_artifact_manifest",
+    "write_atomic_bytes",
 ]

@@ -1,9 +1,10 @@
 """Load native ``mcq_bias`` rows selected by the experiment config."""
 
-import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+
+from ctm.artifacts import plain_file_identity
 
 _FROZEN_ROW_FIELDS = frozenset(
     {
@@ -80,14 +81,9 @@ def _validate_frozen_row(row: object, *, path: Path, line_number: int) -> dict:
 def file_identity(path: str | Path) -> dict:
     """Record which exact file an experiment selected, without interpreting it."""
 
-    source = Path(path)
-    payload = source.read_bytes()
-    return {
-        "path": str(source),
-        "content_sha256": hashlib.sha256(payload).hexdigest(),
-        "row_count": sum(1 for line in payload.splitlines() if line.strip()),
-        "provenance": {"source": "explicit_mcq_bias_file"},
-    }
+    identity = plain_file_identity(path)
+    identity["provenance"] = {"source": "explicit_mcq_bias_file"}
+    return identity
 
 
 def load_paths(

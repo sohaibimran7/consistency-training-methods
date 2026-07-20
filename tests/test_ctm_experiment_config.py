@@ -13,6 +13,14 @@ F6_DEBUG = (
     Path(__file__).parent.parent / "experiments" / "eval_awareness" / "debug" / "qwen_f6_snr_per_item_two_items.yaml"
 )
 METHOD_COMPARISON = Path(__file__).parent.parent / "experiments" / "internal_consistency" / "method_comparison.yaml"
+WRONG_ARGUMENT_COMPARISON = (
+    Path(__file__).parent.parent
+    / "experiments"
+    / "mcq_bias"
+    / "wrong_argument_cross_bias"
+    / "experiment.yaml"
+)
+BCT_BACKEND_COMPARISON = WRONG_ARGUMENT_COMPARISON.with_name("bct_backends.yaml")
 
 
 def test_example_keeps_training_and_evaluation_independent():
@@ -102,6 +110,35 @@ def test_multiple_training_commands_without_checkpoint_placeholder_are_allowed()
     assert len(planned) == 3
 
 
+def test_target_selects_commands_without_becoming_a_child_argument():
+    config = {
+        "name": "platforms",
+        "training": [
+            {"name": "bct_tinker", "target": "tinker", "command": ["python", "train.py", "tinker"]},
+            {"name": "bct_vast", "target": "vast", "command": ["python", "train.py", "vast"]},
+        ],
+        "evaluation": [
+            {
+                "name": "eval_vast",
+                "target": "vast",
+                "command": ["python", "eval.py", "${training.bct_vast.checkpoint}"],
+            }
+        ],
+    }
+    commands = experiment.planned_commands(
+        config,
+        ["training", "evaluation"],
+        {"training.bct_vast.checkpoint": "file:///vast"},
+        strict=True,
+        target="vast",
+    )
+
+    assert commands == [
+        ("training", "bct_vast", ["python", "train.py", "vast"]),
+        ("evaluation", "eval_vast", ["python", "eval.py", "file:///vast"]),
+    ]
+
+
 def test_named_training_checkpoints_route_each_evaluation(monkeypatch, tmp_path):
     config_path = tmp_path / "named.yaml"
     config_path.write_text("""
@@ -149,6 +186,67 @@ def test_method_comparison_yaml_selects_all_supervised_family_methods():
     assert '"layer_selection":"all"' in " ".join(commands["act"])
     assert '"layer_weights":"uniform"' in " ".join(commands["attct"])
     assert '"distance_metric":"cosine"' in " ".join(commands["mlpct"])
+
+
+def test_wrong_argument_figure_yaml_routes_the_complete_pipeline():
+    config = experiment.load_experiment(WRONG_ARGUMENT_COMPARISON)
+    context = experiment.initial_context(config)
+    for name in ("rlct", "rlct_control", "act", "act_control", "bct", "bct_control"):
+        context[f"training.{name}.checkpoint"] = f"file:///checkpoints/{name}"
+    stages = ["data_generation", "data_preparation", "training", "evaluation", "analysis"]
+    planned = experiment.planned_commands(config, stages, context, strict=True)
+    by_stage = {stage: [] for stage in stages}
+    for stage, name, command in planned:
+        by_stage[stage].append((name, command))
+
+    assert [len(by_stage[stage]) for stage in stages] == [1, 1, 6, 7, 2]
+    assert "ctm_data.adapters.mcq_bias.materialize" in by_stage["data_generation"][0][1]
+    target_command = by_stage["data_preparation"][0][1]
+    assert "scripts/prepare_bct_targets.py" in target_command
+    assert target_command[target_command.index("--source-messages-field") + 1] == "unbiased_messages"
+    training = dict(by_stage["training"])
+    assert '"control":true' in " ".join(training["rlct_control"])
+    assert training["act"][training["act"].index("--variant-messages-field") + 1] == "biased_messages"
+    assert training["act_control"][training["act_control"].index("--variant-messages-field") + 1] == "unbiased_messages"
+    assert training["bct"][training["bct"].index("--data-manifest") + 1].endswith("bct-targets.manifest.json")
+    evaluations = dict(by_stage["evaluation"])
+    assert evaluations["base"][evaluations["base"].index("--model") + 1].startswith("hf/")
+    assert evaluations["bct"][evaluations["bct"].index("--local-checkpoint") + 1] == "file:///checkpoints/bct"
+    assert "ctm_data.adapters.mcq_bias.analysis" in by_stage["analysis"][0][1]
+    assert by_stage["analysis"][1][1][:2] == ["node", "scripts/render_flint.mjs"]
+
+
+def test_bct_backend_yaml_shares_scientific_config_without_runtime_enforcement():
+    config = experiment.load_experiment(BCT_BACKEND_COMPARISON)
+    training = config["training"]
+
+    assert [entry["target"] for entry in training] == ["tinker", "vast", "isambard"]
+    for field in (
+        "model",
+        "method",
+        "data",
+        "data_manifest",
+        "batch_size",
+        "epochs",
+        "lora_config",
+        "optimizer_config",
+    ):
+        assert training[0]["args"][field] == training[1]["args"][field] == training[2]["args"][field]
+
+    context = experiment.initial_context(config)
+    context["training.bct_vast.checkpoint"] = "file:///vast"
+    planned = experiment.planned_commands(
+        config,
+        ["training", "evaluation"],
+        context,
+        strict=True,
+        target="vast",
+    )
+    assert [name for _, name, _ in planned] == ["bct_vast", "bct-vast"]
+    train_command = planned[0][2]
+    assert train_command[train_command.index("--backend") + 1] == "local"
+    assert '"train_unembed":false' in train_command[train_command.index("--lora-config") + 1]
+    assert '"beta2":0.95' in train_command[train_command.index("--optimizer-config") + 1]
 
 
 def test_experiment_variables_cannot_override_runner_context():

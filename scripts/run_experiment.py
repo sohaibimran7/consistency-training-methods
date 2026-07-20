@@ -98,12 +98,23 @@ def select_stages(
     return present
 
 
-def _entries(config: Mapping[str, Any], stage: str) -> list[Mapping[str, Any]]:
+def _entries(
+    config: Mapping[str, Any],
+    stage: str,
+    *,
+    target: str | None = None,
+) -> list[Mapping[str, Any]]:
     value = config[stage]
     entries = value if isinstance(value, list) else [value]
     if not entries or any(not isinstance(entry, Mapping) for entry in entries):
         raise ExperimentConfigError(f"{stage} must be a command object or non-empty list of command objects")
-    return list(entries)
+    for entry in entries:
+        entry_target = entry.get("target")
+        if entry_target is not None and (not isinstance(entry_target, str) or not entry_target.strip()):
+            raise ExperimentConfigError(f"{stage} command target must be a non-empty string")
+    if target is None:
+        return list(entries)
+    return [entry for entry in entries if entry.get("target") == target]
 
 
 def _render_string(value: str, context: Mapping[str, Any], *, strict: bool) -> str:
@@ -176,7 +187,7 @@ def command_argv(spec: Mapping[str, Any], context: Mapping[str, Any], *, strict:
     command = rendered.get("command")
     if not isinstance(command, list) or not command or any(not isinstance(token, str) for token in command):
         raise ExperimentConfigError("each command needs a non-empty string-list command")
-    unknown = sorted(set(rendered) - {"name", "command", "args"})
+    unknown = sorted(set(rendered) - {"name", "target", "command", "args"})
     if unknown:
         raise ExperimentConfigError(f"unknown command field(s): {unknown}")
     return [*command, *_argument_tokens(rendered.get("args"))]
@@ -192,7 +203,12 @@ def _uses_placeholder(value: Any, name: str) -> bool:
     return False
 
 
-def validate_checkpoint_ownership(config: Mapping[str, Any], selected_stages: Sequence[str]) -> None:
+def validate_checkpoint_ownership(
+    config: Mapping[str, Any],
+    selected_stages: Sequence[str],
+    *,
+    target: str | None = None,
+) -> None:
     """Reject the ambiguous last-training-checkpoint convention.
 
     A single training command may publish ``${checkpoint}`` for later stages.
@@ -200,12 +216,12 @@ def validate_checkpoint_ownership(config: Mapping[str, Any], selected_stages: Se
     selected command using that placeholder is rejected until named outputs exist.
     """
 
-    n_training = len(_entries(config, "training")) if "training" in selected_stages else 0
+    n_training = len(_entries(config, "training", target=target)) if "training" in selected_stages else 0
     if n_training <= 1:
         return
     consumers = []
     for stage in selected_stages:
-        for index, spec in enumerate(_entries(config, stage), start=1):
+        for index, spec in enumerate(_entries(config, stage, target=target), start=1):
             if _uses_placeholder(spec, "checkpoint"):
                 consumers.append(str(spec.get("name") or f"{stage}-{index}"))
     if consumers:
@@ -216,8 +232,18 @@ def validate_checkpoint_ownership(config: Mapping[str, Any], selected_stages: Se
         )
 
 
-def selected_stages_use_placeholder(config: Mapping[str, Any], selected_stages: Sequence[str], name: str) -> bool:
-    return any(_uses_placeholder(spec, name) for stage in selected_stages for spec in _entries(config, stage))
+def selected_stages_use_placeholder(
+    config: Mapping[str, Any],
+    selected_stages: Sequence[str],
+    name: str,
+    *,
+    target: str | None = None,
+) -> bool:
+    return any(
+        _uses_placeholder(spec, name)
+        for stage in selected_stages
+        for spec in _entries(config, stage, target=target)
+    )
 
 
 def planned_commands(
@@ -226,12 +252,13 @@ def planned_commands(
     context: Mapping[str, Any],
     *,
     strict: bool,
+    target: str | None = None,
 ) -> list[tuple[str, str, list[str]]]:
-    validate_checkpoint_ownership(config, selected_stages)
+    validate_checkpoint_ownership(config, selected_stages, target=target)
     planned = []
     for stage in selected_stages:
         names: set[str] = set()
-        for index, spec in enumerate(_entries(config, stage), start=1):
+        for index, spec in enumerate(_entries(config, stage, target=target), start=1):
             name = str(spec.get("name") or f"{stage}-{index}")
             if name in names:
                 raise ExperimentConfigError(f"duplicate {stage} command name {name!r}")
@@ -354,6 +381,10 @@ def _parser() -> argparse.ArgumentParser:
     selection.add_argument("--start-from", help="Skip configured stages before this stage")
     parser.add_argument("--checkpoint", help="Value for ${checkpoint}; overrides the YAML checkpoint")
     parser.add_argument("--training-data", help="Required value for ${training_data} when selected commands use it")
+    parser.add_argument(
+        "--target",
+        help="Run only command entries whose optional target field exactly matches this value",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print the config and commands without executing")
     parser.add_argument("-y", "--yes", action="store_true", help="Execute after printing the plan")
     return parser
@@ -371,19 +402,24 @@ def main(argv: list[str] | None = None) -> None:
             start_from=args.start_from,
         )
         context = initial_context(config, checkpoint=args.checkpoint, training_data=args.training_data)
-        if "training" not in stages:
+        target_has_training = "training" in stages and bool(_entries(config, "training", target=args.target))
+        if not target_has_training:
             context.update(load_output_context(config))
         explicit_checkpoint = args.checkpoint or config.get("checkpoint")
         if explicit_checkpoint:
             context["checkpoint"] = explicit_checkpoint
-        if selected_stages_use_placeholder(config, stages, "training_data") and not args.training_data:
+        if selected_stages_use_placeholder(config, stages, "training_data", target=args.target) and not args.training_data:
             raise ExperimentConfigError("selected commands use ${training_data}; pass --training-data PATH")
-        preview = planned_commands(config, stages, context, strict=False)
+        preview = planned_commands(config, stages, context, strict=False, target=args.target)
+        if args.target and not preview:
+            raise ExperimentConfigError(f"no commands select target {args.target!r}")
     except (ExperimentConfigError, OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
 
     print("\nExperiment config:")
     print(yaml.safe_dump(config, sort_keys=False).rstrip())
+    if args.target:
+        print(f"\nExecution target: {args.target}")
     print("\nCommands:")
     for stage, name, command in preview:
         print(f"  [{stage}:{name}] {shlex.join(command)}")
@@ -396,7 +432,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         for stage in stages:
-            for index, spec in enumerate(_entries(config, stage), start=1):
+            for index, spec in enumerate(_entries(config, stage, target=args.target), start=1):
                 name = str(spec.get("name") or f"{stage}-{index}")
                 command = command_argv(spec, context, strict=True)
                 print(f"\n[{stage}:{name}] {shlex.join(command)}")

@@ -64,6 +64,35 @@ class _ResolvedPending:
         return self._value
 
 
+def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> list[str]:
+    """Map Tinker's portable LoRA component flags onto PEFT module names."""
+
+    output = model.get_output_embeddings() if hasattr(model, "get_output_embeddings") else None
+    components: dict[str, list[str]] = {"mlp": [], "attn": [], "unembed": []}
+    for name, module in model.named_modules():
+        if not name or not (isinstance(module, torch.nn.Linear) or type(module).__name__ == "Conv1D"):
+            continue
+        if module is output:
+            component = "unembed"
+        elif "attn" in name.lower() or "attention" in name.lower():
+            component = "attn"
+        else:
+            component = "mlp"
+        components[component].append(name)
+
+    enabled = {
+        "mlp": config.train_mlp,
+        "attn": config.train_attn,
+        "unembed": config.train_unembed,
+    }
+    missing = [component for component, selected in enabled.items() if selected and not components[component]]
+    if missing:
+        raise NotImplementedError(
+            f"model {type(model).__name__} exposes no local LoRA modules for selected component(s): {missing}"
+        )
+    return [name for component, names in components.items() if enabled[component] for name in names]
+
+
 class LocalSamplerHandle:
     """Samples from the backend's live model (policy) or its frozen base."""
 
@@ -155,17 +184,15 @@ class LocalBackend:
                     "LocalBackend(use_lora=True) requires peft: `uv pip install peft`, "
                     "or pass use_lora=False for full fine-tuning."
                 )
-            if not (lora.train_mlp and lora.train_attn):
-                raise NotImplementedError(
-                    "LocalBackend maps LoRA onto all linear layers; per-module selection "
-                    "(train_mlp/train_attn=False) is not implemented yet."
-                )
             if lora.seed is not None:
                 torch.manual_seed(lora.seed)
+            target_modules = _lora_target_module_names(self.model, lora)
+            if not target_modules:
+                raise ValueError("LoRA must train at least one of MLP, attention, or unembedding modules")
             peft_cfg = PeftLoraConfig(
                 r=lora.rank,
                 lora_alpha=2 * lora.rank,  # cookbook-style alpha/r = 2
-                target_modules="all-linear",
+                target_modules=target_modules,
                 bias="none",
                 task_type="CAUSAL_LM",
             )
