@@ -107,7 +107,7 @@ normal `mcq_bias` dataset value.
 
 ### Cleaned Alpaca prompts
 
-The RMCT paper mixes fresh base-model instruction responses into behaviour
+The RMCT paper mixes fresh base-model instruction responses into bias-augmented
 consistency training. Export a deterministic prompt-only subset with:
 
 ```bash

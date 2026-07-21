@@ -114,8 +114,8 @@ factory expands it into the same explicit stage-and-command format used above.
 Factories belong with the dataset or benchmark adapter, not in the generic
 runner. See
 [`experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml`](experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml)
-for an example that expands five conditions, three learning rates, evaluation,
-and reports.
+for an example that expands five training methods, their controls, three
+learning rates, evaluation, and reports.
 
 `${training_data}` is supplied by `--training-data`. `${checkpoint}` is either
 supplied by `--checkpoint` or obtained from the single selected training stage.

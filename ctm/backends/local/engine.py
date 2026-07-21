@@ -105,12 +105,31 @@ def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> lis
         "attn": config.train_attn,
         "unembed": config.train_unembed,
     }
-    missing = [component for component, selected in enabled.items() if selected and not components[component]]
+    raw_mlp_parameters = _lora_target_parameter_names(model, config)
+    missing = [
+        component
+        for component, selected in enabled.items()
+        if selected and not components[component] and not (component == "mlp" and raw_mlp_parameters)
+    ]
     if missing:
         raise NotImplementedError(
             f"model {type(model).__name__} exposes no local LoRA modules for selected component(s): {missing}"
         )
     return [name for component, names in components.items() if enabled[component] for name in names]
+
+
+def _lora_target_parameter_names(model: torch.nn.Module, config: LoRAConfig) -> list[str]:
+    """Return fused MoE expert matrices that cannot be targeted as modules.
+
+    GPT-OSS represents its expert projections as three-dimensional Parameters
+    rather than ``nn.Linear`` modules. Recent PEFT versions support these
+    through ``target_parameters``.
+    """
+
+    if config.target_modules is not None or not config.train_mlp:
+        return []
+    suffixes = (".mlp.experts.gate_up_proj", ".mlp.experts.down_proj")
+    return [name for name, _ in model.named_parameters() if name.endswith(suffixes)]
 
 
 def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Optional[Sequence[str]]) -> list[str]:
@@ -249,13 +268,15 @@ class LocalBackend:
             if lora.seed is not None:
                 torch.manual_seed(lora.seed)
             target_modules = _lora_target_module_names(self.model, lora)
-            if not target_modules:
+            target_parameters = _lora_target_parameter_names(self.model, lora)
+            if not target_modules and not target_parameters:
                 raise ValueError("LoRA must train at least one of MLP, attention, or unembedding modules")
             peft_cfg = PeftLoraConfig(
                 r=lora.rank,
                 lora_alpha=lora.resolved_alpha,
                 lora_dropout=lora.dropout,
-                target_modules=target_modules,
+                target_modules=target_modules or [],
+                target_parameters=target_parameters or None,
                 bias="none",
                 task_type="CAUSAL_LM",
             )

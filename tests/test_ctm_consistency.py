@@ -173,6 +173,35 @@ class TestMLPHooks:
             mgr.get_states()
         mgr.remove()
 
+    def test_fused_moe_block_supports_output_variant(self):
+        class FusedMLP(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.experts = torch.nn.Identity()
+                self.router = torch.nn.Identity()
+
+            def forward(self, value):
+                return value * 2, torch.ones((*value.shape[:-1], 1))
+
+        class Block(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mlp = FusedMLP()
+
+            def forward(self, value):
+                return self.mlp(value)[0]
+
+        model = torch.nn.Sequential(Block(), Block())
+        with pytest.raises(RuntimeError, match="variant='output'"):
+            MLPHookManager(model, variant="hidden")
+
+        manager = MLPHookManager(model, variant="output").install()
+        model(torch.ones(1, 3, 4))
+        states = manager.get_states()
+        assert len(states) == 2
+        assert all(state.shape == (1, 3, 4) for state in states)
+        manager.remove()
+
 
 # ── paired-datum adapter ─────────────────────────────────────────────────────
 

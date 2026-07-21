@@ -1,11 +1,11 @@
-name: rmct-hle-gpt-oss-20b-five-condition
+name: rmct-hle-gpt-oss-20b-five-method
 experiment_factory: ctm_data.adapters.mcq_bias.comparison:compile_experiment
 
 # Five-condition comparison from arXiv:2606.02211. This file states the
 # scientific choices; the factory expands repeated runs and deterministic paths.
 spec:
   model: openai/gpt-oss-20b
-  backend: tinker
+  backend: local
   seed: 42
   artifact_root: artifacts/rmct-hle-gpt-oss-20b
   figure_root: figures/rmct-hle-gpt-oss-20b
@@ -22,6 +22,11 @@ spec:
     train_mlp: true
     train_attn: true
     train_unembed: false
+
+  local:
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.45
 
   data:
     training:
@@ -51,20 +56,41 @@ spec:
 
   conditions:
     - {name: untrained, method: none}
-    - {name: behaviour-consistency, method: behaviour_consistency}
-    - {name: behaviour-consistency-control, method: behaviour_consistency, control: true}
     - {name: rate-matching, method: rate_matching}
     - {name: rate-matching-control, method: rate_matching, control: true}
+    - {name: bias-augmented-consistency, method: bias_augmented_consistency}
+    - {name: bias-augmented-consistency-control, method: bias_augmented_consistency, control: true}
+    - {name: act, method: act}
+    - {name: act-control, method: act, control: true}
+    - {name: attct, method: attct}
+    - {name: attct-control, method: attct, control: true}
+    - {name: mlpct, method: mlpct}
+    - {name: mlpct-control, method: mlpct, control: true}
 
-  behaviour_consistency:
-    batch_size: 128
+  supervised_consistency:
+    batch_size: 1
+    gradient_accumulation_steps: 128
     epochs: 1
     save_every: 16
     learning_rate_schedule: linear
-    target_generation:
+    bias_augmented_targets:
       max_tokens: 20480
       temperature: 1.0
       max_concurrency: 32
+    method_config:
+      act:
+        layer_selection: all
+        normalize: false
+      attct:
+        layer_selection: all
+        layer_weights: uniform
+      mlpct:
+        # GPT-OSS expert projections are fused parameters; hook the MoE block output.
+        variant: output
+        layer_selection: all
+        layer_weights: uniform
+        distance_metric: cosine
+        normalize: false
 
   rate_matching:
     datapoints: 64
@@ -87,7 +113,6 @@ spec:
   evaluation:
     max_tokens: 20480
     temperature: 0.0
-    include_reasoning: true
 
   tracking:
     wandb_project: ctm-paper-reproductions

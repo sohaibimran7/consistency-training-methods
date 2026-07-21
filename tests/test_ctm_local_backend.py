@@ -20,6 +20,7 @@ from ctm.backends.local.engine import (
     HAS_PEFT,
     LocalBackend,
     _lora_target_module_names,
+    _lora_target_parameter_names,
 )
 from ctm.core.config import AdamConfig, LoRAConfig
 
@@ -283,6 +284,63 @@ class TestLocalLoRA:
         config = backend.model.peft_config["default"]
         assert config.lora_alpha == 12
         assert config.lora_dropout == 0.15
+
+    def test_fused_moe_expert_parameters_are_selected_for_mlp_lora(self):
+        class Experts(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gate_up_proj = torch.nn.Parameter(torch.randn(2, 4, 8))
+                self.down_proj = torch.nn.Parameter(torch.randn(2, 4, 4))
+
+        class MLP(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.experts = Experts()
+
+        class Block(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mlp = MLP()
+                self.self_attn = torch.nn.Linear(4, 4)
+
+        model = torch.nn.ModuleList([Block()])
+        config = LoRAConfig(train_mlp=True, train_attn=True, train_unembed=False)
+
+        assert _lora_target_module_names(model, config) == ["0.self_attn"]
+        assert _lora_target_parameter_names(model, config) == [
+            "0.mlp.experts.gate_up_proj",
+            "0.mlp.experts.down_proj",
+        ]
+
+    def test_tiny_gpt_oss_wraps_attention_and_fused_expert_parameters(self):
+        from transformers import GptOssConfig, GptOssForCausalLM
+
+        model = GptOssForCausalLM(
+            GptOssConfig(
+                vocab_size=128,
+                hidden_size=32,
+                intermediate_size=16,
+                num_hidden_layers=1,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                head_dim=8,
+                num_local_experts=4,
+                num_experts_per_tok=2,
+                max_position_embeddings=64,
+            )
+        )
+        backend = LocalBackend(device="cpu", use_lora=True, model_instance=model)
+        backend.setup(
+            model="tiny-gpt-oss",
+            lora=LoRAConfig(rank=2, alpha=4, train_mlp=True, train_attn=True, train_unembed=False),
+        )
+        peft_config = backend.model.peft_config["default"]
+
+        assert any(name.endswith("self_attn.q_proj") for name in peft_config.target_modules)
+        assert sorted(peft_config.target_parameters) == [
+            "model.layers.0.mlp.experts.down_proj",
+            "model.layers.0.mlp.experts.gate_up_proj",
+        ]
 
     def test_lora_wraps_and_trains(self):
         backend = LocalBackend(device="cpu", use_lora=True, model_instance=tiny_model())

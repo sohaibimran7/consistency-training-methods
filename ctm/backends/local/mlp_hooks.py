@@ -4,10 +4,8 @@ Ported from https://github.com/c-wei/AttCT ``hooks.py`` @ 79527cf (2026-07-10).
 
 Captures intermediate MLP states (post-activation hidden or block output) by
 registering forward hooks on the down-projection layers of transformer MLP
-blocks. Works across architectures (LLaMA, GPT-2, Mistral, Gemma, ...) by
-matching module names rather than checking types. Under PEFT LoRA the wrapper
-module keeps the base module's name (``...mlp.down_proj``), so the same hooks
-serve both the adapter pass and the adapter-disabled clean pass.
+blocks. GPT-OSS stores its expert projections as raw parameters, so its
+``variant="output"`` path hooks the enclosing MoE block instead.
 """
 
 from typing import Optional
@@ -48,6 +46,18 @@ def find_mlp_down_proj_modules(model: nn.Module) -> list[tuple[str, nn.Module]]:
     return modules
 
 
+def _find_fused_moe_blocks(model: nn.Module) -> list[tuple[str, nn.Module]]:
+    """Find GPT-OSS-style MLP blocks whose projections are raw Parameters."""
+
+    modules = [
+        (name, module)
+        for name, module in model.named_modules()
+        if name.endswith(".mlp") and hasattr(module, "experts") and hasattr(module, "router")
+    ]
+    modules.sort(key=lambda item: next((int(part) for part in item[0].split(".") if part.isdigit()), 0))
+    return modules
+
+
 class MLPHookManager:
     """Manages forward hooks on MLP down-projection layers.
 
@@ -73,12 +83,16 @@ class MLPHookManager:
             raise ValueError(f"variant must be 'hidden' or 'output', got '{variant}'")
         self.variant = variant
         self._modules = find_mlp_down_proj_modules(model)
+        self._captures_fused_block = False
+        if not self._modules and variant == "output":
+            self._modules = _find_fused_moe_blocks(model)
+            self._captures_fused_block = bool(self._modules)
         if not self._modules:
             raise RuntimeError(
                 "Could not find MLP down-projection modules in the model. "
                 "Looked for names matching *.mlp.down_proj, *.mlp.c_proj, "
-                "*.ffn.fc2, or *.feed_forward.w2. "
-                "Check that the model architecture has recognisable MLP blocks."
+                "*.ffn.fc2, or *.feed_forward.w2. Fused MoE models such as "
+                "GPT-OSS support only variant='output'."
             )
         self._handles: list[torch.utils.hooks.RemovableHandle] = []
         self._states: list[Optional[torch.Tensor]] = [None] * len(self._modules)
@@ -97,6 +111,11 @@ class MLPHookManager:
                 # Capture input to down_proj = post-activation hidden states.
                 def hook(mod, inp, out, i=idx):
                     self._states[i] = inp[0]
+
+            elif self._captures_fused_block:
+                # GPT-OSS MLP returns (hidden_states, router_scores).
+                def hook(mod, inp, out, i=idx):
+                    self._states[i] = out[0] if isinstance(out, tuple) else out
 
             else:
                 # Capture output of down_proj = MLP block output.

@@ -215,23 +215,33 @@ def test_wrong_argument_figure_yaml_routes_the_complete_pipeline():
     assert by_stage["analysis"][1][1][:2] == ["node", "scripts/render_flint.mjs"]
 
 
-def test_rmct_hle_yaml_routes_five_pooled_conditions_and_verbalisation():
+def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     config = experiment.load_experiment(RMCT_HLE_COMPARISON)
     context = experiment.initial_context(config)
     for entry in config["training"]:
-        context[f"training.{entry['name']}.checkpoint"] = f"tinker://checkpoints/{entry['name']}"
+        context[f"training.{entry['name']}.checkpoint"] = f"file:///checkpoints/{entry['name']}"
     stages = ["data_generation", "data_preparation", "training", "evaluation", "analysis"]
     planned = experiment.planned_commands(config, stages, context, strict=True)
     by_stage = {stage: [] for stage in stages}
     for stage, name, command in planned:
         by_stage[stage].append((name, command))
 
-    assert [len(by_stage[stage]) for stage in stages] == [3, 2, 12, 13, 8]
+    assert [len(by_stage[stage]) for stage in stages] == [3, 2, 30, 31, 8]
     assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
-    assert by_stage["evaluation"][0][1][by_stage["evaluation"][0][1].index("--tinker-base-model") + 1] == (
-        "openai/gpt-oss-20b"
-    )
-    assert all("--include-reasoning" in command for _, command in by_stage["evaluation"])
+    base_eval = by_stage["evaluation"][0][1]
+    assert base_eval[base_eval.index("--model") + 1] == "hf/openai/gpt-oss-20b"
+    assert all("--tinker-checkpoint" not in command for _, command in by_stage["evaluation"])
+    assert all("--local-checkpoint" in command for _, command in by_stage["evaluation"][1:])
+    training = dict(by_stage["training"])
+    for method in ("rate_matching_lr1", "bias_augmented_consistency_lr1", "act_lr1", "attct_lr1", "mlpct_lr1"):
+        assert training[method][training[method].index("--backend") + 1] == "local"
+    assert training["bias_augmented_consistency_lr1"][training["bias_augmented_consistency_lr1"].index("--method") + 1] == "bct"
+    assert training["act_lr1"][training["act_lr1"].index("--method") + 1] == "act"
+    assert training["attct_lr1"][training["attct_lr1"].index("--method") + 1] == "attct"
+    assert training["mlpct_lr1"][training["mlpct_lr1"].index("--method") + 1] == "mlpct"
+    for method in ("act", "attct", "mlpct"):
+        control = training[f"{method}_control_lr1"]
+        assert control[control.index("--variant-messages-field") + 1] == "unbiased_messages"
     analysis_commands = dict(by_stage["analysis"])
     unconditional_verbalisation = analysis_commands["aggregate-bias-verbalised"]
     assert unconditional_verbalisation[unconditional_verbalisation.index("--metric") + 1] == "bias_acknowledged"
@@ -249,7 +259,7 @@ def test_rmct_hle_yaml_is_a_concise_authored_spec():
 
     assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.comparison:compile_experiment"
     assert "training" not in source
-    assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 150
+    assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 180
 
 
 def test_resolved_plan_is_immutable_for_an_experiment_name(monkeypatch, tmp_path):
