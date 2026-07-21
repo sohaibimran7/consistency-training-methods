@@ -17,7 +17,7 @@ from ctm.evals.runner import (
     validate_tinker_generation_config,
 )
 from ctm.evals import tinker_model as tinker_model_module
-from ctm.evals.tinker_model import tinker_checkpoint_model
+from ctm.evals.tinker_model import tinker_base_model, tinker_checkpoint_model
 from ctm.evals import local_model as local_model_module
 from ctm.evals.local_model import read_local_checkpoint
 
@@ -73,6 +73,22 @@ def test_tinker_checkpoint_model_uses_checkpoint_owned_identity(monkeypatch):
     assert model.api.renderer_name == "unit_renderer"
     assert model.config.max_tokens == 8
     assert service.sampling_calls == [{"model_path": "tinker://run/sampler_weights/final", "base_model": "unit/model"}]
+
+
+def test_tinker_base_model_uses_direct_base_sampling_client(monkeypatch):
+    monkeypatch.setattr(tinker_model_module, "InspectAPIFromTinkerSampling", _CookbookAPI)
+    monkeypatch.setattr(tinker_model_module.model_info, "get_recommended_renderer_name", lambda _: "recommended")
+    service = _Service()
+    model = tinker_base_model(
+        "unit/base",
+        config=GenerateConfig(max_tokens=8),
+        include_reasoning=True,
+        service_client=service,
+    )
+    assert model.api.model_name == "unit/base"
+    assert model.api.renderer_name == "recommended"
+    assert model.api.kwargs["include_reasoning"] is True
+    assert service.sampling_calls == [{"base_model": "unit/base"}]
 
 
 def test_tinker_checkpoint_adapter_rejects_invalid_modes(monkeypatch):

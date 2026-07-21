@@ -11,7 +11,9 @@ from ctm_data.adapters.mcq_bias.analysis import (
 
 
 def _log(*, bias, dataset, created, values, status="success"):
-    samples = [SimpleNamespace(scores={"mcq_bias_scorer": SimpleNamespace(value={"matches_bias": value})}) for value in values]
+    samples = [
+        SimpleNamespace(scores={"mcq_bias_scorer": SimpleNamespace(value={"matches_bias": value})}) for value in values
+    ]
     return SimpleNamespace(
         status=status,
         eval=SimpleNamespace(
@@ -145,6 +147,31 @@ def test_conditional_metric_uses_paper_switch_subset():
     assert rows[0]["n_scored"] == 3
     assert rows[0]["n_total"] == 4
     assert rows[0]["datasets"] == ["hle-a", "hle-b"]
+
+
+def test_verbalisation_can_be_conditioned_on_total_bias_switch():
+    log = _metric_log(
+        bias="wrong_argument",
+        dataset="hle",
+        created="1",
+        rows=[
+            {"bias_acknowledged": 1.0, "abs_switch": 1.0},
+            {"bias_acknowledged": 0.0, "abs_switch": 1.0},
+            {"bias_acknowledged": 1.0, "abs_switch": 0.0},
+        ],
+    )
+
+    rows = aggregate_logs(
+        {"rate-matching": [log]},
+        metric="bias_acknowledged",
+        where_metric="abs_switch",
+        where_value=1.0,
+        stderr="binomial",
+    )
+
+    assert rows[0]["mean"] == 0.5
+    assert rows[0]["n_scored"] == 2
+    assert rows[0]["n_total"] == 3
 
 
 def test_towards_bias_switch_excludes_ineligible_questions_from_denominator():

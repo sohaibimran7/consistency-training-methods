@@ -14,13 +14,12 @@ F6_DEBUG = (
 )
 METHOD_COMPARISON = Path(__file__).parent.parent / "experiments" / "internal_consistency" / "method_comparison.yaml"
 WRONG_ARGUMENT_COMPARISON = (
-    Path(__file__).parent.parent
-    / "experiments"
-    / "mcq_bias"
-    / "wrong_argument_cross_bias"
-    / "experiment.yaml"
+    Path(__file__).parent.parent / "experiments" / "mcq_bias" / "wrong_argument_cross_bias" / "experiment.yaml"
 )
 BCT_BACKEND_COMPARISON = WRONG_ARGUMENT_COMPARISON.with_name("bct_backends.yaml")
+RMCT_HLE_COMPARISON = (
+    Path(__file__).parent.parent / "experiments" / "paper_reproductions" / "rmct_hle_gpt_oss_20b" / "experiment.yaml"
+)
 
 
 def test_example_keeps_training_and_evaluation_independent():
@@ -216,6 +215,59 @@ def test_wrong_argument_figure_yaml_routes_the_complete_pipeline():
     assert by_stage["analysis"][1][1][:2] == ["node", "scripts/render_flint.mjs"]
 
 
+def test_rmct_hle_yaml_routes_five_pooled_conditions_and_verbalisation():
+    config = experiment.load_experiment(RMCT_HLE_COMPARISON)
+    context = experiment.initial_context(config)
+    for entry in config["training"]:
+        context[f"training.{entry['name']}.checkpoint"] = f"tinker://checkpoints/{entry['name']}"
+    stages = ["data_generation", "data_preparation", "training", "evaluation", "analysis"]
+    planned = experiment.planned_commands(config, stages, context, strict=True)
+    by_stage = {stage: [] for stage in stages}
+    for stage, name, command in planned:
+        by_stage[stage].append((name, command))
+
+    assert [len(by_stage[stage]) for stage in stages] == [3, 2, 12, 13, 8]
+    assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
+    assert by_stage["evaluation"][0][1][by_stage["evaluation"][0][1].index("--tinker-base-model") + 1] == (
+        "openai/gpt-oss-20b"
+    )
+    assert all("--include-reasoning" in command for _, command in by_stage["evaluation"])
+    analysis_commands = dict(by_stage["analysis"])
+    unconditional_verbalisation = analysis_commands["aggregate-bias-verbalised"]
+    assert unconditional_verbalisation[unconditional_verbalisation.index("--metric") + 1] == "bias_acknowledged"
+    assert "--where-metric" not in unconditional_verbalisation
+    towards_verbalisation = analysis_commands["aggregate-bias-verbalised-given-towards-bias-switch"]
+    assert towards_verbalisation[towards_verbalisation.index("--metric") + 1] == "bias_acknowledged"
+    assert towards_verbalisation[towards_verbalisation.index("--where-metric") + 1] == "towards_bias_switch"
+    total_verbalisation = analysis_commands["aggregate-bias-verbalised-given-total-bias-switch"]
+    assert total_verbalisation[total_verbalisation.index("--metric") + 1] == "bias_acknowledged"
+    assert total_verbalisation[total_verbalisation.index("--where-metric") + 1] == "abs_switch"
+
+
+def test_rmct_hle_yaml_is_a_concise_authored_spec():
+    source = experiment.load_experiment_source(RMCT_HLE_COMPARISON)
+
+    assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.comparison:compile_experiment"
+    assert "training" not in source
+    assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 150
+
+
+def test_resolved_plan_is_immutable_for_an_experiment_name(monkeypatch, tmp_path):
+    path = tmp_path / "resolved-plan.yaml"
+    monkeypatch.setattr(experiment, "resolved_plan_path", lambda _: path)
+    first = {"name": "unit", "training": {"command": ["python", "train.py"]}}
+
+    saved, digest = experiment.save_resolved_plan(first)
+    assert saved == path
+    assert len(digest) == 64
+    assert path.read_text() == experiment.resolved_plan_text(first)
+    assert experiment.save_resolved_plan(first) == (path, digest)
+
+    changed = {"name": "unit", "training": {"command": ["python", "different.py"]}}
+    with pytest.raises(experiment.ExperimentConfigError, match="resolved plan differs"):
+        experiment.save_resolved_plan(changed)
+
+
 def test_bct_backend_yaml_shares_scientific_config_without_runtime_enforcement():
     config = experiment.load_experiment(BCT_BACKEND_COMPARISON)
     training = config["training"]
@@ -304,7 +356,8 @@ def test_dry_run_only_prints_commands(monkeypatch, capsys):
         ]
     )
     output = capsys.readouterr().out
-    assert "Experiment config:" in output
+    assert "Experiment specification:" in output
+    assert "Resolved plan:" in output
     assert "mcq_bias.tasks:suite_tasks" in output
     assert "Dry run complete." in output
 

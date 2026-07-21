@@ -104,9 +104,18 @@ uv run python scripts/run_experiment.py \
   --checkpoint tinker://...
 ```
 
-The runner prints the resolved YAML and exact commands before execution.
-`--dry-run` performs no child command. Without `--yes`, execution requires one
-confirmation after the plan is printed.
+The runner prints the authored YAML, the resolved-plan identity, and every
+exact command before execution. `--dry-run` performs no child command. Without
+`--yes`, execution requires one confirmation after the plan is printed.
+
+Large experiment matrices may use an `experiment_factory` in
+`module:callable` form. The authored file then contains a concise `spec`; the
+factory expands it into the same explicit stage-and-command format used above.
+Factories belong with the dataset or benchmark adapter, not in the generic
+runner. See
+[`experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml`](experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml)
+for an example that expands five conditions, three learning rates, evaluation,
+and reports.
 
 `${training_data}` is supplied by `--training-data`. `${checkpoint}` is either
 supplied by `--checkpoint` or obtained from the single selected training stage.
@@ -124,6 +133,11 @@ Named checkpoints are persisted in
 `--start-from evaluation` or `--stages evaluation,analysis` invocation reloads
 these values. The runner does not infer task dependencies or skip completed
 commands; stage selection remains explicit.
+
+After approval, the complete expanded plan is saved as
+`logs/experiments/<experiment>/resolved-plan.yaml`. Reusing the same experiment
+name with a different expanded plan is rejected. Use a new name, or retain the
+old log directory under an archive before starting the changed experiment.
 
 An optional `target` field labels where a command is intended to run. Select
 only matching entries with `--target NAME`. The runner performs no remote
@@ -301,6 +315,10 @@ uv run python scripts/run_evals.py \
 The runner provides model/checkpoint bridging and Inspect runtime options. It
 does not replace benchmark scoring. An experiment may invoke a benchmark's own
 CLI directly when no Inspect factory is available.
+
+Use `--tinker-base-model MODEL` to evaluate an untouched base model through
+Tinker with the same renderer used for its trained checkpoints. This is
+distinct from `--model`, which selects an ordinary Inspect provider model.
 
 LocalBackend LoRA and full-weight checkpoints use `--local-checkpoint file:///...`. The runner
 reads the recorded base model from the checkpoint manifest, loads it through

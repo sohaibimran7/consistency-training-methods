@@ -1,0 +1,115 @@
+name: rmct-hle-gpt-oss-20b-five-condition
+experiment_factory: ctm_data.adapters.mcq_bias.comparison:compile_experiment
+
+# Five-condition comparison from arXiv:2606.02211. This file states the
+# scientific choices; the factory expands repeated runs and deterministic paths.
+spec:
+  model: openai/gpt-oss-20b
+  backend: tinker
+  seed: 42
+  artifact_root: artifacts/rmct-hle-gpt-oss-20b
+  figure_root: figures/rmct-hle-gpt-oss-20b
+
+  learning_rates:
+    - {name: "1e-4", value: 0.0001}
+    - {name: "2.86e-4", value: 0.000286}
+    - {name: "5e-4", value: 0.0005}
+
+  lora:
+    rank: 8
+    alpha: 16
+    dropout: 0.0
+    train_mlp: true
+    train_attn: true
+    train_unembed: false
+
+  data:
+    training:
+      bias_type: wrong_argument
+      datasets: [logiqa, hellaswag]
+      prompt_style: none
+      pool_per_dataset: 1500
+      minimum_per_dataset: 1024
+      examples: 2048
+      argument_model: openrouter/google/gemma-4-31b-it
+    instruction:
+      source: cleaned_alpaca
+      examples: 2048
+    evaluation:
+      source: hle
+      expected_source_count: 513
+      questions: 100
+      biases:
+        - suggested_answer
+        - distractor_fact
+        - wrong_argument
+        - post_hoc
+        - spurious_few_shot_squares
+        - wrong_few_shot
+      argument_model: openrouter/google/gemma-4-31b-it
+      grader_model: openrouter/google/gemma-4-31b-it
+
+  conditions:
+    - {name: untrained, method: none}
+    - {name: behaviour-consistency, method: behaviour_consistency}
+    - {name: behaviour-consistency-control, method: behaviour_consistency, control: true}
+    - {name: rate-matching, method: rate_matching}
+    - {name: rate-matching-control, method: rate_matching, control: true}
+
+  behaviour_consistency:
+    batch_size: 128
+    epochs: 1
+    save_every: 16
+    learning_rate_schedule: linear
+    target_generation:
+      max_tokens: 20480
+      temperature: 1.0
+      max_concurrency: 32
+
+  rate_matching:
+    datapoints: 64
+    rollouts: {reference: 128, training: 128, consistency: 128, anchor: 128}
+    batch_size: 4
+    epochs: 1
+    temperature: 1.0
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 0.05
+    anchor_weight: 0.0
+    anchor_model: base
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: per_item
+    gradient_accumulation_steps: 1
+    refresh_every: 1
+    checkpoint_every: 8
+
+  evaluation:
+    max_tokens: 20480
+    temperature: 0.0
+    include_reasoning: true
+
+  tracking:
+    wandb_project: ctm-paper-reproductions
+
+  reports:
+    held_out_exclude: [wrong_argument]
+    standard_error: binomial
+    charts:
+      switch: experiments/paper_reproductions/rmct_hle_gpt_oss_20b/switch_chart.json
+      verbalisation: experiments/paper_reproductions/rmct_hle_gpt_oss_20b/verbalisation_chart.json
+    items:
+      - name: towards-bias-switch
+        metric: towards_bias_switch
+        chart: switch
+      - name: bias-verbalised
+        metric: bias_acknowledged
+        chart: verbalisation
+      - name: bias-verbalised-given-towards-bias-switch
+        metric: bias_acknowledged
+        given: towards_bias_switch
+        chart: verbalisation
+      - name: bias-verbalised-given-total-bias-switch
+        metric: bias_acknowledged
+        given: total_bias_switch
+        chart: verbalisation

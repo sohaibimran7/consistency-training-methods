@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     model_group = parser.add_mutually_exclusive_group(required=True)
     model_group.add_argument("--model", help="Inspect model spec, e.g. openai/gpt-4.1-mini")
+    model_group.add_argument("--tinker-base-model", help="Untrained base model sampled through Tinker")
     model_group.add_argument("--tinker-checkpoint", help="Saved tinker:// sampler-weights path")
     model_group.add_argument("--local-checkpoint", help="Saved file:// LocalBackend LoRA checkpoint")
     parser.add_argument("--base-model", help="Optional expected base model; verified against checkpoint metadata")
@@ -57,7 +58,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--include-reasoning",
         action="store_true",
-        help="Preserve structured reasoning in Tinker checkpoint outputs",
+        help="Preserve structured reasoning in Tinker model outputs",
     )
     parser.add_argument("--log-dir", default="logs/evals")
     parser.add_argument(
@@ -69,16 +70,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("-y", "--yes", action="store_true", help="Run after printing the exact command")
     args = parser.parse_args(argv)
 
-    if args.model and args.base_model:
-        parser.error("--base-model applies only to --tinker-checkpoint or --local-checkpoint")
+    if (args.model or args.tinker_base_model) and args.base_model:
+        parser.error("--base-model applies only to saved checkpoints")
     if args.model and args.renderer_name:
-        parser.error("--renderer-name applies only to --tinker-checkpoint")
+        parser.error("--renderer-name applies only to Tinker models")
     if args.model and args.include_reasoning:
-        parser.error("--include-reasoning applies only to --tinker-checkpoint")
+        parser.error("--include-reasoning applies only to Tinker models")
     if args.local_checkpoint and args.renderer_name:
-        parser.error("--renderer-name applies only to --tinker-checkpoint")
+        parser.error("--renderer-name applies only to Tinker models")
     if args.local_checkpoint and args.include_reasoning:
-        parser.error("--include-reasoning applies only to --tinker-checkpoint")
+        parser.error("--include-reasoning applies only to Tinker models")
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be >= 1")
     if args.epochs is not None and args.epochs < 1:
@@ -95,9 +96,9 @@ def main(argv: list[str] | None = None) -> None:
         ):
             reject_inline_secrets(value, path=label)
         generation_config = normalize_generation_config(generation_config)
-        if args.tinker_checkpoint and model_args:
+        if (args.tinker_base_model or args.tinker_checkpoint) and model_args:
             raise ValueError("--model-args applies only to ordinary Inspect providers and local checkpoints")
-        if args.tinker_checkpoint:
+        if args.tinker_base_model or args.tinker_checkpoint:
             validate_tinker_generation_config(generation_config)
     except (OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
@@ -107,7 +108,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  {_command_summary(effective_argv)}")
     print("\nResolved parameters:")
     print(f"  task_factory={args.task_factory}")
-    print(f"  model={args.model or args.tinker_checkpoint or args.local_checkpoint}")
+    print(f"  model={args.model or args.tinker_base_model or args.tinker_checkpoint or args.local_checkpoint}")
     if args.base_model:
         print(f"  base_model={args.base_model}")
     if args.renderer_name:
@@ -130,6 +131,7 @@ def main(argv: list[str] | None = None) -> None:
     logs = run_task_evals(
         args.task_factory,
         model=args.model,
+        tinker_base_model_name=args.tinker_base_model,
         tinker_checkpoint=args.tinker_checkpoint,
         local_checkpoint=args.local_checkpoint,
         base_model=args.base_model,

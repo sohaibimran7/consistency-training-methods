@@ -8,6 +8,7 @@ different packages, datasets, splits, and metrics.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shlex
@@ -23,6 +24,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from ctm.cli_safety import reject_inline_secrets
+from ctm.importing import load_callable
 
 STAGE_ORDER = ("data_generation", "data_preparation", "training", "evaluation", "analysis")
 STAGE_ALIASES = {
@@ -45,7 +47,19 @@ class ExperimentConfigError(ValueError):
     """A YAML experiment config cannot be translated to commands."""
 
 
-def load_experiment(path: str | Path) -> dict[str, Any]:
+def _validate_experiment_name(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ExperimentConfigError("experiment config needs a non-empty name")
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", value):
+        raise ExperimentConfigError(
+            "experiment name must start with a letter or digit and contain only letters, digits, dots, underscores, and hyphens"
+        )
+    return value
+
+
+def load_experiment_source(path: str | Path) -> dict[str, Any]:
+    """Read an authored experiment file without expanding a factory."""
+
     source = Path(path)
     try:
         value = yaml.safe_load(source.read_text())
@@ -53,12 +67,35 @@ def load_experiment(path: str | Path) -> dict[str, Any]:
         raise ExperimentConfigError(f"invalid YAML in {source}: {exc}") from exc
     if not isinstance(value, dict):
         raise ExperimentConfigError("experiment config must be a YAML object")
-    if not isinstance(value.get("name"), str) or not value["name"].strip():
-        raise ExperimentConfigError("experiment config needs a non-empty name")
-    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", value["name"]):
-        raise ExperimentConfigError(
-            "experiment name must start with a letter or digit and contain only letters, digits, dots, underscores, and hyphens"
-        )
+    _validate_experiment_name(value.get("name"))
+    return value
+
+
+def compile_experiment(source: Mapping[str, Any]) -> dict[str, Any]:
+    """Expand an optional ``module:callable`` factory into an execution plan."""
+
+    name = _validate_experiment_name(source.get("name"))
+    factory_spec = source.get("experiment_factory")
+    if factory_spec is None:
+        value = dict(source)
+    else:
+        unknown = sorted(set(source) - {"name", "experiment_factory", "spec"})
+        if unknown:
+            raise ExperimentConfigError(f"factory experiment has unknown top-level field(s): {unknown}")
+        spec = source.get("spec")
+        if not isinstance(spec, Mapping):
+            raise ExperimentConfigError("factory experiment needs a spec object")
+        try:
+            factory = load_callable(factory_spec, label="experiment_factory")
+            expanded = factory(name=name, spec=dict(spec))
+        except (TypeError, ValueError) as exc:
+            raise ExperimentConfigError(f"experiment factory failed: {exc}") from exc
+        if not isinstance(expanded, Mapping):
+            raise ExperimentConfigError("experiment factory must return an object")
+        value = dict(expanded)
+        if value.get("name") != name:
+            raise ExperimentConfigError("experiment factory must preserve the authored experiment name")
+
     if not any(stage in value for stage in STAGE_ORDER):
         raise ExperimentConfigError(f"experiment config needs at least one stage: {list(STAGE_ORDER)}")
     variables = value.get("variables", {})
@@ -68,6 +105,12 @@ def load_experiment(path: str | Path) -> dict[str, Any]:
     if conflicts:
         raise ExperimentConfigError(f"experiment variables use reserved names: {conflicts}")
     return value
+
+
+def load_experiment(path: str | Path) -> dict[str, Any]:
+    """Read and compile either a direct plan or a concise experiment spec."""
+
+    return compile_experiment(load_experiment_source(path))
 
 
 def _canonical_stage(value: str) -> str:
@@ -301,6 +344,44 @@ def output_state_path(config: Mapping[str, Any]) -> Path:
     return PROJECT_ROOT / "logs" / "experiments" / str(config["name"]) / "outputs.json"
 
 
+def resolved_plan_path(config: Mapping[str, Any]) -> Path:
+    """Return the immutable expanded-plan path for one experiment name."""
+
+    return output_state_path(config).with_name("resolved-plan.yaml")
+
+
+def resolved_plan_text(config: Mapping[str, Any]) -> str:
+    """Serialize the complete command plan deterministically."""
+
+    return yaml.safe_dump(dict(config), sort_keys=False).rstrip() + "\n"
+
+
+def validate_resolved_plan(config: Mapping[str, Any]) -> tuple[Path, str]:
+    """Reject reuse of an experiment name for a different expanded plan."""
+
+    path = resolved_plan_path(config)
+    content = resolved_plan_text(config)
+    digest = hashlib.sha256(content.encode()).hexdigest()
+    if path.exists() and path.read_text() != content:
+        raise ExperimentConfigError(
+            f"resolved plan differs from {path}. Use a new experiment name, or move the existing "
+            "experiment log directory to an archive before rerunning."
+        )
+    return path, digest
+
+
+def save_resolved_plan(config: Mapping[str, Any]) -> tuple[Path, str]:
+    """Persist the expanded plan atomically after run approval."""
+
+    path, digest = validate_resolved_plan(config)
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".yaml.tmp")
+        temporary.write_text(resolved_plan_text(config))
+        temporary.replace(path)
+    return path, digest
+
+
 def load_output_context(config: Mapping[str, Any]) -> dict[str, str]:
     """Load previously published named training checkpoints, if present."""
 
@@ -394,7 +475,9 @@ def main(argv: list[str] | None = None) -> None:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
-        config = load_experiment(args.config)
+        source_config = load_experiment_source(args.config)
+        reject_inline_secrets(source_config, path="experiment specification")
+        config = compile_experiment(source_config)
         reject_inline_secrets(config, path="experiment")
         stages = select_stages(
             config,
@@ -413,11 +496,13 @@ def main(argv: list[str] | None = None) -> None:
         preview = planned_commands(config, stages, context, strict=False, target=args.target)
         if args.target and not preview:
             raise ExperimentConfigError(f"no commands select target {args.target!r}")
+        plan_path, plan_digest = validate_resolved_plan(config)
     except (ExperimentConfigError, OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
 
-    print("\nExperiment config:")
-    print(yaml.safe_dump(config, sort_keys=False).rstrip())
+    print("\nExperiment specification:")
+    print(yaml.safe_dump(source_config, sort_keys=False).rstrip())
+    print(f"\nResolved plan: {plan_path} (sha256:{plan_digest})")
     if args.target:
         print(f"\nExecution target: {args.target}")
     print("\nCommands:")
@@ -431,6 +516,8 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     try:
+        saved_plan_path, saved_plan_digest = save_resolved_plan(config)
+        print(f"\nSaved resolved plan: {saved_plan_path} (sha256:{saved_plan_digest})")
         for stage in stages:
             for index, spec in enumerate(_entries(config, stage, target=args.target), start=1):
                 name = str(spec.get("name") or f"{stage}-{index}")

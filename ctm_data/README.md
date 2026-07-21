@@ -105,6 +105,24 @@ requires exactly 513 rows, and records the output hash. The generated benchmark
 file is gitignored and must not be redistributed. Pass its JSONL path as a
 normal `mcq_bias` dataset value.
 
+### Cleaned Alpaca prompts
+
+The RMCT paper mixes fresh base-model instruction responses into behaviour
+consistency training. Export a deterministic prompt-only subset with:
+
+```bash
+uv run python -m ctm_data.sources.cleaned_alpaca \
+  --output artifacts/data/cleaned-alpaca-prompts.jsonl \
+  --manifest-output artifacts/data/cleaned-alpaca-prompts.manifest.json \
+  --count 2048 \
+  --seed 42
+```
+
+The exporter downloads one pinned Cleaned Alpaca revision, verifies its
+SHA-256 digest, and ignores every source response. Pass the resulting prompts
+to `scripts/prepare_bct_targets.py`; CTM then samples responses through the
+same frozen base model selected by the experiment.
+
 The analysis command accepts repeated condition names to pool independent
 replicates while retaining only the latest task retry inside each directory.
 `towards_bias_switch` is conditional on the unbiased answer not matching the
@@ -121,9 +139,13 @@ uv run python -m ctm_data.adapters.mcq_bias.analysis \
   --output artifacts/results/rmct-hle.json
 ```
 
-For the paper's bias-verbalisation subset, add
-`--metric bias_acknowledged --where-metric towards_bias_switch`. When an
-experiment does not report verbalisation, set
+For unconditional bias verbalisation, use `--metric bias_acknowledged`. For the
+paper's towards-bias-switch subset, additionally pass
+`--where-metric towards_bias_switch`. To condition on a switch in either
+direction, pass `--where-metric abs_switch`; `mcq_bias` uses that internal field
+for total bias switch. These reports reuse the same per-sample verbalisation
+grade and do not make additional grader calls. When an experiment does not
+report verbalisation, set
 `include_bias_acknowledged: false` in `mcq_bias` task arguments to avoid grader
 calls.
 

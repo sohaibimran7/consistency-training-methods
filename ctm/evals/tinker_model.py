@@ -11,7 +11,7 @@ from typing import Optional
 
 import tinker
 from inspect_ai.model import GenerateConfig, Model
-from tinker_cookbook import checkpoint_utils
+from tinker_cookbook import checkpoint_utils, model_info
 from tinker_cookbook.eval.inspect_utils import InspectAPIFromTinkerSampling
 
 
@@ -68,4 +68,31 @@ def tinker_checkpoint_model(
     return Model(api=api, config=generate_config)
 
 
-__all__ = ["tinker_checkpoint_model"]
+def tinker_base_model(
+    base_model: str,
+    *,
+    renderer_name: str | None = None,
+    config: GenerateConfig | None = None,
+    include_reasoning: bool = False,
+    service_client: Optional[tinker.ServiceClient] = None,
+) -> Model:
+    """Return the cookbook Inspect adapter for an untrained Tinker base model."""
+
+    if not isinstance(base_model, str) or not base_model:
+        raise ValueError("Tinker base model must be a non-empty string")
+    resolved_renderer = renderer_name or model_info.get_recommended_renderer_name(base_model)
+    generate_config = config or GenerateConfig()
+    client = service_client or tinker.ServiceClient()
+    sampling_client = client.create_sampling_client(base_model=base_model)
+    api = InspectAPIFromTinkerSampling(
+        renderer_name=resolved_renderer,
+        model_name=base_model,
+        sampling_client=sampling_client,
+        config=generate_config,
+        include_reasoning=include_reasoning,
+    )
+    api.renderer_name = resolved_renderer
+    return Model(api=api, config=generate_config)
+
+
+__all__ = ["tinker_base_model", "tinker_checkpoint_model"]

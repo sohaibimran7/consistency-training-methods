@@ -28,11 +28,19 @@ definition used by this repository; it does not preserve an additional
 unconditional directional switch metric. The CTM reducer can pool repeated
 learning-rate directories with binomial standard errors, compute equal-weighted
 held-out-bias summaries, and restrict bias verbalisation to towards-switch
-examples.
+examples or to all questions that switched in either direction. It can also
+report unconditional bias verbalisation over every successfully graded
+response.
 
 The repository does not yet calculate the paper's significance-marker tests.
 It reports the pooled point estimate, denominator, replicate count, and
 standard error needed by a separate statistical check.
+
+The complete GPT-OSS-20B comparison, including matched controls and bias
+verbalisation, is specified in
+[`rmct_hle_gpt_oss_20b/experiment.yaml`](rmct_hle_gpt_oss_20b/experiment.yaml).
+Its [runbook](rmct_hle_gpt_oss_20b/README.md) records the reproduction boundary,
+resolved workload, and execution commands.
 
 ### Consistency Training Helps Stop Sycophancy and Jailbreaks
 
@@ -86,8 +94,9 @@ alone:
 
 ## Reporting functions that remain manual
 
-Learning-rate or seed sweeps are represented as explicit YAML entries rather
-than a sweep language. Bootstrap confidence intervals, best-hyperparameter
+The RMCT comparison uses a benchmark-owned experiment factory to expand its
+learning-rate matrix from a concise YAML specification. Seed sweeps are not yet
+part of that factory. Bootstrap confidence intervals, best-hyperparameter
 selection, and two-proportion significance tests are not automated. These do
 not block training or evaluation, but they must be implemented or checked in a
 plot-specific analysis command before claiming exact reproduction of figures

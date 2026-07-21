@@ -52,7 +52,7 @@ def validate_tinker_generation_config(value: Mapping[str, Any] | None) -> None:
     unsupported = sorted(set(value or {}) - TINKER_SUPPORTED_GENERATION_FIELDS)
     if unsupported:
         raise ValueError(
-            "Tinker checkpoints do not support these generation_config field(s): "
+            "Tinker models do not support these generation_config field(s): "
             f"{unsupported}; use only {sorted(TINKER_SUPPORTED_GENERATION_FIELDS)}"
         )
 
@@ -60,6 +60,7 @@ def validate_tinker_generation_config(value: Mapping[str, Any] | None) -> None:
 def resolve_eval_model(
     *,
     model: str | None = None,
+    tinker_base_model_name: str | None = None,
     tinker_checkpoint: str | None = None,
     local_checkpoint: str | None = None,
     base_model: str | None = None,
@@ -68,24 +69,33 @@ def resolve_eval_model(
     generation_config: Mapping[str, Any] | None = None,
     include_reasoning: bool = False,
 ):
-    """Resolve a provider model, Tinker checkpoint, or local LoRA checkpoint."""
+    """Resolve a provider model, Tinker base/checkpoint, or local checkpoint."""
 
-    if sum(value is not None for value in (model, tinker_checkpoint, local_checkpoint)) != 1:
-        raise ValueError("pass exactly one of model, tinker_checkpoint, or local_checkpoint")
+    if sum(value is not None for value in (model, tinker_base_model_name, tinker_checkpoint, local_checkpoint)) != 1:
+        raise ValueError("pass exactly one of model, tinker_base_model_name, tinker_checkpoint, or local_checkpoint")
     if model and base_model is not None:
         raise ValueError("base_model applies only to saved checkpoints")
     if model and include_reasoning:
-        raise ValueError("include_reasoning applies only to Tinker checkpoints")
+        raise ValueError("include_reasoning applies only to Tinker models")
     if "config" in dict(model_args or {}):
         raise ValueError("put generation parameters in generation_config, not model_args.config")
     effective_generation_config = normalize_generation_config(generation_config)
-    if tinker_checkpoint:
+    if tinker_base_model_name or tinker_checkpoint:
         if model_args:
-            raise ValueError("model_args apply only to ordinary Inspect providers, not Tinker checkpoints")
+            raise ValueError("model_args apply only to ordinary Inspect providers and local checkpoints")
         validate_tinker_generation_config(effective_generation_config)
-        from ctm.evals.tinker_model import tinker_checkpoint_model
+        from ctm.evals.tinker_model import tinker_base_model, tinker_checkpoint_model
         from inspect_ai.model import GenerateConfig
 
+        if tinker_base_model_name:
+            if base_model is not None:
+                raise ValueError("base_model is redundant with tinker_base_model_name")
+            return tinker_base_model(
+                tinker_base_model_name,
+                renderer_name=renderer_name,
+                config=GenerateConfig(**effective_generation_config),
+                include_reasoning=include_reasoning,
+            )
         return tinker_checkpoint_model(
             tinker_checkpoint,
             base_model=base_model,
@@ -95,9 +105,9 @@ def resolve_eval_model(
         )
     if local_checkpoint:
         if renderer_name is not None:
-            raise ValueError("renderer_name applies only to Tinker checkpoints")
+            raise ValueError("renderer_name applies only to Tinker models")
         if include_reasoning:
-            raise ValueError("include_reasoning applies only to Tinker checkpoints")
+            raise ValueError("include_reasoning applies only to Tinker models")
         from ctm.evals.local_model import local_checkpoint_model
 
         return local_checkpoint_model(
@@ -107,7 +117,7 @@ def resolve_eval_model(
             generation_config=effective_generation_config,
         )
     if renderer_name is not None:
-        raise ValueError("renderer_name applies only to Tinker checkpoints")
+        raise ValueError("renderer_name applies only to Tinker models")
     from inspect_ai.model import GenerateConfig, get_model
 
     return get_model(
@@ -137,6 +147,7 @@ def run_task_evals(
     task_factory: str,
     *,
     model: str | None = None,
+    tinker_base_model_name: str | None = None,
     tinker_checkpoint: str | None = None,
     local_checkpoint: str | None = None,
     base_model: str | None = None,
@@ -157,6 +168,7 @@ def run_task_evals(
     tasks = build_tasks(task_factory, task_args=task_args)
     resolved_model = resolve_eval_model(
         model=model,
+        tinker_base_model_name=tinker_base_model_name,
         tinker_checkpoint=tinker_checkpoint,
         local_checkpoint=local_checkpoint,
         base_model=base_model,
@@ -178,6 +190,14 @@ def run_task_evals(
             {
                 "checkpoint": tinker_checkpoint,
                 "base_model": resolved_model.api.model_name,
+                "renderer_name": getattr(resolved_model.api, "renderer_name", None),
+            }
+        )
+    elif tinker_base_model_name:
+        run_metadata.update(
+            {
+                "model": tinker_base_model_name,
+                "model_backend": "tinker",
                 "renderer_name": getattr(resolved_model.api, "renderer_name", None),
             }
         )
