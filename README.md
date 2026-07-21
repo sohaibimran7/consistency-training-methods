@@ -127,7 +127,7 @@ Large experiment matrices may use an `experiment_factory` in
 factory expands it into the same explicit stage-and-command format used above.
 Factories belong with the dataset or benchmark adapter, not in the generic
 runner. See
-[`experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml`](experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml)
+[`experiments/rmct_paper_vast_more_methods/experiment.yaml`](experiments/rmct_paper_vast_more_methods/experiment.yaml)
 for an example that expands five training methods, their controls, three
 learning rates, evaluation, and reports.
 

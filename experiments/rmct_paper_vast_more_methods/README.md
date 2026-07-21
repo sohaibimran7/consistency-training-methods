@@ -111,7 +111,7 @@ uses. Its counts and token limits are not suitable for scientific comparison.
 
 ```bash
 uv run python scripts/run_experiment.py \
-  experiments/paper_reproductions/rmct_hle_gpt_oss_20b/debug/smoke.yaml \
+  experiments/rmct_paper_vast_more_methods/debug/smoke.yaml \
   --parallel 4 --gpus 0,1,2,3
 ```
 
@@ -123,7 +123,7 @@ the complete resolved plan without making model calls:
 
 ```bash
 uv run python scripts/run_experiment.py \
-  experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml \
+  experiments/rmct_paper_vast_more_methods/experiment.yaml \
   --parallel 8 --gpus 0,1,2,3,4,5,6,7 \
   --dry-run
 ```
@@ -132,7 +132,7 @@ After reviewing the exact commands, run the complete plan:
 
 ```bash
 uv run python scripts/run_experiment.py \
-  experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml \
+  experiments/rmct_paper_vast_more_methods/experiment.yaml \
   --parallel 8 --gpus 0,1,2,3,4,5,6,7
 ```
 
@@ -147,13 +147,13 @@ example:
 
 ```bash
 uv run python scripts/run_experiment.py \
-  experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml \
+  experiments/rmct_paper_vast_more_methods/experiment.yaml \
   --parallel 8 --gpus 0,1,2,3,4,5,6,7 \
   --start-from evaluation
 ```
 
 Named local checkpoints are persisted in
-`logs/experiments/rmct-hle-gpt-oss-20b-five-method/outputs.json`. The expanded
+`logs/experiments/rmct_paper_vast_more_methods/outputs.json`. The expanded
 plan is saved beside that file as `resolved-plan.yaml` after approval.
 
 ## Workload and cost boundary

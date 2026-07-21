@@ -19,7 +19,7 @@ WRONG_ARGUMENT_COMPARISON = (
 )
 BCT_BACKEND_COMPARISON = WRONG_ARGUMENT_COMPARISON.with_name("bct_backends.yaml")
 RMCT_HLE_COMPARISON = (
-    Path(__file__).parent.parent / "experiments" / "paper_reproductions" / "rmct_hle_gpt_oss_20b" / "experiment.yaml"
+    Path(__file__).parent.parent / "experiments" / "rmct_paper_vast_more_methods" / "experiment.yaml"
 )
 RMCT_HLE_SMOKE = RMCT_HLE_COMPARISON.parent / "debug" / "smoke.yaml"
 

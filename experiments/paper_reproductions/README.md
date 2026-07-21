@@ -38,8 +38,8 @@ standard error needed by a separate statistical check.
 
 The complete GPT-OSS-20B comparison, including matched controls and bias
 verbalisation, is specified in
-[`rmct_hle_gpt_oss_20b/experiment.yaml`](rmct_hle_gpt_oss_20b/experiment.yaml).
-Its [runbook](rmct_hle_gpt_oss_20b/README.md) records the reproduction boundary,
+[`../rmct_paper_vast_more_methods/experiment.yaml`](../rmct_paper_vast_more_methods/experiment.yaml).
+Its [runbook](../rmct_paper_vast_more_methods/README.md) records the reproduction boundary,
 resolved workload, and execution commands.
 
 ### Consistency Training Helps Stop Sycophancy and Jailbreaks

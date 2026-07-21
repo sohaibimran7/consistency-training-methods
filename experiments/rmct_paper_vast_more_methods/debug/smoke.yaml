@@ -1,4 +1,4 @@
-name: rmct-hle-gpt-oss-20b-five-method-smoke
+name: rmct_paper_vast_more_methods_smoke
 experiment_factory: ctm_data.adapters.mcq_bias.comparison:compile_experiment
 
 # Integration test only. Counts and token limits are intentionally too small
@@ -112,14 +112,14 @@ spec:
     temperature: 0.0
 
   tracking:
-    wandb_project: ctm-paper-reproductions-smoke
+    wandb_project: rmct_paper_vast_more_methods
 
   reports:
     held_out_exclude: [wrong_argument]
     standard_error: binomial
     charts:
-      switch: experiments/paper_reproductions/rmct_hle_gpt_oss_20b/switch_chart.json
-      verbalisation: experiments/paper_reproductions/rmct_hle_gpt_oss_20b/verbalisation_chart.json
+      switch: experiments/rmct_paper_vast_more_methods/switch_chart.json
+      verbalisation: experiments/rmct_paper_vast_more_methods/verbalisation_chart.json
     items:
       - name: towards-bias-switch
         metric: towards_bias_switch
