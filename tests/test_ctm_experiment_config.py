@@ -21,6 +21,7 @@ BCT_BACKEND_COMPARISON = WRONG_ARGUMENT_COMPARISON.with_name("bct_backends.yaml"
 RMCT_HLE_COMPARISON = (
     Path(__file__).parent.parent / "experiments" / "paper_reproductions" / "rmct_hle_gpt_oss_20b" / "experiment.yaml"
 )
+RMCT_HLE_SMOKE = RMCT_HLE_COMPARISON.parent / "debug" / "smoke.yaml"
 
 
 def test_example_keeps_training_and_evaluation_independent():
@@ -267,6 +268,21 @@ def test_rmct_hle_yaml_is_a_concise_authored_spec():
     assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.comparison:compile_experiment"
     assert "training" not in source
     assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 180
+
+
+def test_rmct_hle_smoke_covers_every_condition_once_with_tiny_counts():
+    full = experiment.load_experiment_source(RMCT_HLE_COMPARISON)["spec"]
+    smoke = experiment.load_experiment_source(RMCT_HLE_SMOKE)["spec"]
+
+    assert smoke["conditions"] == full["conditions"]
+    assert len(smoke["learning_rates"]) == 1
+    assert smoke["rate_matching"]["datapoints"] == 2
+    assert set(smoke["rate_matching"]["rollouts"].values()) == {2}
+    assert smoke["data"]["evaluation"]["questions"] == 2
+
+    compiled = experiment.load_experiment(RMCT_HLE_SMOKE)
+    assert len(compiled["training"]) == 10
+    assert len(compiled["evaluation"]) == 11
 
 
 def test_resolved_plan_is_immutable_for_an_experiment_name(monkeypatch, tmp_path):

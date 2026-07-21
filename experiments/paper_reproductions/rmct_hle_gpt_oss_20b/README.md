@@ -102,6 +102,19 @@ The data and result writers refuse to overwrite existing files. To repeat a
 run, retain the old artifacts under an archive directory and use new output
 paths or a new experiment name.
 
+### Integration smoke test
+
+Before submitting the full matrix on a new machine image, run the explicit
+integration configuration. It covers all five methods, all five controls, the
+untrained evaluation, checkpoint loading, reporting, and both remote-model
+uses. Its counts and token limits are not suitable for scientific comparison.
+
+```bash
+uv run python scripts/run_experiment.py \
+  experiments/paper_reproductions/rmct_hle_gpt_oss_20b/debug/smoke.yaml \
+  --parallel 4 --gpus 0,1,2,3
+```
+
 ## Commands
 
 Run these commands inside a Vast.ai host with eight visible GPUs. The same YAML
