@@ -2,6 +2,7 @@
 
 import argparse
 
+import pytest
 import torch
 
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend
@@ -55,10 +56,28 @@ class TestBackendCLI:
         assert backend.use_lora is True
 
     def test_full_finetune_flag(self):
-        args = parse(["--backend", "local", "--local-device", "cpu", "--local-sampler", "hf", "--local-full-finetune"])
+        args = parse(
+            [
+                "--backend",
+                "local",
+                "--local-device",
+                "cpu",
+                "--local-sampler",
+                "hf",
+                "--local-full-finetune",
+                "--local-trainable-modules",
+                "self_attn",
+            ]
+        )
         backend = build_backend(args)
         assert backend.use_lora is False
+        assert backend.full_finetune_modules == ["self_attn"]
         assert "full-finetune" in describe_backend(args)
+
+    def test_trainable_modules_require_full_finetune(self):
+        args = parse(["--backend", "local", "--local-trainable-modules", "self_attn"])
+        with pytest.raises(ValueError, match="requires --local-full-finetune"):
+            build_backend(args)
 
 
 def test_tinker_training_run_records_renderer_metadata(monkeypatch):

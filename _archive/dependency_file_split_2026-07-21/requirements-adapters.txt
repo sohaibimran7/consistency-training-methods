@@ -1,3 +1,3 @@
 # Published MCQ-bias eval and data adapter. For co-development use:
 # uv pip install -e /path/to/mcq-bias --no-deps
-mcq-bias @ git+https://github.com/sohaibimran7/mcq-bias@1cf015e61c2ac0218c7776b9d65e939b1f5a088e
+mcq-bias @ git+https://github.com/sohaibimran7/mcq-bias@1df2ea1ed8a1eeaf6ec5088c066db7c8c1049119

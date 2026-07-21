@@ -21,6 +21,8 @@ Notes / current limits (phase 1):
   paths use the ``file://`` scheme so eval runners can dispatch on it).
 """
 
+import copy
+import fnmatch
 import json
 from contextlib import nullcontext as _nullcontext
 from pathlib import Path
@@ -64,8 +66,16 @@ class _ResolvedPending:
         return self._value
 
 
+def _name_matches(name: str, selector: str) -> bool:
+    """Match a full name by glob, or a plain selector by dotted component."""
+
+    if any(character in selector for character in "*?["):
+        return fnmatch.fnmatchcase(name, selector)
+    return name == selector or name.endswith(f".{selector}") or selector in name.split(".")
+
+
 def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> list[str]:
-    """Map Tinker's portable LoRA component flags onto PEFT module names."""
+    """Resolve exact targets or portable component flags to PEFT module names."""
 
     output = model.get_output_embeddings() if hasattr(model, "get_output_embeddings") else None
     components: dict[str, list[str]] = {"mlp": [], "attn": [], "unembed": []}
@@ -80,6 +90,16 @@ def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> lis
             component = "mlp"
         components[component].append(name)
 
+    if config.target_modules is not None:
+        names = [name for component_names in components.values() for name in component_names]
+        selected = [name for name in names if any(_name_matches(name, target) for target in config.target_modules)]
+        unmatched = [target for target in config.target_modules if not any(_name_matches(name, target) for name in names)]
+        if unmatched:
+            raise ValueError(
+                f"model {type(model).__name__} has no linear modules matching target_modules={unmatched}"
+            )
+        return selected
+
     enabled = {
         "mlp": config.train_mlp,
         "attn": config.train_attn,
@@ -91,6 +111,32 @@ def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> lis
             f"model {type(model).__name__} exposes no local LoRA modules for selected component(s): {missing}"
         )
     return [name for component, names in components.items() if enabled[component] for name in names]
+
+
+def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Optional[Sequence[str]]) -> list[str]:
+    """Enable either every parameter or the explicitly selected parameter groups."""
+
+    if selectors is None:
+        for parameter in model.parameters():
+            parameter.requires_grad_(True)
+        return [name for name, _ in model.named_parameters()]
+    if not selectors or any(not isinstance(selector, str) or not selector.strip() for selector in selectors):
+        raise ValueError("full_finetune_modules must contain non-empty module selectors")
+
+    selected = []
+    for name, parameter in model.named_parameters():
+        train = any(_name_matches(name, selector) for selector in selectors)
+        parameter.requires_grad_(train)
+        if train:
+            selected.append(name)
+    unmatched = [selector for selector in selectors if not any(_name_matches(name, selector) for name in selected)]
+    if unmatched:
+        raise ValueError(
+            f"model {type(model).__name__} has no parameters matching full_finetune_modules={unmatched}"
+        )
+    if not selected:
+        raise ValueError("full_finetune_modules selected no parameters")
+    return selected
 
 
 class LocalSamplerHandle:
@@ -131,6 +177,8 @@ class LocalBackend:
         sampler: str = "hf",
         vllm_options: Optional[dict] = None,
         consistency_loss_options: Optional[dict] = None,
+        full_finetune_modules: Optional[Sequence[str]] = None,
+        keep_frozen_base: bool = False,
     ):
         """
         Args:
@@ -149,6 +197,10 @@ class LocalBackend:
             consistency_loss_options: constructor kwargs for the consistency
                 loss_fns (weight, layer_selection, ...); defaults are the
                 AttCT-paper settings.
+            full_finetune_modules: parameter-name globs or dotted components to
+                train when ``use_lora=False``. ``None`` trains every parameter.
+            keep_frozen_base: retain an immutable copy of the initial model for
+                clean/reference forwards during selective full fine-tuning.
         """
         if sampler not in ("hf", "vllm"):
             raise ValueError(f"Unknown sampler: {sampler!r} (expected 'hf' or 'vllm')")
@@ -161,12 +213,18 @@ class LocalBackend:
         self.sampler = sampler
         self.vllm_options = vllm_options or {}
         self.consistency_loss_options = consistency_loss_options or {}
+        self.full_finetune_modules = list(full_finetune_modules) if full_finetune_modules is not None else None
+        self.keep_frozen_base = keep_frozen_base
         self._vllm = None  # VLLMSampler, booted lazily by _ensure_vllm() when sampler == "vllm"
         self._adapter_scratch: Optional[Path] = None
         self._optimizer: Optional[torch.optim.AdamW] = None
         self._pending_optimizer_state: Optional[dict] = None
         self._consistency_loss_modules: dict[str, consistency_losses.ConsistencyLoss] = {}
         self._mlp_hooks: Optional[MLPHookManager] = None
+        self._base_mlp_hooks: Optional[MLPHookManager] = None
+        self._frozen_base_model: Optional[torch.nn.Module] = None
+        self._gradient_accumulations = 0
+        self._trainable_parameter_names: list[str] = []
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -179,6 +237,10 @@ class LocalBackend:
 
             self.model = AutoModelForCausalLM.from_pretrained(model, torch_dtype=self.dtype)
         if self.use_lora:
+            if self.full_finetune_modules is not None:
+                raise ValueError("full_finetune_modules applies only when use_lora=False")
+            if self.keep_frozen_base:
+                raise ValueError("keep_frozen_base is unnecessary with LoRA; disabling the adapter is the frozen base")
             if not HAS_PEFT:
                 raise ImportError(
                     "LocalBackend(use_lora=True) requires peft: `uv pip install peft`, "
@@ -191,13 +253,26 @@ class LocalBackend:
                 raise ValueError("LoRA must train at least one of MLP, attention, or unembedding modules")
             peft_cfg = PeftLoraConfig(
                 r=lora.rank,
-                lora_alpha=2 * lora.rank,  # cookbook-style alpha/r = 2
+                lora_alpha=lora.resolved_alpha,
+                lora_dropout=lora.dropout,
                 target_modules=target_modules,
                 bias="none",
                 task_type="CAUSAL_LM",
             )
             self.model = get_peft_model(self.model, peft_cfg)
+            self._trainable_parameter_names = [name for name, parameter in self.model.named_parameters() if parameter.requires_grad]
+        else:
+            if self.keep_frozen_base:
+                self._frozen_base_model = copy.deepcopy(self.model)
+                self._frozen_base_model.eval()
+                for parameter in self._frozen_base_model.parameters():
+                    parameter.requires_grad_(False)
+            self._trainable_parameter_names = _configure_full_finetune_parameters(
+                self.model, self.full_finetune_modules
+            )
         self.model.to(self.device)
+        if self._frozen_base_model is not None:
+            self._frozen_base_model.to(self.device)
         if resume_from:
             self._load_checkpoint(resume_from, with_optimizer=resume_with_optimizer)
         if self.sampler == "vllm" and not self.use_lora:
@@ -256,15 +331,26 @@ class LocalBackend:
         return LocalSamplerHandle(self, use_base=True)
 
     def _require_base(self):
-        if not (self.use_lora and HAS_PEFT):
+        if not ((self.use_lora and HAS_PEFT) or self._frozen_base_model is not None):
             raise NotImplementedError(
                 "Base-model access (anchor sampling / KL-to-base / distill) on LocalBackend "
-                "requires LoRA (the frozen base is the model with the adapter disabled). "
-                "For full fine-tuning, run with kl_coef=0 and anchor_model='initial_policy'."
+                "requires LoRA or keep_frozen_base=True for full fine-tuning."
             )
 
     def _base_ctx(self):
-        return self._require_model().disable_adapter()  # peft context manager
+        self._require_base()
+        if self.use_lora:
+            return self._require_model().disable_adapter()  # peft context manager
+        return _nullcontext()
+
+    def _model_for(self, *, use_base: bool) -> torch.nn.Module:
+        if not use_base:
+            return self._require_model()
+        self._require_base()
+        if self.use_lora:
+            return self._require_model()
+        assert self._frozen_base_model is not None
+        return self._frozen_base_model
 
     def _sample(
         self,
@@ -305,7 +391,7 @@ class LocalBackend:
         num_samples: int,
         use_base: bool,
     ) -> list[SampledSequence]:
-        model = self._require_model()
+        model = self._model_for(use_base=use_base)
         was_training = model.training
         model.eval()
         eos_ids = [t for t in (stop or []) if isinstance(t, int)] or None
@@ -353,7 +439,7 @@ class LocalBackend:
 
     def _target_logprobs(self, datums: Sequence[Any], use_base: bool = False) -> list[torch.Tensor]:
         """Forward the batch and gather per-token logprobs of each datum's target_tokens."""
-        model = self._require_model()
+        model = self._model_for(use_base=use_base)
         token_lists = [d.model_input.to_ints() for d in datums]
         max_len = max(len(t) for t in token_lists)
         input_ids = torch.zeros((len(datums), max_len), dtype=torch.long, device=self.device)
@@ -394,6 +480,7 @@ class LocalBackend:
             raise ValueError(f"Unknown loss_fn: {loss_fn}")
 
         loss.backward()  # accumulate; optim_step applies + zeroes
+        self._gradient_accumulations += 1
         return _ResolvedPending(
             ForwardBackwardOutput(
                 logprobs=[lp.detach().cpu() for lp in target_logprobs],
@@ -431,27 +518,41 @@ class LocalBackend:
                 f"LocalBackend: switching attention from {model.config._attn_implementation!r} to 'eager' for {loss_fn}"
             )
             model.set_attn_implementation("eager")
+        base_model = self._model_for(use_base=True)
+        if needs_attentions and base_model is not model and base_model.config._attn_implementation != "eager":
+            base_model.set_attn_implementation("eager")
 
         hooks = None
+        base_hooks = None
         if loss_module.needs_mlp_hooks:
             if self._mlp_hooks is None:
                 self._mlp_hooks = MLPHookManager(model, variant=getattr(loss_module, "variant", "hidden"))
             hooks = self._mlp_hooks.install()
+            if base_model is model:
+                base_hooks = hooks
+            else:
+                if self._base_mlp_hooks is None:
+                    self._base_mlp_hooks = MLPHookManager(
+                        base_model, variant=getattr(loss_module, "variant", "hidden")
+                    )
+                base_hooks = self._base_mlp_hooks.install()
 
         def forward(tokens: list[int], use_base: bool):
             input_ids = torch.tensor([tokens], dtype=torch.long, device=self.device)
             ctx = self._base_ctx() if use_base else _nullcontext()
+            active_model = self._model_for(use_base=use_base)
+            active_hooks = base_hooks if use_base else hooks
             with ctx:
-                outputs = model(
+                outputs = active_model(
                     input_ids=input_ids,
                     attention_mask=torch.ones_like(input_ids),
                     output_attentions=needs_attentions,
                     output_hidden_states=needs_hidden,
                 )
             mlp_states = None
-            if hooks is not None:
-                mlp_states = hooks.get_states()
-                hooks.clear()
+            if active_hooks is not None:
+                mlp_states = active_hooks.get_states()
+                active_hooks.clear()
             return outputs, mlp_states
 
         total_loss = 0.0
@@ -478,7 +579,10 @@ class LocalBackend:
         finally:
             if hooks is not None:
                 hooks.remove()
+            if base_hooks is not None and base_hooks is not hooks:
+                base_hooks.remove()
 
+        self._gradient_accumulations += 1
         return _ResolvedPending(ForwardBackwardOutput(logprobs=[], metrics={"loss": total_loss / max(len(datums), 1)}))
 
     async def submit_optim_step(self, *, learning_rate: float, adam: AdamConfig) -> _ResolvedPending:
@@ -497,10 +601,16 @@ class LocalBackend:
                 self._pending_optimizer_state = None
         for group in self._optimizer.param_groups:
             group["lr"] = learning_rate
+        if self._gradient_accumulations > 1:
+            scale = 1.0 / self._gradient_accumulations
+            for parameter in params:
+                if parameter.grad is not None:
+                    parameter.grad.mul_(scale)
         if adam.grad_clip_norm and adam.grad_clip_norm > 0:
             torch.nn.utils.clip_grad_norm_(params, adam.grad_clip_norm)
         self._optimizer.step()
         self._optimizer.zero_grad(set_to_none=True)
+        self._gradient_accumulations = 0
         return _ResolvedPending(None)
 
     async def incorporate_kl_penalty(
@@ -548,6 +658,9 @@ class LocalBackend:
                     "backend": "local",
                     "model": self.model_name,
                     "lora": self.use_lora,
+                    "full_finetune_modules": self.full_finetune_modules,
+                    "keep_frozen_base": self.keep_frozen_base,
+                    "trainable_parameter_names": self._trainable_parameter_names,
                     "kind": kind,
                     "loop_state": loop_state,
                 },

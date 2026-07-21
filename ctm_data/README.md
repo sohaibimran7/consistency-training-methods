@@ -88,6 +88,45 @@ Every source row is validated before the backend is initialized. CTM samples
 one reference completion per row and reuses it in both output files. Existing
 outputs are never overwritten.
 
+### Pinned HLE export
+
+The RMCT paper evaluates on the text-only multiple-choice subset of Humanity's
+Last Exam. Export that gated source to the local JSONL schema accepted by
+`mcq_bias`:
+
+```bash
+uv run python -m ctm_data.sources.hle \
+  --output ctm_data/local/hle-text-mc.jsonl \
+  --manifest-output ctm_data/local/hle-text-mc.manifest.json
+```
+
+The exporter pins the upstream revision, excludes image-dependent questions,
+requires exactly 513 rows, and records the output hash. The generated benchmark
+file is gitignored and must not be redistributed. Pass its JSONL path as a
+normal `mcq_bias` dataset value.
+
+The analysis command accepts repeated condition names to pool independent
+replicates while retaining only the latest task retry inside each directory.
+`towards_bias_switch` is conditional on the unbiased answer not matching the
+bias; `away_from_bias_switch` is conditional on the unbiased answer matching
+the bias:
+
+```bash
+uv run python -m ctm_data.adapters.mcq_bias.analysis \
+  --run rmct=logs/evals/lr-1e-4 \
+        rmct=logs/evals/lr-2.86e-4 \
+        rmct=logs/evals/lr-5e-4 \
+  --metric towards_bias_switch \
+  --stderr binomial \
+  --output artifacts/results/rmct-hle.json
+```
+
+For the paper's bias-verbalisation subset, add
+`--metric bias_acknowledged --where-metric towards_bias_switch`. When an
+experiment does not report verbalisation, set
+`include_bias_acknowledged: false` in `mcq_bias` task arguments to avoid grader
+calls.
+
 ## WildJailbreak families
 
 The WildJailbreak builder expects JSONL rows containing:

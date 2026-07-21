@@ -39,8 +39,14 @@ def add_backend_args(parser: argparse.ArgumentParser) -> None:
     g.add_argument(
         "--local-full-finetune",
         action="store_true",
-        help="Disable LoRA (full fine-tune). No KL-to-base / base anchor "
-        "(no frozen base in-process) and incompatible with --local-sampler vllm",
+        help="Disable LoRA and train ordinary model parameters; incompatible with --local-sampler vllm",
+    )
+    g.add_argument(
+        "--local-trainable-modules",
+        nargs="+",
+        metavar="SELECTOR",
+        help="With --local-full-finetune, train only matching parameter groups. Selectors may be "
+        "dotted components (self_attn) or full-name globs (*.self_attn.*). Omit to train everything",
     )
 
 
@@ -48,6 +54,7 @@ def build_backend(
     args: argparse.Namespace,
     *,
     consistency_loss_options: dict | None = None,
+    requires_frozen_base: bool = False,
 ) -> TrainingBackend:
     """Build the concrete backend explicitly selected by the CLI."""
 
@@ -59,6 +66,8 @@ def build_backend(
 
     from ctm.backends.local.engine import LocalBackend
 
+    if args.local_trainable_modules and not args.local_full_finetune:
+        raise ValueError("--local-trainable-modules requires --local-full-finetune")
     dtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[args.local_dtype]
     return LocalBackend(
         device=args.local_device,
@@ -67,6 +76,8 @@ def build_backend(
         sampler=args.local_sampler,
         vllm_options={"gpu_memory_utilization": args.local_gpu_mem_util},
         consistency_loss_options=consistency_loss_options,
+        full_finetune_modules=args.local_trainable_modules,
+        keep_frozen_base=requires_frozen_base and args.local_full_finetune,
     )
 
 
@@ -77,5 +88,6 @@ def describe_backend(args: argparse.Namespace) -> str:
     return (
         f"local ({args.local_device or 'auto'}, {args.local_dtype}, "
         f"sampler={args.local_sampler}, "
-        f"{'full-finetune' if args.local_full_finetune else 'LoRA'})"
+        f"{'full-finetune' if args.local_full_finetune else 'LoRA'}"
+        f"{f', modules={args.local_trainable_modules}' if args.local_trainable_modules else ''})"
     )

@@ -53,9 +53,9 @@ import tinker  # noqa: E402
 from ctm.training.sft import METHOD_LOSS_FNS, SFTConfig, train_sft  # noqa: E402
 from ctm.artifacts import plain_file_identity  # noqa: E402
 from ctm.core.config import (  # noqa: E402
-    LoRAConfig,
     AdamConfig,
     CheckpointConfig,
+    resolve_lora_config,
 )
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend  # noqa: E402
 from ctm.cli_safety import parse_json_object, reject_inline_secrets  # noqa: E402
@@ -129,25 +129,6 @@ def load_and_combine(
     return result
 
 
-def resolve_lora_config(raw: dict, *, rank: int | None, seed: int | None) -> LoRAConfig:
-    """Build the portable LoRA configuration, with scalar CLI overrides."""
-
-    unknown = sorted(set(raw) - set(LoRAConfig.model_fields))
-    if unknown:
-        raise ValueError(f"lora_config has unknown field(s): {unknown}")
-    values = {"rank": 8, **raw}
-    if rank is not None:
-        values["rank"] = rank
-    if seed is not None:
-        values["seed"] = seed
-    config = LoRAConfig(**values)
-    if config.rank < 1:
-        raise ValueError("lora_config.rank must be >= 1")
-    if not (config.train_mlp or config.train_attn or config.train_unembed):
-        raise ValueError("lora_config must enable at least one of train_mlp, train_attn, or train_unembed")
-    return config
-
-
 def resolve_optimizer_config(
     raw: dict,
     *,
@@ -204,6 +185,11 @@ def main():
         help="Variant-prompt field for act/attct/mlpct rows",
     )
     parser.add_argument(
+        "--alignment-text-field",
+        help="Optional row field containing the exact shared text region to align; "
+        "otherwise the complete reference user message must occur in the variant",
+    )
+    parser.add_argument(
         "--method-config",
         help="JSON object or JSON file containing ACT, AttCT, or MLPCT loss options",
     )
@@ -216,7 +202,7 @@ def main():
     # Hyperparameters
     parser.add_argument(
         "--lora-config",
-        help="JSON object or JSON file with rank, train_mlp, train_attn, train_unembed, and seed",
+        help="JSON object or JSON file with rank, alpha, dropout, target_modules, portable component flags, and seed",
     )
     parser.add_argument(
         "--optimizer-config",
@@ -230,6 +216,12 @@ def main():
         help="Override optimizer_config.lr_schedule (effective default: linear)",
     )
     parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=1,
+        help="Accumulate this many microbatches before each optimizer step",
+    )
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lora-rank", type=int, default=None, help="Override lora_config.rank (effective default: 8)")
     parser.add_argument("--seed", type=int, default=None, help="Override lora_config.seed")
@@ -286,10 +278,8 @@ def main():
             f"--method {args.method} needs paired forward passes with internal activations "
             "(Tinker doesn't expose them) — pass --backend local"
         )
-    if args.method != "bct" and args.local_full_finetune:
-        parser.error(
-            f"--method {args.method} needs the frozen base for the clean pass — LoRA only (drop --local-full-finetune)"
-        )
+    if args.gradient_accumulation_steps < 1:
+        parser.error("--gradient-accumulation-steps must be >= 1")
     try:
         method_config = parse_json_object(args.method_config, label="method_config")
         raw_lora_config = parse_json_object(args.lora_config, label="lora_config")
@@ -347,6 +337,7 @@ def main():
         optimizer=optimizer_config,
         n_epochs=args.epochs,
         batch_size=args.batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
         checkpoint=CheckpointConfig(
             save_every_n_steps=args.save_every,
             save_state=args.save_state,
@@ -354,6 +345,7 @@ def main():
         ),
         reference_messages_field=args.reference_messages_field,
         variant_messages_field=args.variant_messages_field,
+        alignment_text_field=args.alignment_text_field,
         method_config=method_config,
         run_metadata={
             "data_files": [str(p) for p, _ in file_specs],
@@ -366,7 +358,9 @@ def main():
     )
 
     # Print summary (ceiling division matches the actual batch loop in train_sft)
-    n_steps = (n_samples + args.batch_size - 1) // args.batch_size
+    n_microbatches = (n_samples + args.batch_size - 1) // args.batch_size
+    n_steps = (n_microbatches + args.gradient_accumulation_steps - 1) // args.gradient_accumulation_steps
+    n_steps *= args.epochs
     n_ckpts = n_steps // args.save_every
     print()
     print(f"Model: {config.model}")
@@ -377,13 +371,15 @@ def main():
     learning_rate = config.optimizer.learning_rate
     print(
         f"Hyperparams: lr={learning_rate if learning_rate is not None else 'auto'}, "
-        f"schedule={config.optimizer.lr_schedule}, batch={args.batch_size}, "
+        f"schedule={config.optimizer.lr_schedule}, microbatch={args.batch_size}, "
+        f"grad_accum={args.gradient_accumulation_steps}, "
+        f"effective_batch={args.batch_size * args.gradient_accumulation_steps}, "
         f"epochs={args.epochs}, lora_rank={config.lora.rank}{seed_str}"
     )
     print(
-        "LoRA modules: "
-        f"mlp={config.lora.train_mlp}, attn={config.lora.train_attn}, "
-        f"unembed={config.lora.train_unembed}"
+        "LoRA: "
+        f"rank={config.lora.rank}, alpha={config.lora.resolved_alpha}, dropout={config.lora.dropout}, "
+        f"targets={config.lora.target_modules or {'mlp': config.lora.train_mlp, 'attn': config.lora.train_attn, 'unembed': config.lora.train_unembed}}"
     )
     print(f"Steps: {n_steps}, checkpoints: ~{n_ckpts} intermediate + 1 final")
     if args.save_state:
@@ -405,7 +401,11 @@ def main():
             config,
             resume_from=args.resume_from,
             resume_with_optimizer=args.resume_with_optimizer,
-            backend=build_backend(args, consistency_loss_options=method_config),
+            backend=build_backend(
+                args,
+                consistency_loss_options=method_config,
+                requires_frozen_base=args.method != "bct",
+            ),
         )
     )
     print(f"\nDone! Final checkpoint: {final_checkpoint}")

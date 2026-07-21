@@ -56,9 +56,6 @@ dependencies:
 npm ci
 ```
 
-For the generic CTM library without repository-provided adapter dependencies,
-install `requirements-ctm.txt` instead of `requirements.txt`.
-
 Store credentials in a gitignored environment file. Relevant variables include
 `TINKER_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, and
 `WANDB_API_KEY`. Never place credentials in YAML files or inline JSON arguments.
@@ -156,6 +153,23 @@ The default advantage normalization scope is `per_item`; `pooled` remains
 available through `--normalization`. Use `--help` for all sampling, anchor,
 optimizer, and backend options.
 
+RLCT accepts the same nested `lora_config` object as supervised training. This
+is how an experiment selects the portable Tinker component set without adding
+script-specific flags:
+
+```yaml
+lora_config:
+  rank: 8
+  alpha: 16
+  train_mlp: true
+  train_attn: true
+  train_unembed: false
+```
+
+Tinker exposes component-level selection and fixes `alpha / rank` at 2 with no
+dropout. The local backend additionally supports `target_modules`, `alpha`, and
+`dropout` exactly.
+
 ### RLCT semantics
 
 For each datapoint, CTM samples the reference prompt and every selected training
@@ -207,12 +221,14 @@ is identical in both outputs; only the selected prompt side differs. Generation
 finishes before either optimizer is initialized, and a shared manifest records
 the input hashes and generation configuration.
 
-The supervised trainer accepts complete portable LoRA and Adam objects from
-YAML. These values are passed to either Tinker or the local backend:
+The training CLIs accept complete portable LoRA and Adam objects from YAML.
+These values are passed to either Tinker or the local backend:
 
 ```yaml
 lora_config:
   rank: 8
+  alpha: 16
+  dropout: 0.0
   train_mlp: true
   train_attn: true
   train_unembed: false
@@ -233,6 +249,13 @@ renderer through the shared renderer code, so runs using the same `model` value
 use the same tokenization path. Scalar `--lora-rank`, `--seed`, `--lr`, and
 `--lr-schedule` arguments remain available and override corresponding nested
 values when supplied.
+
+For local LoRA runs, `target_modules` selects exact PEFT modules, for example
+`[q_proj, v_proj]`. For local full-parameter training, pass
+`local_full_finetune: true` and optionally `local_trainable_modules`, such as
+`[self_attn]` or `['*.self_attn.*']`. ACT, AttCT, and MLPCT keep an immutable
+copy of the initial model for their reference pass when full-parameter training
+is selected. `gradient_accumulation_steps` controls the effective batch size.
 
 Select an internal-consistency method and its loss options directly in YAML:
 
@@ -279,10 +302,10 @@ The runner provides model/checkpoint bridging and Inspect runtime options. It
 does not replace benchmark scoring. An experiment may invoke a benchmark's own
 CLI directly when no Inspect factory is available.
 
-LocalBackend LoRA checkpoints use `--local-checkpoint file:///...`. The runner
+LocalBackend LoRA and full-weight checkpoints use `--local-checkpoint file:///...`. The runner
 reads the recorded base model from the checkpoint manifest, loads it through
-Inspect's Hugging Face provider, and applies the PEFT adapter. Full-weight local
-checkpoints are not supported by this bridge.
+Inspect's Hugging Face provider, and applies either the PEFT adapter or the
+saved full-weight state.
 
 ## Outputs and observability
 
@@ -341,15 +364,17 @@ See [ctm_data/README.md](ctm_data/README.md) for source schemas, builder command
 and adapter configuration. See
 [experiments/eval_awareness/README.md](experiments/eval_awareness/README.md) for
 the standalone EvalAwareBench F6 experiment and VS Code debugging workflow.
+The implementation boundary for the three reference papers is recorded in
+[experiments/paper_reproductions/README.md](experiments/paper_reproductions/README.md).
 
 ## Verification
 
 Run the complete offline suite:
 
 ```bash
-uv run python -m pytest
+uv run --no-sync python -m pytest
 ```
 
-In a core-only environment, use `uv run python -m pytest tests`. Supplying the
-`tests` path overrides the repository-wide test paths, so adapter tests and
-their optional dependencies are not collected.
+To run only the generic training-library tests, use
+`uv run --no-sync python -m pytest tests`. Supplying the `tests` path overrides
+the repository-wide test paths, so adapter tests are not collected.

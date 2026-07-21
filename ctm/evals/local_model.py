@@ -1,4 +1,4 @@
-"""Inspect model bridge for LocalBackend LoRA checkpoints."""
+"""Inspect model bridge for LocalBackend LoRA and full-weight checkpoints."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def _checkpoint_directory(value: str | Path) -> Path:
 
 
 def read_local_checkpoint(value: str | Path) -> tuple[Path, dict[str, Any]]:
-    """Read and validate a LocalBackend LoRA checkpoint manifest."""
+    """Read and validate a LocalBackend checkpoint manifest."""
 
     directory = _checkpoint_directory(value)
     manifest_path = directory / "manifest.json"
@@ -28,12 +28,15 @@ def read_local_checkpoint(value: str | Path) -> tuple[Path, dict[str, Any]]:
         raise ValueError(f"invalid local checkpoint manifest: {manifest_path}") from exc
     if manifest.get("backend") != "local":
         raise ValueError(f"checkpoint manifest backend must be 'local': {manifest_path}")
-    if manifest.get("lora") is not True:
-        raise ValueError("local evaluation currently supports LoRA checkpoints only")
+    if not isinstance(manifest.get("lora"), bool):
+        raise ValueError(f"checkpoint manifest must record boolean lora mode: {manifest_path}")
     if not isinstance(manifest.get("model"), str) or not manifest["model"].strip():
         raise ValueError(f"checkpoint manifest has no base model: {manifest_path}")
-    if not (directory / "adapter_config.json").is_file():
-        raise ValueError(f"local LoRA checkpoint has no adapter_config.json: {directory}")
+    if manifest["lora"]:
+        if not (directory / "adapter_config.json").is_file():
+            raise ValueError(f"local LoRA checkpoint has no adapter_config.json: {directory}")
+    elif not (directory / "weights.pt").is_file():
+        raise ValueError(f"local full-weight checkpoint has no weights.pt: {directory}")
     return directory, manifest
 
 
@@ -44,7 +47,7 @@ def local_checkpoint_model(
     model_args: Mapping[str, Any] | None = None,
     generation_config: Mapping[str, Any] | None = None,
 ):
-    """Load a LocalBackend PEFT adapter as an ordinary Inspect HF model."""
+    """Load a LocalBackend checkpoint as an ordinary Inspect HF model."""
 
     from inspect_ai.model import GenerateConfig, get_model
 
@@ -67,13 +70,19 @@ def local_checkpoint_model(
         config=GenerateConfig(**dict(generation_config or {})),
         **options,
     )
-    try:
-        from peft import PeftModel
-    except ImportError as exc:
-        raise ImportError("local checkpoint evaluation requires peft") from exc
     if not hasattr(model.api, "model"):
         raise TypeError("Inspect's Hugging Face provider did not expose a model instance")
-    model.api.model = PeftModel.from_pretrained(model.api.model, str(directory))
+    if manifest["lora"]:
+        try:
+            from peft import PeftModel
+        except ImportError as exc:
+            raise ImportError("local LoRA checkpoint evaluation requires peft") from exc
+        model.api.model = PeftModel.from_pretrained(model.api.model, str(directory))
+    else:
+        import torch
+
+        state = torch.load(directory / "weights.pt", map_location="cpu", weights_only=True)
+        model.api.model.load_state_dict(state)
     return model
 
 

@@ -22,17 +22,14 @@ file-driven. Evaluation remains independent of the training setting.
 
 ## Environment
 
-Use `uv` for environment management and command execution. The layered
-requirements files are the dependency source of truth.
+Use `uv` for environment management and command execution. `requirements.txt`
+is the single dependency source of truth.
 
 ```bash
 uv venv
 uv pip install -r requirements.txt   # includes the mcq-bias git pin
 uv pip install -e . --no-deps
 ```
-
-`requirements-ctm.txt` declares no concrete benchmark/adapter packages;
-`requirements-adapters.txt` contains those optional composition dependencies.
 
 Store API keys in the gitignored `.env` file. Relevant names include
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `TINKER_API_KEY`,

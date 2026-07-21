@@ -25,13 +25,15 @@ and rejects unknown keys. The current options are:
 - MLPCT: `weight`, `variant`, `layer_selection`, `layer_weights`,
   `distance_metric`, and `normalize`.
 
-All three internal-consistency methods require LoRA. Their clean pass uses the
-recorded base model with the adapter disabled, while the variant pass is
-differentiable through the adapter.
+All three internal-consistency methods require the local backend. With LoRA,
+their clean pass uses the recorded base model with the adapter disabled. With
+full-parameter training, the backend retains an immutable initial-model copy
+for the clean pass.
 
 `lora_config` and `optimizer_config` expose the complete shared training
-configuration. The portable LoRA module fields are `train_mlp`, `train_attn`,
-and `train_unembed`. Adam fields are `learning_rate`, `lr_schedule`, `beta1`,
+configuration. The portable LoRA fields are `rank`, `alpha`, `dropout`,
+`target_modules`, `train_mlp`, `train_attn`, `train_unembed`, and `seed`.
+Exact `target_modules` selection is local-only. Adam fields are `learning_rate`, `lr_schedule`, `beta1`,
 `beta2`, `eps`, `weight_decay`, and `grad_clip_norm`. These objects are recorded
 in the run manifest and passed to the selected backend.
 

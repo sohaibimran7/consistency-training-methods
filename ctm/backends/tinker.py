@@ -87,6 +87,16 @@ class TinkerBackend:
     def setup(
         self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False
     ) -> None:
+        if lora.target_modules is not None:
+            raise NotImplementedError(
+                "Tinker exposes component-level LoRA selection only; exact target_modules are supported by LocalBackend"
+            )
+        if lora.resolved_alpha != 2 * lora.rank:
+            raise NotImplementedError(
+                "Tinker fixes LoRA alpha/r=2; use LocalBackend for an explicit non-default alpha"
+            )
+        if lora.dropout != 0.0:
+            raise NotImplementedError("Tinker does not expose LoRA dropout; use LocalBackend")
         self.model = model
         user_metadata: dict[str, str] = {}
         checkpoint_utils.add_renderer_name_to_user_metadata(
@@ -96,7 +106,9 @@ class TinkerBackend:
         self.training_client = self.service_client.create_lora_training_client(
             base_model=model,
             user_metadata=user_metadata,
-            **lora.model_dump(),
+            **lora.model_dump(
+                include={"rank", "train_mlp", "train_attn", "train_unembed", "seed"}
+            ),
         )
         if resume_from:
             if resume_with_optimizer:

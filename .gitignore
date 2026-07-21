@@ -11,6 +11,9 @@ ctm_data/*
 !ctm_data/README.md
 !ctm_data/adapters/
 !ctm_data/adapters/**
+!ctm_data/sources/
+ctm_data/sources/*
+!ctm_data/sources/*.py
 .pytest_cache/
 .ruff_cache/
 uv.lock

@@ -330,3 +330,32 @@ class TestSFTEndToEnd:
         # SFT datums carry supervised loss inputs
         datum = backend.fb_datums[0][0]
         assert {"target_tokens", "weights"} <= set(datum.loss_fn_inputs)
+
+    def test_gradient_accumulation_groups_microbatches(self, tmp_path):
+        data = tmp_path / "train.jsonl"
+        samples = [
+            {"messages": [{"role": "user", "content": f"q{i}"}, {"role": "assistant", "content": f"a{i}"}]}
+            for i in range(5)
+        ]
+        data.write_text("".join(json.dumps(sample) + "\n" for sample in samples))
+        cfg = SFTConfig(
+            experiment_name="itest",
+            run_name="accum",
+            optimizer=AdamConfig(learning_rate=1e-4, lr_schedule="linear"),
+            batch_size=1,
+            gradient_accumulation_steps=2,
+            n_epochs=1,
+            log_base_dir=str(tmp_path / "logs"),
+        )
+        backend = FakeBackend()
+        with (
+            patch("ctm.training.sft.setup_logging") as mock_logging,
+            patch("ctm.training.sft.get_renderer_and_tokenizer", return_value=(FakeRenderer(), FakeTokenizer())),
+        ):
+            mock_logging.return_value = MagicMock()
+            asyncio.run(train_sft(data, config=cfg, backend=backend))
+
+        assert len(backend.fb_datums) == 5
+        assert len(backend.optim_lrs) == 3
+        assert backend.optim_lrs[0] == pytest.approx(1e-4)
+        assert backend.optim_lrs[0] > backend.optim_lrs[1] > backend.optim_lrs[2]

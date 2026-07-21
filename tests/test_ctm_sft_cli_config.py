@@ -31,6 +31,9 @@ def test_nested_training_configs_expose_portable_backend_parameters():
 
     assert lora.model_dump() == {
         "rank": 16,
+        "alpha": None,
+        "dropout": 0.0,
+        "target_modules": None,
         "train_mlp": True,
         "train_attn": False,
         "train_unembed": False,
@@ -45,6 +48,23 @@ def test_nested_training_configs_expose_portable_backend_parameters():
         "weight_decay": 0.1,
         "grad_clip_norm": 0.5,
     }
+
+
+def test_exact_lora_parameters_are_preserved():
+    lora = resolve_lora_config(
+        {
+            "rank": 8,
+            "alpha": 16,
+            "dropout": 0.05,
+            "target_modules": ["q_proj", "v_proj"],
+        },
+        rank=None,
+        seed=None,
+    )
+
+    assert lora.resolved_alpha == 16
+    assert lora.dropout == 0.05
+    assert lora.target_modules == ["q_proj", "v_proj"]
 
 
 def test_scalar_training_flags_override_nested_values():

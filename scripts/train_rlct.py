@@ -27,7 +27,7 @@ from ctm.training.rl import (
     TrainingLoopConfig,
     GenerationConfig,
 )
-from ctm.core.config import CheckpointConfig, AdamConfig, LoRAConfig
+from ctm.core.config import CheckpointConfig, AdamConfig, resolve_lora_config
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend
 from ctm.cli_safety import parse_json_object, reject_inline_secrets
 from ctm.settings.runtime import prepare_setting, setting_run_metadata
@@ -50,7 +50,7 @@ def _validate_numeric_args(args: argparse.Namespace) -> None:
         "--max-new-tokens": args.max_new_tokens,
         "--max-resample-attempts": args.max_resample_attempts,
     }
-    invalid = [f"{flag}={value}" for flag, value in positive.items() if value <= 0]
+    invalid = [f"{flag}={value}" for flag, value in positive.items() if value is not None and value <= 0]
     if invalid:
         raise ValueError("these values must be positive: " + ", ".join(invalid))
     for flag, value in (
@@ -128,7 +128,11 @@ def main(argv: list[str] | None = None):
         choices=["constant", "linear", "cosine"],
         help="LR schedule (shared SFT+RL default: linear). RL now honors this per optim step.",
     )
-    parser.add_argument("--lora-rank", type=int, default=8)
+    parser.add_argument(
+        "--lora-config",
+        help="JSON object or JSON file with rank, alpha, dropout, target_modules, portable component flags, and seed",
+    )
+    parser.add_argument("--lora-rank", type=int, default=None, help="Override lora_config.rank (effective default: 8)")
     parser.add_argument(
         "--seed",
         type=int,
@@ -248,8 +252,11 @@ def main(argv: list[str] | None = None):
         _validate_numeric_args(args)
         setting_config = parse_json_object(args.setting_config, label="--setting-config")
         load_config = parse_json_object(args.load_config, label="--load-config")
+        raw_lora_config = parse_json_object(args.lora_config, label="--lora-config")
         reject_inline_secrets(setting_config, path="setting_config")
         reject_inline_secrets(load_config, path="load_config")
+        reject_inline_secrets(raw_lora_config, path="lora_config")
+        lora_config = resolve_lora_config(raw_lora_config, rank=args.lora_rank, seed=args.seed)
         load_config.setdefault("n_datapoints", args.n_datapoints)
         prepared = prepare_setting(
             args.setting_factory,
@@ -276,7 +283,7 @@ def main(argv: list[str] | None = None):
         run_name=args.run_name,
         wandb_project=args.wandb_project,
         model=args.model,
-        lora=LoRAConfig(rank=args.lora_rank, seed=args.seed),
+        lora=lora_config,
         optimizer=AdamConfig(
             learning_rate=args.lr,
             lr_schedule=args.lr_schedule,
@@ -341,7 +348,15 @@ def main(argv: list[str] | None = None):
     print(f"  Total datapoints:   {len(datapoints)}")
     print(f"  Perturbations:      {pert_desc}")
     print(f"  LR:                 {args.lr} ({args.lr_schedule})")
-    print(f"  LoRA rank:          {args.lora_rank}")
+    print(f"  LoRA rank/alpha:    {config.lora.rank}/{config.lora.resolved_alpha}")
+    print(f"  LoRA dropout:       {config.lora.dropout}")
+    if config.lora.target_modules is not None:
+        print(f"  LoRA targets:       {config.lora.target_modules}")
+    else:
+        print(
+            "  LoRA components:    "
+            f"mlp={config.lora.train_mlp}, attn={config.lora.train_attn}, unembed={config.lora.train_unembed}"
+        )
     if args.seed is not None:
         print(f"  Seed:               {args.seed}")
     print(f"  Batch size:         {args.batch_size}")

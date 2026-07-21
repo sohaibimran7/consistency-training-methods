@@ -75,10 +75,12 @@ class SFTConfig(BaseModel):
     optimizer: AdamConfig = AdamConfig()
     n_epochs: int = 1
     batch_size: int = 128
+    gradient_accumulation_steps: int = 1
     checkpoint: CheckpointConfig = CheckpointConfig()
     log_base_dir: str = "logs"
     reference_messages_field: str = "reference_messages"
     variant_messages_field: str = "variant_messages"
+    alignment_text_field: Optional[str] = None
     method_config: dict = {}
     # Free-form provenance (setting name, data files, ...) set by the CLI;
     # flows into the run manifest via the config dump — the registry generator reads it.
@@ -185,6 +187,7 @@ async def train_sft(
             samples,
             reference_field=cfg.reference_messages_field,
             variant_field=cfg.variant_messages_field,
+            alignment_text_field=cfg.alignment_text_field,
         )
         if not train_items:
             raise ValueError(
@@ -199,7 +202,14 @@ async def train_sft(
     # total_steps, so the LR schedule hits 0 on that batch and goes NEGATIVE on multi-epoch
     # runs (gradient ascent), and gives total_steps=0 (a hard ConfigurationError from the
     # scheduler) whenever n_samples < batch_size. Match the actual loop with ceil.
-    steps_per_epoch = (n_samples + cfg.batch_size - 1) // cfg.batch_size
+    if cfg.batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    if cfg.gradient_accumulation_steps < 1:
+        raise ValueError("gradient_accumulation_steps must be >= 1")
+    microbatches_per_epoch = (n_samples + cfg.batch_size - 1) // cfg.batch_size
+    steps_per_epoch = (
+        microbatches_per_epoch + cfg.gradient_accumulation_steps - 1
+    ) // cfg.gradient_accumulation_steps
     total_steps = steps_per_epoch * cfg.n_epochs
     if total_steps == 0:
         raise ValueError(
@@ -218,7 +228,8 @@ async def train_sft(
     )
 
     print(
-        f"SFT Training ({cfg.method}): {n_samples} samples, batch={cfg.batch_size}, "
+        f"SFT Training ({cfg.method}): {n_samples} samples, microbatch={cfg.batch_size}, "
+        f"grad_accum={cfg.gradient_accumulation_steps}, "
         f"{total_steps} steps, lr={base_lr:.2e}"
     )
     logger.log_hparams({"n_samples": n_samples, "total_steps": total_steps, "file": str(file_path), "base_lr": base_lr})
@@ -253,6 +264,7 @@ async def train_sft(
 
     checkpoint_paths: list[str] = []
     global_step = 0
+    global_microbatch = 0
     metric_key = "nll" if cfg.method == "bct" else "loss"
 
     # Training loop
@@ -263,8 +275,9 @@ async def train_sft(
         epoch_loss = 0.0
         n_examples = 0
 
-        pbar = tqdm(range(0, n_samples, cfg.batch_size), desc=f"Epoch {epoch+1}")
-        for batch_start in pbar:
+        batch_starts = list(range(0, n_samples, cfg.batch_size))
+        pbar = tqdm(batch_starts, desc=f"Epoch {epoch+1}")
+        for microbatch_index, batch_start in enumerate(pbar):
             batch_samples = epoch_samples[batch_start : batch_start + cfg.batch_size]
 
             if cfg.method == "bct":
@@ -289,13 +302,24 @@ async def train_sft(
             )
             current_lr = base_lr * lr_mult
 
-            # Async: enqueue forward_backward and optim_step before awaiting results (overlapping pattern)
+            should_step = (
+                (microbatch_index + 1) % cfg.gradient_accumulation_steps == 0
+                or microbatch_index + 1 == len(batch_starts)
+            )
+
+            # The backend accumulates gradients across forward/backward calls.
+            # On the final microbatch in a group, submit the optimizer step
+            # immediately behind the forward pass so remote backends preserve
+            # their two-phase overlap.
             pending_fwd_bwd = await backend.submit_forward_backward(batch_data, loss_fn=loss_fn)
-            pending_optim = await backend.submit_optim_step(learning_rate=current_lr, adam=cfg.optimizer)
+            pending_optim = None
+            if should_step:
+                pending_optim = await backend.submit_optim_step(learning_rate=current_lr, adam=cfg.optimizer)
 
             # Await results
             fwd_bwd_output = await pending_fwd_bwd.result()
-            await pending_optim.result()
+            if pending_optim is not None:
+                await pending_optim.result()
 
             if cfg.method == "bct":
                 # Compute proper per-token NLL
@@ -308,24 +332,40 @@ async def train_sft(
             # mean isn't skewed by an unequal final/remainder batch.
             epoch_loss += batch_metric * len(batch_samples)
             n_examples += len(batch_samples)
-            global_step += 1
+            global_microbatch += 1
+            if should_step:
+                global_step += 1
 
-            pbar.set_postfix({metric_key: f"{batch_metric:.4f}", "lr": f"{current_lr:.2e}"})
-            logger.log_metrics({f"train/{metric_key}": batch_metric, "train/lr": current_lr}, step=global_step)
+            pbar.set_postfix(
+                {
+                    metric_key: f"{batch_metric:.4f}",
+                    "lr": f"{current_lr:.2e}",
+                    "step": global_step,
+                }
+            )
+            logger.log_metrics(
+                {
+                    f"train/{metric_key}": batch_metric,
+                    "train/lr": current_lr,
+                    "train/optimizer_step": global_step,
+                },
+                step=global_microbatch,
+            )
 
             # Intermediate checkpoint (skip if near final to avoid duplicates)
-            await save_intermediate_checkpoint(
-                backend,
-                experiment_name=cfg.experiment_name,
-                run_name=cfg.run_name,
-                checkpoint_cfg=cfg.checkpoint,
-                global_step=global_step,
-                total_steps=total_steps,
-                epoch=epoch,
-                log_dir=log_dir,
-                checkpoint_paths=checkpoint_paths,
-                logger=logger,
-            )
+            if should_step:
+                await save_intermediate_checkpoint(
+                    backend,
+                    experiment_name=cfg.experiment_name,
+                    run_name=cfg.run_name,
+                    checkpoint_cfg=cfg.checkpoint,
+                    global_step=global_step,
+                    total_steps=total_steps,
+                    epoch=epoch,
+                    log_dir=log_dir,
+                    checkpoint_paths=checkpoint_paths,
+                    logger=logger,
+                )
 
         # Epoch summary
         if n_examples > 0:

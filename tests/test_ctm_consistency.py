@@ -236,6 +236,21 @@ class TestConsistencyData:
         )
         assert len(datum.model_input.to_ints()) == 14
 
+    def test_explicit_alignment_text_allows_different_wrappers(self):
+        external = {
+            "reference_messages": [{"role": "user", "content": f"please {CLEAN} answer now"}],
+            "variant_messages": [{"role": "user", "content": f"my professor says five . {CLEAN} give conclusion"}],
+            "shared_question": CLEAN,
+        }
+        datum = build_consistency_datum(
+            word_tokenizer(),
+            external,
+            alignment_text_field="shared_question",
+        )
+        get = lambda key: int(datum.loss_fn_inputs[key].to_torch()[0])  # noqa: E731
+        assert get("clean_len") == 6
+        assert get("start_index") > get("clean_start_index")
+
     def test_trailing_assistant_message_is_dropped(self):
         s = sample()
         s["variant_messages"] = s["variant_messages"] + [{"role": "assistant", "content": "five"}]
@@ -302,6 +317,23 @@ class TestLocalBackendConsistency:
 
         with pytest.raises(ValueError, match="local backend"):
             asyncio.run(train_sft(tmp_path / "pairs.jsonl", config=SFTConfig(method="act")))
+
+    def test_selective_full_finetune_uses_frozen_base(self):
+        backend = LocalBackend(
+            device="cpu",
+            use_lora=False,
+            model_instance=tiny_model(),
+            full_finetune_modules=["attn"],
+            keep_frozen_base=True,
+        )
+        backend.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=4))
+        out = asyncio.run(step(backend, [consistency_datum()], "activation_consistency", lr=1e-3))
+        assert math.isfinite(out.metrics["loss"])
+        assert all(
+            "attn" in name
+            for name, parameter in backend.model.named_parameters()
+            if parameter.requires_grad
+        )
 
 
 @pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")

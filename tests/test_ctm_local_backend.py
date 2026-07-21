@@ -16,7 +16,11 @@ from tinker_cookbook.rl.data_processing import trajectory_to_data
 from tinker_cookbook.rl.types import Trajectory, Transition
 from tinker_cookbook.supervised.common import datum_from_model_input_weights
 
-from ctm.backends.local.engine import HAS_PEFT, LocalBackend, _lora_target_module_names
+from ctm.backends.local.engine import (
+    HAS_PEFT,
+    LocalBackend,
+    _lora_target_module_names,
+)
 from ctm.core.config import AdamConfig, LoRAConfig
 
 VOCAB = 128
@@ -105,6 +109,33 @@ class TestLocalSFT:
             assert all(p.grad is None for p in params)  # zero_grad(set_to_none=True)
 
         asyncio.run(run())
+
+    def test_selective_full_finetune_keeps_frozen_base(self):
+        model = tiny_model()
+        initial = {name: value.detach().clone() for name, value in model.state_dict().items()}
+        backend = LocalBackend(
+            device="cpu",
+            use_lora=False,
+            model_instance=model,
+            full_finetune_modules=["attn"],
+            keep_frozen_base=True,
+        )
+        backend.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=4))
+
+        trainable = [name for name, parameter in backend.model.named_parameters() if parameter.requires_grad]
+        assert trainable and all("attn" in name for name in trainable)
+        assert backend._frozen_base_model is not None
+        assert all(not parameter.requires_grad for parameter in backend._frozen_base_model.parameters())
+        assert all(
+            torch.equal(initial[name], value)
+            for name, value in backend._frozen_base_model.state_dict().items()
+        )
+
+        asyncio.run(step(backend, [sft_datum()], "cross_entropy"))
+        assert all(
+            torch.equal(initial[name], value)
+            for name, value in backend._frozen_base_model.state_dict().items()
+        )
 
 
 class TestLocalRL:
@@ -235,6 +266,23 @@ class TestLocalLoRA:
         assert attention and all("attn" in name for name in attention)
         assert mlp and all("attn" not in name and name != "lm_head" for name in mlp)
         assert unembed == ["lm_head"]
+
+    def test_exact_target_modules_alpha_and_dropout(self):
+        model = tiny_model()
+        targets = _lora_target_module_names(
+            model,
+            LoRAConfig(target_modules=["c_attn"], rank=4, alpha=12, dropout=0.15),
+        )
+        assert targets and all(name.endswith(".c_attn") for name in targets)
+
+        backend = LocalBackend(device="cpu", use_lora=True, model_instance=model)
+        backend.setup(
+            model="tiny-gpt2-test",
+            lora=LoRAConfig(target_modules=["c_attn"], rank=4, alpha=12, dropout=0.15),
+        )
+        config = backend.model.peft_config["default"]
+        assert config.lora_alpha == 12
+        assert config.lora_dropout == 0.15
 
     def test_lora_wraps_and_trains(self):
         backend = LocalBackend(device="cpu", use_lora=True, model_instance=tiny_model())

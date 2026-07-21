@@ -109,6 +109,7 @@ def build_consistency_datum(
     *,
     reference_field: str = DEFAULT_REFERENCE_FIELD,
     variant_field: str = DEFAULT_VARIANT_FIELD,
+    alignment_text_field: Optional[str] = None,
 ) -> types.Datum:
     """Turn one reference/variant prompt pair into a paired Datum.
 
@@ -129,7 +130,14 @@ def build_consistency_datum(
 
     reference_prompt = _prompt_messages(reference_messages)
     variant_prompt = _prompt_messages(variant_messages)
-    content = str(reference_prompt[-1]["content"])
+    if alignment_text_field is None:
+        content = str(reference_prompt[-1]["content"])
+    else:
+        content = sample.get(alignment_text_field)
+        if not isinstance(content, str) or not content:
+            raise ValueError(
+                f"consistency sample needs non-empty string {alignment_text_field!r} for explicit alignment"
+            )
 
     clean_formatted = _format_prompt(tokenizer, reference_prompt)
     variant_formatted = _format_prompt(tokenizer, variant_prompt)
@@ -159,6 +167,7 @@ def build_consistency_datums(
     *,
     reference_field: str = DEFAULT_REFERENCE_FIELD,
     variant_field: str = DEFAULT_VARIANT_FIELD,
+    alignment_text_field: Optional[str] = None,
 ) -> tuple[list[types.Datum], int]:
     """Build datums for all alignable samples. Returns (datums, n_skipped)."""
     datums: list[types.Datum] = []
@@ -172,6 +181,7 @@ def build_consistency_datums(
                     sample,
                     reference_field=reference_field,
                     variant_field=variant_field,
+                    alignment_text_field=alignment_text_field,
                 )
             )
         except ValueError as e:

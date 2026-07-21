@@ -131,8 +131,12 @@ def test_local_checkpoint_manifest_is_validated(tmp_path):
     assert manifest["model"] == "unit/base"
 
     (checkpoint / "manifest.json").write_text(json.dumps({"backend": "local", "model": "unit/base", "lora": False}))
-    with pytest.raises(ValueError, match="LoRA"):
+    with pytest.raises(ValueError, match="weights.pt"):
         read_local_checkpoint(checkpoint)
+    (checkpoint / "weights.pt").write_bytes(b"placeholder")
+    directory, manifest = read_local_checkpoint(checkpoint)
+    assert directory == checkpoint.resolve()
+    assert manifest["lora"] is False
 
 
 def test_local_checkpoint_resolution_uses_local_bridge(monkeypatch):

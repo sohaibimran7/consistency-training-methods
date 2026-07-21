@@ -7,13 +7,12 @@ name = "consistency-training-methods"
 version = "0.1.0"
 description = "Modular reinforcement, supervised, and representation-consistency training"
 requires-python = ">=3.11"
-# Layered requirements files are the dependency source of truth. requirements.txt
-# installs the complete experiment environment; requirements-ctm.txt excludes
-# direct concrete benchmark and adapter dependencies.
+# requirements.txt is the single dependency source of truth for this research
+# repository. The package is installed with --no-deps after that environment.
 dependencies = []
 
 [tool.setuptools.packages.find]
-include = ["ctm*", "ctm_data", "ctm_data.adapters*"]
+include = ["ctm*", "ctm_data", "ctm_data.adapters*", "ctm_data.sources*"]
 exclude = ["ctm_data.adapters.*.tests*"]
 namespaces = false
 
