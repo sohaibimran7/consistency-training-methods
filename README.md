@@ -108,6 +108,20 @@ The runner prints the authored YAML, the resolved-plan identity, and every
 exact command before execution. `--dry-run` performs no child command. Without
 `--yes`, execution requires one confirmation after the plan is printed.
 
+Independent commands within a stage can run concurrently on a multi-GPU host:
+
+```bash
+uv run python scripts/run_experiment.py experiment.yaml \
+  --parallel 8 --gpus 0,1,2,3,4,5,6,7
+```
+
+The runner assigns at most one GPU command to each listed GPU and waits for the
+whole stage before starting the next stage. Analysis remains ordered because a
+render command may consume the preceding aggregation. Data-generation commands
+default to `resource: cpu`; preparation, training, and evaluation commands
+default to `resource: gpu`. Set `resource: cpu` explicitly for a CPU-only
+command in a normally GPU-backed stage.
+
 Large experiment matrices may use an `experiment_factory` in
 `module:callable` form. The authored file then contains a concise `spec`; the
 factory expands it into the same explicit stage-and-command format used above.

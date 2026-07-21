@@ -65,6 +65,19 @@ Outputs mirror Tinker runs: `logs/<exp>/<run>/` contains local metrics,
 directories. W&B is used only when `--wandb-project` is supplied. Copy artifacts
 off the instance before destroying it (`rsync -av <instance>:.../logs/ ./logs/`).
 
+For a matrix of independent runs, prefer one multi-GPU instance with shared
+storage. Run one child process per GPU:
+
+```bash
+python scripts/run_experiment.py path/to/experiment.yaml \
+    --parallel 8 --gpus 0,1,2,3,4,5,6,7 --yes
+```
+
+The runner preserves stage barriers and gives each concurrent GPU process an
+exclusive `CUDA_VISIBLE_DEVICES` value. This keeps generated data and named
+checkpoint metadata on one filesystem. Transfer `.env` to the instance through
+SSH; do not commit it or place credentials in experiment YAML.
+
 ## Evaluate a checkpoint
 
 The generic runner can load a LocalBackend LoRA checkpoint directly through the

@@ -104,12 +104,14 @@ paths or a new experiment name.
 
 ## Commands
 
-Run these commands inside the selected Vast.ai or Isambard environment. Inspect
+Run these commands inside a Vast.ai host with eight visible GPUs. The same YAML
+can run on fewer GPUs by shortening `--gpus` and reducing `--parallel`. Inspect
 the complete resolved plan without making model calls:
 
 ```bash
 uv run python scripts/run_experiment.py \
   experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml \
+  --parallel 8 --gpus 0,1,2,3,4,5,6,7 \
   --dry-run
 ```
 
@@ -117,16 +119,23 @@ After reviewing the exact commands, run the complete plan:
 
 ```bash
 uv run python scripts/run_experiment.py \
-  experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml
+  experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml \
+  --parallel 8 --gpus 0,1,2,3,4,5,6,7
 ```
 
 The runner asks for one final confirmation. It does not start a remote model or
-training stage unless that confirmation is given. A completed plan can resume
-at a named boundary, for example:
+training stage unless that confirmation is given. Each GPU runs at most one
+command at a time. Data generation, data preparation, training, and evaluation
+are separate barriers. The evaluation suite is frozen once during preparation,
+so the thirty-one parallel evaluations read identical files without competing
+to generate them. Analysis remains sequential because each chart consumes its
+corresponding aggregation. A completed plan can resume at a named boundary, for
+example:
 
 ```bash
 uv run python scripts/run_experiment.py \
   experiments/paper_reproductions/rmct_hle_gpt_oss_20b/experiment.yaml \
+  --parallel 8 --gpus 0,1,2,3,4,5,6,7 \
   --start-from evaluation
 ```
 

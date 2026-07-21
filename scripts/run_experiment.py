@@ -8,8 +8,11 @@ different packages, datasets, splits, and metrics.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
+import os
+import queue
 import re
 import shlex
 import subprocess
@@ -19,9 +22,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(PROJECT_ROOT / ".env")
 
 from ctm.cli_safety import reject_inline_secrets
 from ctm.importing import load_callable
@@ -41,6 +46,7 @@ _PLACEHOLDER = re.compile(r"\$\{([a-zA-Z_][a-zA-Z0-9_.-]*)\}")
 CHECKPOINT_MARKER = "CTM_FINAL_CHECKPOINT="
 _RESERVED_CONTEXT = {"python", "project_root", "experiment", "checkpoint", "training_data"}
 OUTPUT_SCHEMA_VERSION = 1
+GPU_STAGES = frozenset({"data_preparation", "training", "evaluation"})
 
 
 class ExperimentConfigError(ValueError):
@@ -230,10 +236,19 @@ def command_argv(spec: Mapping[str, Any], context: Mapping[str, Any], *, strict:
     command = rendered.get("command")
     if not isinstance(command, list) or not command or any(not isinstance(token, str) for token in command):
         raise ExperimentConfigError("each command needs a non-empty string-list command")
-    unknown = sorted(set(rendered) - {"name", "target", "command", "args"})
+    unknown = sorted(set(rendered) - {"name", "target", "resource", "command", "args"})
     if unknown:
         raise ExperimentConfigError(f"unknown command field(s): {unknown}")
     return [*command, *_argument_tokens(rendered.get("args"))]
+
+
+def command_resource(spec: Mapping[str, Any], stage: str) -> str:
+    """Return the execution resource requested by a command."""
+
+    resource = spec.get("resource", "gpu" if stage in GPU_STAGES else "cpu")
+    if resource not in {"cpu", "gpu"}:
+        raise ExperimentConfigError(f"{stage} command resource must be 'cpu' or 'gpu'; got {resource!r}")
+    return str(resource)
 
 
 def _uses_placeholder(value: Any, name: str) -> bool:
@@ -427,7 +442,12 @@ def save_training_checkpoint(config: Mapping[str, Any], name: str, checkpoint: s
     temporary.replace(path)
 
 
-def run_command(argv: Sequence[str]) -> str | None:
+def run_command(
+    argv: Sequence[str],
+    *,
+    env: Mapping[str, str] | None = None,
+    label: str | None = None,
+) -> str | None:
     """Stream one subprocess and return a checkpoint announced by training."""
 
     process = subprocess.Popen(
@@ -437,11 +457,12 @@ def run_command(argv: Sequence[str]) -> str | None:
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=dict(env) if env is not None else None,
     )
     checkpoint = None
     assert process.stdout is not None
     for line in process.stdout:
-        print(line, end="")
+        print(f"[{label}] {line}" if label else line, end="", flush=True)
         stripped = line.strip()
         if stripped.startswith(CHECKPOINT_MARKER):
             announced = stripped.removeprefix(CHECKPOINT_MARKER).strip()
@@ -452,6 +473,83 @@ def run_command(argv: Sequence[str]) -> str | None:
     if return_code:
         raise subprocess.CalledProcessError(return_code, list(argv))
     return checkpoint
+
+
+def _parse_gpus(value: str | None) -> list[str]:
+    if value is None:
+        return []
+    gpus = [part.strip() for part in value.split(",") if part.strip()]
+    if not gpus:
+        raise ExperimentConfigError("--gpus needs at least one comma-separated GPU id")
+    if len(gpus) != len(set(gpus)):
+        raise ExperimentConfigError("--gpus cannot contain duplicate GPU ids")
+    if any(not re.fullmatch(r"\d+", gpu) for gpu in gpus):
+        raise ExperimentConfigError("--gpus accepts numeric GPU ids such as 0,1,2,3")
+    return gpus
+
+
+def _run_stage_parallel(
+    config: Mapping[str, Any],
+    stage: str,
+    context: dict[str, Any],
+    *,
+    target: str | None,
+    parallel: int,
+    gpus: Sequence[str],
+) -> None:
+    """Run independent commands concurrently, with at most one process per GPU."""
+
+    work = []
+    for index, spec in enumerate(_entries(config, stage, target=target), start=1):
+        name = str(spec.get("name") or f"{stage}-{index}")
+        work.append((name, command_argv(spec, context, strict=True), command_resource(spec, stage)))
+    if not work:
+        return
+
+    needs_gpu = any(resource == "gpu" for _, _, resource in work)
+    if needs_gpu and not gpus:
+        raise ExperimentConfigError(
+            f"parallel {stage} execution includes GPU commands; pass --gpus with the visible GPU ids"
+        )
+    gpu_queue: queue.Queue[str] = queue.Queue()
+    for gpu in gpus:
+        gpu_queue.put(gpu)
+
+    def run_one(item: tuple[str, list[str], str]) -> tuple[str, str | None]:
+        name, command, resource = item
+        gpu = None
+        child_env = None
+        try:
+            if resource == "gpu":
+                gpu = gpu_queue.get()
+                child_env = {**os.environ, "CUDA_VISIBLE_DEVICES": gpu}
+            suffix = f" gpu={gpu}" if gpu is not None else " cpu"
+            label = f"{stage}:{name}{suffix}"
+            print(f"\n[{label}] {shlex.join(command)}", flush=True)
+            return name, run_command(command, env=child_env, label=label)
+        finally:
+            if gpu is not None:
+                gpu_queue.put(gpu)
+
+    max_workers = min(parallel, len(work))
+    failures: list[Exception] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(run_one, item): item[0] for item in work}
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                completed_name, checkpoint = future.result()
+            except Exception as exc:  # wait for in-flight jobs, then stop at the stage barrier
+                failures.append(exc)
+                print(f"\n[{stage}:{name}] FAILED: {exc}", file=sys.stderr, flush=True)
+                continue
+            if checkpoint:
+                context["checkpoint"] = checkpoint
+                if stage == "training":
+                    context[f"training.{completed_name}.checkpoint"] = checkpoint
+                    save_training_checkpoint(config, completed_name, checkpoint)
+    if failures:
+        raise failures[0]
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -466,6 +564,16 @@ def _parser() -> argparse.ArgumentParser:
         "--target",
         help="Run only command entries whose optional target field exactly matches this value",
     )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Maximum independent commands per stage (analysis remains ordered)",
+    )
+    parser.add_argument(
+        "--gpus",
+        help="Comma-separated physical GPU ids; parallel GPU commands get one exclusive id each",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print the config and commands without executing")
     parser.add_argument("-y", "--yes", action="store_true", help="Execute after printing the plan")
     return parser
@@ -479,6 +587,11 @@ def main(argv: list[str] | None = None) -> None:
         reject_inline_secrets(source_config, path="experiment specification")
         config = compile_experiment(source_config)
         reject_inline_secrets(config, path="experiment")
+        if args.parallel < 1:
+            raise ExperimentConfigError("--parallel must be at least 1")
+        gpus = _parse_gpus(args.gpus)
+        if args.parallel > 1 and len(gpus) > args.parallel:
+            gpus = gpus[: args.parallel]
         stages = select_stages(
             config,
             stages=[part.strip() for part in args.stages.split(",") if part.strip()] if args.stages else None,
@@ -505,6 +618,10 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\nResolved plan: {plan_path} (sha256:{plan_digest})")
     if args.target:
         print(f"\nExecution target: {args.target}")
+    if args.parallel > 1:
+        gpu_text = ",".join(gpus) if gpus else "none (CPU stages only)"
+        print(f"\nParallel execution: up to {args.parallel} commands; GPUs: {gpu_text}")
+        print("Stage barriers are preserved; analysis commands remain ordered.")
     print("\nCommands:")
     for stage, name, command in preview:
         print(f"  [{stage}:{name}] {shlex.join(command)}")
@@ -519,6 +636,16 @@ def main(argv: list[str] | None = None) -> None:
         saved_plan_path, saved_plan_digest = save_resolved_plan(config)
         print(f"\nSaved resolved plan: {saved_plan_path} (sha256:{saved_plan_digest})")
         for stage in stages:
+            if args.parallel > 1 and stage != "analysis":
+                _run_stage_parallel(
+                    config,
+                    stage,
+                    context,
+                    target=args.target,
+                    parallel=args.parallel,
+                    gpus=gpus,
+                )
+                continue
             for index, spec in enumerate(_entries(config, stage, target=args.target), start=1):
                 name = str(spec.get("name") or f"{stage}-{index}")
                 command = command_argv(spec, context, strict=True)

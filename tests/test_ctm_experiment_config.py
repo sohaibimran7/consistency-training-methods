@@ -1,6 +1,7 @@
 """Tests for the deliberately small YAML experiment runner."""
 
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -226,12 +227,18 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     for stage, name, command in planned:
         by_stage[stage].append((name, command))
 
-    assert [len(by_stage[stage]) for stage in stages] == [3, 2, 30, 31, 8]
+    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 30, 31, 8]
     assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
+    materialize_eval = dict(by_stage["data_preparation"])["evaluation-suite"]
+    assert "ctm_data.adapters.mcq_bias.materialize_eval" in materialize_eval
     base_eval = by_stage["evaluation"][0][1]
     assert base_eval[base_eval.index("--model") + 1] == "hf/openai/gpt-oss-20b"
     assert all("--tinker-checkpoint" not in command for _, command in by_stage["evaluation"])
     assert all("--local-checkpoint" in command for _, command in by_stage["evaluation"][1:])
+    assert all(
+        '"generate_missing_arguments":false' in " ".join(command)
+        for _, command in by_stage["evaluation"]
+    )
     training = dict(by_stage["training"])
     for method in ("rate_matching_lr1", "bias_augmented_consistency_lr1", "act_lr1", "attct_lr1", "mlpct_lr1"):
         assert training[method][training[method].index("--backend") + 1] == "local"
@@ -351,6 +358,62 @@ def test_runner_captures_training_checkpoint():
 def test_runner_ignores_human_checkpoint_prose():
     checkpoint = experiment.run_command([sys.executable, "-c", "print('Final checkpoint: sampler weights only')"])
     assert checkpoint is None
+
+
+def test_parallel_runner_assigns_one_process_per_gpu_and_preserves_stage_barrier(monkeypatch, tmp_path):
+    config_path = tmp_path / "parallel.yaml"
+    config_path.write_text(
+        """
+name: parallel
+training:
+  - name: first
+    command: [train, first]
+  - name: second
+    command: [train, second]
+evaluation:
+  - name: eval-first
+    command: [eval, "${training.first.checkpoint}"]
+  - name: eval-second
+    command: [eval, "${training.second.checkpoint}"]
+""".strip()
+    )
+    monkeypatch.setattr(experiment, "output_state_path", lambda _: tmp_path / "outputs.json")
+    training_barrier = threading.Barrier(2)
+    calls = []
+    lock = threading.Lock()
+
+    def fake_run(command, *, env, label):
+        with lock:
+            calls.append((list(command), env["CUDA_VISIBLE_DEVICES"], label))
+        if command[0] == "train":
+            training_barrier.wait(timeout=2)
+            return f"file:///checkpoints/{command[1]}"
+        return None
+
+    monkeypatch.setattr(experiment, "run_command", fake_run)
+    experiment.main([str(config_path), "--parallel", "2", "--gpus", "0,1", "--yes"])
+
+    training_calls = [call for call in calls if call[0][0] == "train"]
+    evaluation_calls = [call for call in calls if call[0][0] == "eval"]
+    assert {gpu for _, gpu, _ in training_calls} == {"0", "1"}
+    assert len(evaluation_calls) == 2
+    assert {call[0][1] for call in evaluation_calls} == {
+        "file:///checkpoints/first",
+        "file:///checkpoints/second",
+    }
+    assert max(calls.index(call) for call in training_calls) < min(calls.index(call) for call in evaluation_calls)
+
+
+def test_parallel_gpu_stage_requires_explicit_gpu_ids():
+    with pytest.raises(experiment.ExperimentConfigError, match="pass --gpus"):
+        experiment._run_stage_parallel(
+            {"name": "unit", "training": [{"command": ["train", "one"]}]},
+            "training",
+            {},
+            target=None,
+            parallel=2,
+            gpus=[],
+        )
 
 
 def test_dry_run_only_prints_commands(monkeypatch, capsys):

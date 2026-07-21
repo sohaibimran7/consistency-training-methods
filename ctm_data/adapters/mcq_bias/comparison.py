@@ -165,6 +165,17 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     }
     data_preparation = [
         {
+            "name": "evaluation-suite",
+            "resource": "cpu",
+            "command": ["${python}", "-m", "ctm_data.adapters.mcq_bias.materialize_eval"],
+            "args": {
+                "bias_types": eval_data["biases"], "datasets": [paths["hle"]], "prompt_style": "none",
+                "n_questions": eval_data["questions"], "seed": str(seed),
+                "argument_model": eval_data["argument_model"], "generate_missing_arguments": True,
+                "dataset_dir": eval_root, **yes,
+            },
+        },
+        {
             "name": "bias-augmented-consistency-targets", "command": ["${python}", "scripts/prepare_bct_targets.py"],
             "args": {
                 **target_common, "data": [paths["pairs"]], "limit": train_data["examples"],
@@ -187,7 +198,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     task_args = {
         "bias_types": eval_data["biases"], "datasets": [paths["hle"]], "prompt_style": "none",
         "n_questions": eval_data["questions"], "seed": str(seed), "argument_model": eval_data["argument_model"],
-        "generate_missing_arguments": True, "dataset_dir": eval_root, "grader_model": eval_data["grader_model"],
+        "generate_missing_arguments": False, "dataset_dir": eval_root, "grader_model": eval_data["grader_model"],
         "include_bias_acknowledged": True,
     }
     eval_common = {
