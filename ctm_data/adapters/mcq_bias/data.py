@@ -71,9 +71,11 @@ def _validate_frozen_row(row: object, *, path: Path, line_number: int) -> dict:
             if (
                 not isinstance(message, dict)
                 or not isinstance(message.get("role"), str)
+                or not message["role"].strip()
                 or not isinstance(message.get("content"), str)
+                or not message["content"].strip()
             ):
-                raise ValueError(f"{location}: {field}[{index}] must contain string role/content fields")
+                raise ValueError(f"{location}: {field}[{index}] must contain non-empty string role/content fields")
 
     return dict(row)
 

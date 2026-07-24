@@ -53,6 +53,13 @@ def test_validation_rejects_mixed_or_short_schema():
         validate_family(_family(n_variants=1), min_variants=2)
 
 
+def test_validation_rejects_blank_message_content():
+    row = _family()
+    row["variants"][0]["messages"][0]["content"] = "   "
+    with pytest.raises(FamilyValidationError, match="non-empty string"):
+        validate_family(row)
+
+
 def test_fixed_variant_selection_is_order_independent_and_exact():
     variants = _family(n_variants=5)["variants"]
     selected = select_fixed_variants(variants, source_id="x", n_variants=3, seed="s")

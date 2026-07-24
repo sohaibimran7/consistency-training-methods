@@ -181,6 +181,7 @@ class LocalSamplerHandle:
 class LocalBackend:
     """TrainingBackend on local hardware (torch + transformers [+ peft])."""
 
+    renderer_source = "hf"
     # Local sampler handles route to the backend's current in-process model or
     # current vLLM adapter; retaining a handle does not freeze its weights.
     policy_samplers_are_snapshots = False
@@ -424,7 +425,13 @@ class LocalBackend:
         model = self._model_for(use_base=use_base)
         was_training = model.training
         model.eval()
-        eos_ids = [t for t in (stop or []) if isinstance(t, int)] or None
+        eos_ids = [t for t in (stop or []) if isinstance(t, int)]
+        configured_eos = getattr(getattr(model, "generation_config", None), "eos_token_id", None)
+        if isinstance(configured_eos, int):
+            configured_eos = [configured_eos]
+        if isinstance(configured_eos, (list, tuple)):
+            eos_ids.extend(t for t in configured_eos if isinstance(t, int))
+        eos_ids = list(dict.fromkeys(eos_ids)) or None
         input_ids = torch.tensor([prompt_tokens], dtype=torch.long, device=self.device)
         attention_mask = torch.ones_like(input_ids)
         try:
@@ -695,7 +702,8 @@ class LocalBackend:
                     "loop_state": loop_state,
                 },
                 indent=1,
-            )
+            ),
+            encoding="utf-8",
         )
         uri = f"file://{ckpt_dir.resolve()}"
         return {"sampler_path": uri, "state_path": uri if state_saved else None}

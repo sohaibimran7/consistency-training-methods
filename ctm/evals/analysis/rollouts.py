@@ -25,7 +25,7 @@ def load_index(directory: str | Path) -> list[dict]:
     path = Path(directory) / INDEX_NAME
     if not path.exists():
         return []
-    return json.loads(path.read_text()).get("steps", [])
+    return json.loads(path.read_text(encoding="utf-8")).get("steps", [])
 
 
 def iter_rollouts(

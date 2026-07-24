@@ -23,7 +23,7 @@ def read_local_checkpoint(value: str | Path) -> tuple[Path, dict[str, Any]]:
     if not manifest_path.is_file():
         raise ValueError(f"local checkpoint has no manifest.json: {directory}")
     try:
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"invalid local checkpoint manifest: {manifest_path}") from exc
     if manifest.get("backend") != "local":

@@ -264,7 +264,10 @@ class RLTrainer:
             resume_with_optimizer=self.resume_with_optimizer,
         )
 
-        self.renderer, self.tokenizer = get_renderer_and_tokenizer(self.config.model)
+        self.renderer, self.tokenizer = get_renderer_and_tokenizer(
+            self.config.model,
+            source=self.backend.renderer_source,
+        )
         self.sampling_client = self.backend.policy_sampler(
             name=f"{self.config.experiment_name}_{self.config.run_name}_sampler"
         )

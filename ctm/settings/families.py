@@ -55,10 +55,10 @@ def _validate_messages(messages: Any, *, field: str) -> None:
     for index, message in enumerate(messages):
         if not isinstance(message, dict):
             raise FamilyValidationError(f"{field}[{index}] must be an object")
-        if not isinstance(message.get("role"), str) or not message["role"]:
+        if not isinstance(message.get("role"), str) or not message["role"].strip():
             raise FamilyValidationError(f"{field}[{index}].role must be a non-empty string")
-        if not isinstance(message.get("content"), str):
-            raise FamilyValidationError(f"{field}[{index}].content must be a string")
+        if not isinstance(message.get("content"), str) or not message["content"].strip():
+            raise FamilyValidationError(f"{field}[{index}].content must be a non-empty string")
 
 
 def validate_family(row: Mapping[str, Any], *, min_variants: int = 1) -> dict[str, Any]:
@@ -124,7 +124,7 @@ def load_family_artifact(
     if n_datapoints == 0:
         return [], manifest
     rows: list[dict[str, Any]] = []
-    with Path(path).open() as handle:
+    with Path(path).open(encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             if not line.strip():
                 continue
@@ -244,5 +244,5 @@ def write_frozen_artifact(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(payload)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return manifest

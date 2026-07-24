@@ -127,7 +127,7 @@ def read_jsonl(paths: Sequence[str | Path]) -> list[dict[str, Any]]:
     rows = []
     for path_like in paths:
         path = Path(path_like)
-        with path.open() as handle:
+        with path.open(encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
                 if not line.strip():
                     continue

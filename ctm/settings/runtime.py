@@ -54,8 +54,8 @@ def _validate_prompt_result(value: Any, *, setting_name: str, perturbation_index
             raise TypeError(f"{location}.messages[{message_index}] must be an object")
         role = message.get("role")
         content = message.get("content")
-        if not isinstance(role, str) or not role or not isinstance(content, str):
-            raise TypeError(f"{location}.messages[{message_index}] must contain string role/content fields")
+        if not isinstance(role, str) or not role.strip() or not isinstance(content, str) or not content.strip():
+            raise TypeError(f"{location}.messages[{message_index}] must contain non-empty string role/content fields")
 
 
 def setting_run_metadata(

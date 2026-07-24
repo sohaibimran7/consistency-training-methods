@@ -6,6 +6,7 @@ import pytest
 
 from ctm.backends.base import SampledSequence
 from ctm.training.bct_targets import (
+    BCTProgressStore,
     generate_bct_rows,
     prepare_paired_prompts,
     write_bct_target_artifacts,
@@ -29,10 +30,11 @@ class _Tokenizer:
 
 
 class _Sampler:
-    def __init__(self):
+    def __init__(self, *, fail_on=None):
         self.calls = []
         self.in_flight = 0
         self.max_in_flight = 0
+        self.fail_on = fail_on
 
     async def sample(self, prompt, *, max_tokens, temperature, stop, num_samples):
         self.calls.append((prompt, max_tokens, temperature, stop, num_samples))
@@ -40,6 +42,8 @@ class _Sampler:
         self.max_in_flight = max(self.max_in_flight, self.in_flight)
         await asyncio.sleep(0)
         self.in_flight -= 1
+        if prompt == self.fail_on:
+            raise RuntimeError(f"failed row {prompt}")
         return [SampledSequence(tokens=[prompt], logprobs=[-0.1])]
 
 
@@ -85,10 +89,89 @@ def test_generate_bct_rows_samples_reference_once_and_shares_completion():
     assert [row["source_id"] for row in main] == ["q-0", "q-1", "q-2"]
 
 
+def test_generate_bct_rows_resumes_completed_rows_in_source_order(tmp_path):
+    prompts = prepare_paired_prompts(
+        _rows(),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+    progress = BCTProgressStore(tmp_path / "progress", {"job": "unit"})
+    assistant = {"role": "assistant", "content": "answer-0"}
+    first_main = {"messages": [*prompts[0].main_messages, assistant], "source_id": "q-0"}
+    first_control = {"messages": [*prompts[0].control_messages, assistant], "source_id": "q-0"}
+    progress.record(0, prompts[0], first_main, first_control)
+
+    sampler = _Sampler()
+    main, control = asyncio.run(
+        generate_bct_rows(
+            prompts,
+            sampler=sampler,
+            renderer=_Renderer(),
+            tokenizer=_Tokenizer(),
+            completed=progress.load(prompts),
+            on_completed=progress.record,
+        )
+    )
+
+    assert [call[0] for call in sampler.calls] == [1, 2]
+    assert [row["source_id"] for row in main] == ["q-0", "q-1", "q-2"]
+    assert [row["source_id"] for row in control] == ["q-0", "q-1", "q-2"]
+    assert len(progress.load(prompts)) == 3
+    archived = progress.archive()
+    assert archived is not None and archived.is_dir()
+    assert not progress.directory.exists()
+
+
+def test_bct_progress_rejects_a_different_generation_identity(tmp_path):
+    directory = tmp_path / "progress"
+    BCTProgressStore(directory, {"model": "first"})
+    with pytest.raises(ValueError, match="identity differs"):
+        BCTProgressStore(directory, {"model": "second"})
+
+
+def test_generate_bct_rows_checkpoints_successes_before_a_later_failure(tmp_path):
+    prompts = prepare_paired_prompts(
+        _rows(),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+    progress = BCTProgressStore(tmp_path / "progress", {"job": "failure-test"})
+
+    with pytest.raises(RuntimeError, match="failed row 1"):
+        asyncio.run(
+            generate_bct_rows(
+                prompts,
+                sampler=_Sampler(fail_on=1),
+                renderer=_Renderer(),
+                tokenizer=_Tokenizer(),
+                max_concurrency=1,
+                on_completed=progress.record,
+            )
+        )
+
+    completed = progress.load(prompts)
+    assert 0 in completed
+    assert 1 not in completed
+
+
 def test_prepare_paired_prompts_rejects_all_rows_before_sampling():
     rows = _rows(2)
     rows[1]["unbiased_messages"][-1]["role"] = "assistant"
     with pytest.raises(ValueError, match="row 2.unbiased_messages must end with a user message"):
+        prepare_paired_prompts(
+            rows,
+            source_messages_field="unbiased_messages",
+            main_messages_field="biased_messages",
+            control_messages_field="unbiased_messages",
+        )
+
+
+def test_prepare_paired_prompts_rejects_empty_message_content():
+    rows = _rows(1)
+    rows[0]["biased_messages"][0]["content"] = "   "
+    with pytest.raises(ValueError, match="non-empty role and string content"):
         prepare_paired_prompts(
             rows,
             source_messages_field="unbiased_messages",
@@ -137,9 +220,7 @@ def test_write_bct_target_artifacts_records_shared_provenance_and_refuses_overwr
     assert manifest["generation"]["api_key"] == "<redacted>"
     assert json.loads(manifest_output.read_text()) == manifest
     assert manifest["outputs"]["main"]["content_sha256"] == hashlib.sha256(main_output.read_bytes()).hexdigest()
-    assert manifest["outputs"]["control"]["content_sha256"] == hashlib.sha256(
-        control_output.read_bytes()
-    ).hexdigest()
+    assert manifest["outputs"]["control"]["content_sha256"] == hashlib.sha256(control_output.read_bytes()).hexdigest()
     assert json.loads(main_output.read_text())["messages"][-1] == json.loads(control_output.read_text())["messages"][-1]
 
     with pytest.raises(FileExistsError, match="refusing to overwrite"):
@@ -149,6 +230,60 @@ def test_write_bct_target_artifacts_records_shared_provenance_and_refuses_overwr
             main_output=main_output,
             control_output=control_output,
             manifest_output=manifest_output,
+            source_files=[source],
+            model="model",
+            backend_name="FakeBackend",
+            source_messages_field="unbiased_messages",
+            main_messages_field="biased_messages",
+            control_messages_field="unbiased_messages",
+            generation_config={},
+        )
+
+
+def test_write_bct_target_artifacts_completes_byte_identical_partial_publication(tmp_path):
+    source = tmp_path / "source.jsonl"
+    source.write_text(json.dumps(_rows(1)[0]) + "\n", encoding="utf-8")
+    main_output = tmp_path / "bct.jsonl"
+    control_output = tmp_path / "control.jsonl"
+    manifest_output = tmp_path / "targets.manifest.json"
+    main_rows = [{"messages": [{"role": "assistant", "content": "target"}], "source_id": "q-0"}]
+    control_rows = [{"messages": [{"role": "assistant", "content": "target"}], "source_id": "q-0"}]
+    main_payload = (json.dumps(main_rows[0], ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    main_output.write_bytes(main_payload)
+
+    write_bct_target_artifacts(
+        main_rows=main_rows,
+        control_rows=control_rows,
+        main_output=main_output,
+        control_output=control_output,
+        manifest_output=manifest_output,
+        source_files=[source],
+        model="model",
+        backend_name="FakeBackend",
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+        generation_config={},
+    )
+
+    assert main_output.read_bytes() == main_payload
+    assert control_output.is_file()
+    assert manifest_output.is_file()
+
+
+def test_write_bct_target_artifacts_rejects_conflicting_partial_publication(tmp_path):
+    source = tmp_path / "source.jsonl"
+    source.write_text(json.dumps(_rows(1)[0]) + "\n", encoding="utf-8")
+    main_output = tmp_path / "bct.jsonl"
+    main_output.write_text("different\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="conflicting partial"):
+        write_bct_target_artifacts(
+            main_rows=[{"messages": [], "source_id": "q-0"}],
+            control_rows=[{"messages": [], "source_id": "q-0"}],
+            main_output=main_output,
+            control_output=tmp_path / "control.jsonl",
+            manifest_output=tmp_path / "targets.manifest.json",
             source_files=[source],
             model="model",
             backend_name="FakeBackend",

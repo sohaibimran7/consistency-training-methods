@@ -95,7 +95,7 @@ def load_samples(file_path: Path) -> list[dict]:
     a list of message dicts with "role" and "content" fields.
     """
     samples = []
-    with open(file_path) as f:
+    with open(file_path, encoding="utf-8") as f:
         for line in f:
             samples.append(json.loads(line))
     return samples
@@ -175,7 +175,7 @@ async def train_sft(
     if max_samples and max_samples < len(samples):
         samples = samples[:max_samples]
 
-    renderer, tokenizer = get_renderer_and_tokenizer(cfg.model)
+    renderer, tokenizer = get_renderer_and_tokenizer(cfg.model, source=backend.renderer_source)
 
     # Consistency methods train on paired variant/reference prompts: build the datums
     # once up front (dropping unalignable rows) and shuffle datums per epoch.

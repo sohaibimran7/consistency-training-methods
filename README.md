@@ -247,7 +247,12 @@ prompt fields, samples each reference prompt exactly once through the selected
 CTM backend, and emits matched main/control SFT files. The assistant completion
 is identical in both outputs; only the selected prompt side differs. Generation
 finishes before either optimizer is initialized, and a shared manifest records
-the input hashes and generation configuration.
+the input hashes and generation configuration. Each successful row is
+atomically checkpointed under `MANIFEST_OUTPUT.progress`, so rerunning the
+exact command resumes only missing rows. The progress identity rejects changed
+inputs or generation settings, and completed progress is moved to a sibling
+`_archive/` directory after all immutable outputs are published. Override the
+location with `--progress-dir`.
 
 The training CLIs accept complete portable LoRA and Adam objects from YAML.
 These values are passed to either Tinker or the local backend:
@@ -272,9 +277,11 @@ optimizer_config:
 ```
 
 `train_mlp`, `train_attn`, and `train_unembed` use the same portable component
-names for both backends. The model selects the tokenizer and recommended chat
-renderer through the shared renderer code, so runs using the same `model` value
-use the same tokenization path. Scalar `--lora-rank`, `--seed`, `--lr`, and
+names for both backends. Renderer selection follows the compute backend. Tinker
+runs use Tinker's recommended renderer for the managed model; local runs use
+the Hugging Face tokenizer's own chat template, and pass those rendered token
+IDs to either the HF or vLLM sampler. A local model therefore does not need to
+appear in Tinker's model registry. Scalar `--lora-rank`, `--seed`, `--lr`, and
 `--lr-schedule` arguments remain available and override corresponding nested
 values when supplied.
 

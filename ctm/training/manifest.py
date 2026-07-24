@@ -48,7 +48,7 @@ def write_run_manifest(
         **redacted_extra,
     }
     path = Path(log_dir) / MANIFEST_NAME
-    path.write_text(json.dumps(manifest, indent=1, default=str))
+    path.write_text(json.dumps(manifest, indent=1, default=str), encoding="utf-8")
     return path
 
 
@@ -56,4 +56,4 @@ def read_run_manifest(log_dir: str | Path) -> Optional[dict]:
     path = Path(log_dir) / MANIFEST_NAME
     if not path.exists():
         return None
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
