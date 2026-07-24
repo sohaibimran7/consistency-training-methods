@@ -326,6 +326,15 @@ class LocalBackend:
         self._vllm = VLLMSampler(model=self.model_name, enable_lora=True, **self.vllm_options)
         self._publish_adapter()  # initial policy (fresh or resumed adapter)
 
+    def shutdown(self) -> None:
+        """Release the lazily started vLLM sampler, if any."""
+        if self._vllm is None:
+            return
+        try:
+            self._vllm.shutdown()
+        finally:
+            self._vllm = None
+
     def policy_sampler(self, name: str) -> LocalSamplerHandle:
         self._require_model()
         self._ensure_vllm()

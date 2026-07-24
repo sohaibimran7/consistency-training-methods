@@ -7,6 +7,7 @@ Real-engine behaviour is validated on a GPU box (tests there carry @pytest.mark.
 """
 
 import asyncio
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -117,6 +118,18 @@ class TestVLLMSampler:
         assert seqs[0].logprobs is None  # token 8's logprob missing → whole seq excluded downstream
         assert seqs[1].logprobs == pytest.approx([-1.2])
 
+    def test_shutdown_releases_engine_and_is_idempotent(self):
+        engine = FakeEngine()
+        engine_ref = weakref.ref(engine)
+        sampler = make_sampler(engine)
+        del engine
+        sampler.shutdown()
+        assert sampler.engine is None
+        assert engine_ref() is None
+
+        sampler.shutdown()
+        assert sampler.engine is None
+
 
 @pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
 class TestLocalBackendVLLMWiring:
@@ -189,6 +202,19 @@ class TestLocalBackendVLLMWiring:
             )
         )
         assert engine.calls[-1].lora_request is None  # base = engine's frozen weights
+
+    def test_shutdown_releases_started_vllm(self):
+        engine = FakeEngine()
+        backend = self._backend(engine)
+        backend.policy_sampler("p")
+        sampler = backend._vllm
+
+        backend.shutdown()
+        assert backend._vllm is None
+        assert sampler.engine is None
+
+        backend.shutdown()
+        assert backend._vllm is None
 
     def test_vllm_requires_lora(self):
         backend = LocalBackend(

@@ -18,6 +18,7 @@ exist so the request/extraction logic is unit-testable without vLLM installed.
 Written against the vllm>=0.6 API (TokensPrompt, LoRARequest, SamplingParams).
 """
 
+import gc
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -70,6 +71,15 @@ class VLLMSampler:
             self.engine = self._api.LLM(model=model, enable_lora=enable_lora, **kwargs)
         self.adapter_dir: Optional[str] = None
         self.adapter_version: int = 0
+
+    def shutdown(self) -> None:
+        """Release the vLLM engine and its worker process, if it was started."""
+        if getattr(self, "engine", None) is None:
+            return
+        # vLLM has no stable public shutdown method across supported versions;
+        # dropping the final LLM reference tears down its EngineCore worker.
+        self.engine = None
+        gc.collect()
 
     def advance_policy(self, adapter_dir: str) -> None:
         """Point policy sampling at a freshly saved adapter snapshot.
