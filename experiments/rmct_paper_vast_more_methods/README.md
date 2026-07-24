@@ -1,8 +1,8 @@
 # GPT-OSS-20B five-method comparison on HLE
 
-This experiment compares five consistency-training methods and their controls
-on the HLE evaluation setting from Figures 4 and 5 of *Rate Matching
-Consistency Training* (arXiv:2606.02211):
+This experiment compares five consistency-training methods on the HLE
+evaluation setting from Figures 4 and 5 of *Rate Matching Consistency
+Training* (arXiv:2606.02211):
 
 1. rate matching;
 2. bias-augmented consistency training (BCT);
@@ -10,17 +10,21 @@ Consistency Training* (arXiv:2606.02211):
 4. attention consistency training (AttCT); and
 5. MLP consistency training (MLPCT).
 
-The untrained `openai/gpt-oss-20b` model is evaluated once. Every trained method
-has a matched control and is trained at three learning rates, producing thirty
-trained checkpoints and thirty-one evaluated model states. The RMCT paper
+The untrained `openai/gpt-oss-20b` model is evaluated once. Rate matching and
+BCT have matched controls, and every trained condition runs at three learning
+rates, producing twenty-one trained checkpoints and twenty-two evaluated model
+states. The RMCT paper
 directly reports the untrained, rate-matching and BCT families; ACT, AttCT and
 MLPCT are an extension on the same data and evaluation setting.
 
 The concise specification is in [`experiment.yaml`](experiment.yaml). Its
 `experiment_factory` expands the condition and learning-rate matrix into the
-complete command plan. One invocation prepares the data, trains the thirty
+complete command plan. One invocation prepares the data, trains the twenty-one
 runs, evaluates every checkpoint and the base model, aggregates the results,
 and renders seven publication-style SVG charts from chart-ready JSON.
+Rendering runs as a separate final `rendering` stage, so charts can also be
+re-rendered later — for example on another machine, from the synced results,
+with `--start-from rendering`.
 
 ## Experimental design
 
@@ -53,8 +57,11 @@ Mixing local and Tinker checkpoints in this comparison is not supported.
 
 The controls remove the biased prompt while preserving each method's training
 path. Rate matching uses the unbiased prompt for both perturbations. BCT trains
-on frozen base-model responses to unbiased prompts. ACT, AttCT and MLPCT compare
-the adapter-enabled unbiased prompt with the frozen-base unbiased prompt.
+on frozen base-model responses to unbiased prompts. ACT, AttCT and MLPCT have
+no control conditions: pairing the unbiased prompt with itself makes their
+consistency losses identically zero, so such a run would only duplicate the
+untrained condition. The experiment compiler rejects control conditions for
+these methods.
 
 The reports contain:
 
@@ -122,7 +129,7 @@ paths or a new experiment name.
 ### Integration smoke test
 
 Before submitting the full matrix on a new machine image, run the explicit
-integration configuration. It covers all five methods, all five controls, the
+integration configuration. It covers all five methods, both controls, the
 untrained evaluation, checkpoint loading, reporting, and both remote-model
 uses. Its counts and token limits are not suitable for scientific comparison.
 
@@ -157,9 +164,9 @@ The runner asks for one final confirmation. It does not start a remote model or
 training stage unless that confirmation is given. Each GPU runs at most one
 command at a time. Data generation, data preparation, training, and evaluation
 are separate barriers. The evaluation suite is frozen once during preparation,
-so the thirty-one parallel evaluations read identical files without competing
-to generate them. Analysis remains sequential because each chart consumes its
-corresponding aggregation. A completed plan can resume at a named boundary, for
+so the twenty-two parallel evaluations read identical files without competing
+to generate them. Analysis remains sequential, and chart rendering runs as the
+final stage. A completed plan can resume at a named boundary, for
 example:
 
 ```bash
@@ -179,10 +186,10 @@ Before retries or failed distractor arguments, the plan requests:
 
 - 4,096 local generations for bias-augmented consistency targets;
 - 98,304 local rollouts for the six rate-matching runs;
-- 21,700 local evaluation completions: 700 for each of thirty-one model states;
+- 15,400 local evaluation completions: 700 for each of twenty-two model states;
 - 24,576 supervised sequences across the six BCT runs;
-- 36,864 paired examples across the eighteen ACT, AttCT and MLPCT runs;
-- 18,600 OpenRouter verbalisation-grader calls; and
+- 18,432 paired examples across the nine ACT, AttCT and MLPCT runs;
+- 13,200 OpenRouter verbalisation-grader calls; and
 - up to 6,200 OpenRouter calls to construct an empty distractor-argument store.
 
 The dominant resource is local GPU time. Vast.ai cost depends on the selected

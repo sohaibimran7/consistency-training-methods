@@ -1,5 +1,5 @@
 name: rmct_paper_vast_more_methods
-experiment_factory: ctm_data.adapters.mcq_bias.comparison:compile_experiment
+experiment_factory: ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment
 
 # Five-condition comparison from arXiv:2606.02211. This file states the
 # scientific choices; the factory expands repeated runs and deterministic paths.
@@ -61,11 +61,8 @@ spec:
     - {name: bias-augmented-consistency, method: bias_augmented_consistency}
     - {name: bias-augmented-consistency-control, method: bias_augmented_consistency, control: true}
     - {name: act, method: act}
-    - {name: act-control, method: act, control: true}
     - {name: attct, method: attct}
-    - {name: attct-control, method: attct, control: true}
     - {name: mlpct, method: mlpct}
-    - {name: mlpct-control, method: mlpct, control: true}
 
   supervised_consistency:
     batch_size: 1

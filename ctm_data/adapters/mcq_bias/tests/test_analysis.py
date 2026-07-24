@@ -135,6 +135,51 @@ def test_aggregate_logs_rejects_incomplete_condition_matrix():
         aggregate_logs({"base": first, "rlct": second}, metric="matches_bias")
 
 
+def test_aggregate_logs_rejects_tasks_missing_from_every_condition():
+    logs = {
+        "base": [_log(bias="suggested_answer", dataset="mmlu", created="1", values=[1.0])],
+        "rlct": [_log(bias="suggested_answer", dataset="mmlu", created="1", values=[0.0])],
+    }
+    with pytest.raises(ValueError, match="expected biases"):
+        aggregate_logs(
+            logs,
+            metric="matches_bias",
+            expected_biases=["suggested_answer", "wrong_few_shot"],
+            expected_datasets=["mmlu"],
+        )
+
+
+def test_aggregate_logs_rejects_required_cell_without_finite_scores():
+    logs = {
+        "base": [_log(bias="suggested_answer", dataset="mmlu", created="1", values=[None])],
+        "rlct": [_log(bias="suggested_answer", dataset="mmlu", created="1", values=[None])],
+    }
+    with pytest.raises(ValueError, match="no finite 'matches_bias' scores"):
+        aggregate_logs(
+            logs,
+            metric="matches_bias",
+            expected_biases=["suggested_answer"],
+            expected_datasets=["mmlu"],
+        )
+
+
+def test_aggregate_logs_rejects_unscored_dataset_in_otherwise_scored_bias():
+    logs = {
+        condition: [
+            _log(bias="suggested_answer", dataset="mmlu", created="1", values=[value]),
+            _log(bias="suggested_answer", dataset="truthfulqa", created="1", values=[None]),
+        ]
+        for condition, value in (("base", 1.0), ("rlct", 0.0))
+    }
+    with pytest.raises(ValueError, match="no finite 'matches_bias' scores"):
+        aggregate_logs(
+            logs,
+            metric="matches_bias",
+            expected_biases=["suggested_answer"],
+            expected_datasets=["mmlu", "truthfulqa"],
+        )
+
+
 def test_conditional_metric_uses_paper_switch_subset():
     logs = [
         _metric_log(

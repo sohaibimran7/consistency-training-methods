@@ -893,50 +893,51 @@ class RLTrainer:
         GRPO term (reward = ``helpfulness_classifier`` ∈ [0,1]) is mixed into every step's
         gradient — the anti-refuse-all signal.
         """
-        if not self.setup_done:
-            self.setup()
-
-        # Helpfulness term state (anti refuse-all). Cycled through across steps.
-        self._help_dps = list(helpfulness_datapoints) if helpfulness_datapoints else []
-        self._help_fn = helpfulness_perturbation_fn
-        self._help_cls = helpfulness_classifier
-        self._help_idx = 0
-        if self._help_dps and self.config.helpfulness_weight > 0 and self.config.helpfulness_mode == "anchor":
-            await self._measure_help_base_accuracy()  # per-prompt anchor target (base accuracy)
-
-        log_dir = Path(
-            build_log_dir(
-                self.config.log_base_dir,
-                self.config.experiment_name,
-                self.config.run_name,
-            )
-        )
-        log_dir.mkdir(parents=True, exist_ok=True)
-        logger = setup_logging(
-            log_dir=str(log_dir),
-            wandb_project=self.config.wandb_project,
-            wandb_name=self.config.run_name,
-            config=self.config.model_dump(),
-        )
-
-        if self.config.rollout_log != "none":
-            rollout_dir = self.config.rollout_dir or str(log_dir / "rollouts")
-            self._rollout_logger = RolloutLogger(rollout_dir)
-
-        write_run_manifest(
-            log_dir,
-            kind="rl",
-            model=self.config.model,
-            backend=self.backend,
-            config_dump=self.config.model_dump(),
-            extra={"n_datapoints": len(datapoints), "n_perturbations": len(perturbation_fns)},
-        )
-
-        git_state = get_git_state()
-        warn_if_dirty(git_state)
-        logger.log_hparams({"git": git_state})
-
+        logger = None
         try:
+            if not self.setup_done:
+                self.setup()
+
+            # Helpfulness term state (anti refuse-all). Cycled through across steps.
+            self._help_dps = list(helpfulness_datapoints) if helpfulness_datapoints else []
+            self._help_fn = helpfulness_perturbation_fn
+            self._help_cls = helpfulness_classifier
+            self._help_idx = 0
+            if self._help_dps and self.config.helpfulness_weight > 0 and self.config.helpfulness_mode == "anchor":
+                await self._measure_help_base_accuracy()  # per-prompt anchor target (base accuracy)
+
+            log_dir = Path(
+                build_log_dir(
+                    self.config.log_base_dir,
+                    self.config.experiment_name,
+                    self.config.run_name,
+                )
+            )
+            log_dir.mkdir(parents=True, exist_ok=True)
+            logger = setup_logging(
+                log_dir=str(log_dir),
+                wandb_project=self.config.wandb_project,
+                wandb_name=self.config.run_name,
+                config=self.config.model_dump(),
+            )
+
+            if self.config.rollout_log != "none":
+                rollout_dir = self.config.rollout_dir or str(log_dir / "rollouts")
+                self._rollout_logger = RolloutLogger(rollout_dir)
+
+            write_run_manifest(
+                log_dir,
+                kind="rl",
+                model=self.config.model,
+                backend=self.backend,
+                config_dump=self.config.model_dump(),
+                extra={"n_datapoints": len(datapoints), "n_perturbations": len(perturbation_fns)},
+            )
+
+            git_state = get_git_state()
+            warn_if_dirty(git_state)
+            logger.log_hparams({"git": git_state})
+
             return await self._train_loop(
                 logger,
                 log_dir,
@@ -949,10 +950,11 @@ class RLTrainer:
         except Exception:
             tb = traceback.format_exc()
             _log.error("Training failed with exception:\n%s", tb)
-            try:
-                logger.log_metrics({"train/error": tb}, step=None)
-            except Exception:
-                pass
+            if logger is not None:
+                try:
+                    logger.log_metrics({"train/error": tb}, step=None)
+                except Exception:
+                    pass
             try:
                 import wandb
 

@@ -105,6 +105,30 @@ class VLLMSampler:
         num_samples: int,
         use_base: bool,
     ) -> list[SampledSequence]:
+        return self.sample_batch(
+            [prompt_tokens],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop,
+            num_samples=num_samples,
+            use_base=use_base,
+        )[0]
+
+    def sample_batch(
+        self,
+        prompt_tokens_batch: list[list[int]],
+        *,
+        max_tokens: int,
+        temperature: float,
+        stop: Any,
+        num_samples: int,
+        use_base: bool,
+    ) -> list[list[SampledSequence]]:
+        """Generate a scheduler-visible batch in one vLLM engine call."""
+        if not prompt_tokens_batch:
+            return []
+        if self.engine is None:
+            raise RuntimeError("vLLM sampler has been shut down")
         stop_ids = [t for t in (stop or []) if isinstance(t, int)] or None
         params = self._api.SamplingParams(
             n=num_samples,
@@ -114,13 +138,21 @@ class VLLMSampler:
             logprobs=0,  # 0 extra top-k → still returns the sampled token's own logprob
         )
         outputs = self.engine.generate(
-            [self._api.TokensPrompt(prompt_token_ids=list(prompt_tokens))],
+            [self._api.TokensPrompt(prompt_token_ids=list(tokens)) for tokens in prompt_tokens_batch],
             params,
             lora_request=None if use_base else self._policy_lora_request(),
             use_tqdm=False,
         )
+        if len(outputs) != len(prompt_tokens_batch):
+            raise RuntimeError(
+                f"vLLM returned {len(outputs)} prompt results for a batch of {len(prompt_tokens_batch)}"
+            )
+        return [self._extract_sequences(output) for output in outputs]
+
+    @staticmethod
+    def _extract_sequences(output: Any) -> list[SampledSequence]:
         sequences: list[SampledSequence] = []
-        for completion in outputs[0].outputs:
+        for completion in output.outputs:
             tokens = list(completion.token_ids)
             logprobs: Optional[list[float]] = None
             if completion.logprobs is not None:

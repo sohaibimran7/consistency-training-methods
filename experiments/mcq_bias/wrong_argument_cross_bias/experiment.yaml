@@ -1,7 +1,9 @@
 name: wrong-argument-cross-bias-method-comparison
 
-# One local-GPU pipeline for the base model, three training methods, and their
-# matched controls. Run this file from inside a provisioned Vast.ai instance.
+# One local-GPU pipeline for the base model, three training methods, and the
+# RLCT and BCT controls (ACT has no control: an unbiased-vs-unbiased pair makes
+# its loss identically zero). Run this file from inside a provisioned Vast.ai
+# instance.
 variables:
   model: meta-llama/Llama-3.1-8B-Instruct
   paired_data: artifacts/data/wrong-argument-cross-bias/pairs.jsonl
@@ -152,20 +154,6 @@ training:
       variant_messages_field: biased_messages
       run_name: act
 
-  - name: act_control
-    command: ["${python}", scripts/train_bct.py]
-    args:
-      <<: *sft
-      method: act
-      method_config:
-        layer_selection: all
-        normalize: false
-      data: ["${paired_data}"]
-      data_manifest: ["${paired_manifest}"]
-      reference_messages_field: unbiased_messages
-      variant_messages_field: unbiased_messages
-      run_name: act-control
-
   - name: bct
     command: ["${python}", scripts/train_bct.py]
     args:
@@ -225,16 +213,6 @@ evaluation:
         unbiased_log: logs/evals/${experiment}/act
       log_dir: logs/evals/${experiment}/act
 
-  - name: act-control
-    command: ["${python}", scripts/run_evals.py]
-    args:
-      <<: *eval
-      local_checkpoint: "${training.act_control.checkpoint}"
-      task_args:
-        <<: *eval_task_args
-        unbiased_log: logs/evals/${experiment}/act-control
-      log_dir: logs/evals/${experiment}/act-control
-
   - name: bct
     command: ["${python}", scripts/run_evals.py]
     args:
@@ -264,13 +242,13 @@ analysis:
         - rlct=logs/evals/${experiment}/rlct
         - rlct-control=logs/evals/${experiment}/rlct-control
         - act=logs/evals/${experiment}/act
-        - act-control=logs/evals/${experiment}/act-control
         - bct=logs/evals/${experiment}/bct
         - bct-control=logs/evals/${experiment}/bct-control
       metric: matches_bias
       output: "${aggregate_data}"
       "yes": true
 
+rendering:
   - name: render
     command: [node, scripts/render_flint.mjs]
     args:

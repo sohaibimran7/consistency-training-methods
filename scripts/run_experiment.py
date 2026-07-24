@@ -15,6 +15,7 @@ import os
 import queue
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -31,7 +32,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 from ctm.cli_safety import reject_inline_secrets
 from ctm.importing import load_callable
 
-STAGE_ORDER = ("data_generation", "data_preparation", "training", "evaluation", "analysis")
+STAGE_ORDER = ("data_generation", "data_preparation", "training", "evaluation", "analysis", "rendering")
 STAGE_ALIASES = {
     "data_gen": "data_generation",
     "datagen": "data_generation",
@@ -40,7 +41,8 @@ STAGE_ALIASES = {
     "train": "training",
     "eval": "evaluation",
     "analyze": "analysis",
-    "viz": "analysis",
+    "render": "rendering",
+    "viz": "rendering",
 }
 _PLACEHOLDER = re.compile(r"\$\{([a-zA-Z_][a-zA-Z0-9_.-]*)\}")
 CHECKPOINT_MARKER = "CTM_FINAL_CHECKPOINT="
@@ -110,7 +112,63 @@ def compile_experiment(source: Mapping[str, Any]) -> dict[str, Any]:
     conflicts = sorted(set(variables) & _RESERVED_CONTEXT)
     if conflicts:
         raise ExperimentConfigError(f"experiment variables use reserved names: {conflicts}")
+    validate_training_backend_consistency(value)
     return value
+
+
+def _declared_backend(entry: Mapping[str, Any]) -> str | None:
+    """Return an explicitly declared training backend from either args form."""
+
+    args = entry.get("args")
+    if isinstance(args, Mapping):
+        backend = args.get("backend")
+        return str(backend) if backend is not None else None
+    if isinstance(args, Sequence) and not isinstance(args, (str, bytes)):
+        tokens = [str(token) for token in args]
+        if "--backend" in tokens:
+            index = tokens.index("--backend")
+            if index + 1 >= len(tokens):
+                raise ExperimentConfigError("training command --backend needs a value")
+            return tokens[index + 1]
+    return None
+
+
+def validate_training_backend_consistency(config: Mapping[str, Any]) -> None:
+    """Reject plans that would compare training runs from different backends.
+
+    Tinker and local execution do not promise byte-identical prompt rendering or
+    optimizer semantics. Keeping one backend per experiment makes the backend an
+    execution detail instead of an uncontrolled scientific variable.
+    """
+
+    if "training" not in config:
+        return
+    raw_entries = config["training"]
+    entries = raw_entries if isinstance(raw_entries, list) else [raw_entries]
+    if not entries or any(not isinstance(entry, Mapping) for entry in entries):
+        return  # The normal stage validator will report the structural error.
+
+    declared: dict[str, list[str]] = {}
+    undeclared: list[str] = []
+    for index, entry in enumerate(entries, start=1):
+        name = str(entry.get("name") or f"training-{index}")
+        backend = _declared_backend(entry)
+        if backend is None:
+            undeclared.append(name)
+        else:
+            declared.setdefault(backend, []).append(name)
+
+    if declared and undeclared:
+        raise ExperimentConfigError(
+            "training commands must all declare --backend when any command does; "
+            f"missing for {undeclared}"
+        )
+    if len(declared) > 1:
+        details = ", ".join(f"{backend}={names}" for backend, names in sorted(declared.items()))
+        raise ExperimentConfigError(
+            "an experiment cannot mix training backends because its results would not be directly comparable; "
+            f"split this plan into one backend per experiment ({details})"
+        )
 
 
 def load_experiment(path: str | Path) -> dict[str, Any]:
@@ -475,6 +533,17 @@ def run_command(
     return checkpoint
 
 
+def _missing_executables(preview: Sequence[tuple[str, str, list[str]]]) -> dict[str, str]:
+    """Map each command executable absent from PATH to the first command needing it."""
+
+    missing: dict[str, str] = {}
+    for stage, name, command in preview:
+        executable = command[0]
+        if "${" not in executable and executable not in missing and shutil.which(executable) is None:
+            missing[executable] = f"{stage}:{name}"
+    return missing
+
+
 def _parse_gpus(value: str | None) -> list[str]:
     if value is None:
         return []
@@ -590,6 +659,10 @@ def main(argv: list[str] | None = None) -> None:
         if args.parallel < 1:
             raise ExperimentConfigError("--parallel must be at least 1")
         gpus = _parse_gpus(args.gpus)
+        if gpus and args.parallel == 1:
+            raise ExperimentConfigError(
+                "--gpus only applies with --parallel greater than 1; sequential runs inherit the ambient CUDA environment"
+            )
         if args.parallel > 1 and len(gpus) > args.parallel:
             gpus = gpus[: args.parallel]
         stages = select_stages(
@@ -597,6 +670,14 @@ def main(argv: list[str] | None = None) -> None:
             stages=[part.strip() for part in args.stages.split(",") if part.strip()] if args.stages else None,
             start_from=args.start_from,
         )
+        if args.parallel > 1 and not gpus and not args.dry_run:
+            for stage in stages:
+                if stage != "analysis" and any(
+                    command_resource(spec, stage) == "gpu" for spec in _entries(config, stage, target=args.target)
+                ):
+                    raise ExperimentConfigError(
+                        f"parallel {stage} execution includes GPU commands; pass --gpus with the visible GPU ids"
+                    )
         context = initial_context(config, checkpoint=args.checkpoint, training_data=args.training_data)
         target_has_training = "training" in stages and bool(_entries(config, "training", target=args.target))
         if not target_has_training:
@@ -609,6 +690,14 @@ def main(argv: list[str] | None = None) -> None:
         preview = planned_commands(config, stages, context, strict=False, target=args.target)
         if args.target and not preview:
             raise ExperimentConfigError(f"no commands select target {args.target!r}")
+        if not args.dry_run:
+            missing = _missing_executables(preview)
+            if missing:
+                details = ", ".join(f"{executable!r} (needed by {where})" for executable, where in missing.items())
+                raise ExperimentConfigError(
+                    f"selected commands need executables not on PATH: {details}; "
+                    "install them or narrow the run with --stages/--start-from"
+                )
         plan_path, plan_digest = validate_resolved_plan(config)
     except (ExperimentConfigError, OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))

@@ -158,36 +158,41 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  resuming={len(completed)}/{len(prompts)} completed rows")
 
     backend = build_backend(args)
-    backend.setup(model=args.model, lora=LoRAConfig(rank=args.lora_rank))
-    renderer, tokenizer = get_renderer_and_tokenizer(args.model, source=backend.renderer_source)
-    main_rows, control_rows = asyncio.run(
-        generate_bct_rows(
-            prompts,
-            sampler=backend.base_sampler(),
-            renderer=renderer,
-            tokenizer=tokenizer,
-            max_tokens=args.max_tokens,
-            temperature=args.temperature,
-            max_concurrency=args.max_concurrency,
-            completed=completed,
-            on_completed=progress.record,
+    try:
+        backend.setup(model=args.model, lora=LoRAConfig(rank=args.lora_rank))
+        renderer, tokenizer = get_renderer_and_tokenizer(args.model, source=backend.renderer_source)
+        main_rows, control_rows = asyncio.run(
+            generate_bct_rows(
+                prompts,
+                sampler=backend.base_sampler(),
+                renderer=renderer,
+                tokenizer=tokenizer,
+                max_tokens=args.max_tokens,
+                temperature=args.temperature,
+                max_concurrency=args.max_concurrency,
+                completed=completed,
+                on_completed=progress.record,
+            )
         )
-    )
-    manifest = write_bct_target_artifacts(
-        main_rows=main_rows,
-        control_rows=control_rows,
-        main_output=args.main_output,
-        control_output=args.control_output,
-        manifest_output=args.manifest_output,
-        source_files=args.data,
-        model=args.model,
-        backend_name=type(backend).__name__,
-        source_messages_field=args.source_messages_field,
-        main_messages_field=args.main_messages_field,
-        control_messages_field=args.control_messages_field,
-        generation_config=generation_config,
-    )
-    archived_progress = progress.archive()
+        manifest = write_bct_target_artifacts(
+            main_rows=main_rows,
+            control_rows=control_rows,
+            main_output=args.main_output,
+            control_output=args.control_output,
+            manifest_output=args.manifest_output,
+            source_files=args.data,
+            model=args.model,
+            backend_name=type(backend).__name__,
+            source_messages_field=args.source_messages_field,
+            main_messages_field=args.main_messages_field,
+            control_messages_field=args.control_messages_field,
+            generation_config=generation_config,
+        )
+        archived_progress = progress.archive()
+    finally:
+        shutdown = getattr(backend, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
     print(f"\nPrepared {manifest['row_count']} shared targets.")
     if archived_progress is not None:
         print(f"Archived completed progress to {archived_progress}")

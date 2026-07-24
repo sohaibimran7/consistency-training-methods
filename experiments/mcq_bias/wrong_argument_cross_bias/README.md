@@ -1,7 +1,9 @@
 # Wrong-argument cross-bias method comparison
 
 This experiment compares an untrained base model with RLCT, ACT, and BCT, plus
-one matched control for each method. All trained models use the local backend;
+matched controls for RLCT and BCT. ACT has no control: pairing the unbiased
+prompt with itself makes its consistency loss identically zero, so such a run
+would only duplicate the base model. All trained models use the local backend;
 run the experiment inside a provisioned Vast.ai instance.
 
 The training cue called `distractor_argument` in older experiments is named
@@ -18,7 +20,6 @@ without modifying CTM.
 | RLCT | Independent rollouts from unbiased and wrong-argument prompts |
 | RLCT control | Two independent rollout groups from the unbiased prompt |
 | ACT | Current-model activations on the biased prompt matched to frozen-base activations on the unbiased prompt |
-| ACT control | Current-model and frozen-base activations on the unbiased prompt |
 | BCT | Biased prompt followed by a frozen-base completion sampled from the corresponding unbiased prompt |
 | BCT control | Unbiased prompt followed by the same frozen-base completion used by BCT |
 
@@ -63,7 +64,7 @@ model when its argument store is incomplete. Supply credentials through the
 environment; do not put them in the YAML.
 
 The final analysis reads the official `mcq_bias` sample scores, checks that all
-seven conditions contain the same successful task matrix, pools
+six conditions contain the same successful task matrix, pools
 `matches_bias` over the configured evaluation datasets, and writes:
 
 - `artifacts/results/wrong-argument-cross-bias/matches-bias.json`;
@@ -76,10 +77,13 @@ belong in the figure.
 
 ## Compare BCT execution platforms
 
-`bct_backends.yaml` contains one BCT condition for Tinker, Vast.ai, and
-Isambard. All three entries inherit the same data path, model, LoRA object,
+`bct_backends.yaml` contains one BCT condition for Vast.ai and one for
+Isambard. Both entries inherit the same data path, model, LoRA object,
 Adam object, batch size, epoch count, and evaluation configuration. This is a
-convenience provided by YAML anchors, not a runtime equality check.
+convenience provided by YAML anchors, not a runtime equality check. Tinker is
+intentionally excluded: Tinker and local training do not render byte-identical
+prompts, so a cross-backend run would confound backend and prompt format, and
+the experiment runner now rejects plans that mix training backends.
 
 Generate the BCT data once with the main experiment's first two stages. Copy
 the resulting JSONL and manifest without changing either file, then run the
@@ -92,10 +96,6 @@ uv run python scripts/run_experiment.py \
 
 uv run python scripts/run_experiment.py \
   experiments/mcq_bias/wrong_argument_cross_bias/bct_backends.yaml \
-  --target tinker --yes
-
-uv run python scripts/run_experiment.py \
-  experiments/mcq_bias/wrong_argument_cross_bias/bct_backends.yaml \
   --target vast --yes
 
 sbatch infra/isambard/run_experiment.sbatch \
@@ -103,7 +103,7 @@ sbatch infra/isambard/run_experiment.sbatch \
   --target isambard --yes
 ```
 
-Copy the three evaluation log directories back to the controller under the
+Copy the two evaluation log directories back to the controller under the
 paths declared in the YAML. Install the pinned chart dependencies and run:
 
 ```bash

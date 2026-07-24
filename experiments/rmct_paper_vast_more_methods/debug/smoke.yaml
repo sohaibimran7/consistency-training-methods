@@ -1,5 +1,5 @@
 name: rmct_paper_vast_more_methods_smoke
-experiment_factory: ctm_data.adapters.mcq_bias.comparison:compile_experiment
+experiment_factory: ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment
 
 # Integration test only. Counts and token limits are intentionally too small
 # for scientific interpretation. The method definitions match experiment.yaml.
@@ -59,11 +59,8 @@ spec:
     - {name: bias-augmented-consistency, method: bias_augmented_consistency}
     - {name: bias-augmented-consistency-control, method: bias_augmented_consistency, control: true}
     - {name: act, method: act}
-    - {name: act-control, method: act, control: true}
     - {name: attct, method: attct}
-    - {name: attct-control, method: attct, control: true}
     - {name: mlpct, method: mlpct}
-    - {name: mlpct-control, method: mlpct, control: true}
 
   supervised_consistency:
     batch_size: 1

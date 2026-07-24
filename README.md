@@ -49,8 +49,12 @@ uv pip install -r requirements.txt
 uv pip install -e . --no-deps
 ```
 
-Experiments that render charts with Flint also require the pinned JavaScript
-dependencies:
+Chart rendering runs in a separate final `rendering` stage, so only the
+machine that renders needs a chart toolchain, and any machine can re-render
+later from the synced results with `--start-from rendering`. The mcq-bias
+publication renderer uses Matplotlib from the Python environment. Experiments
+whose rendering stage uses Flint instead also require Node.js and the pinned
+JavaScript dependencies:
 
 ```bash
 npm ci
@@ -120,8 +124,11 @@ uv run python scripts/run_experiment.py experiment.yaml \
 ```
 
 The runner assigns at most one GPU command to each listed GPU and waits for the
-whole stage before starting the next stage. Analysis remains ordered because a
-render command may consume the preceding aggregation. Data-generation commands
+whole stage before starting the next stage. Analysis remains ordered, and chart
+rendering runs in the final `rendering` stage. Before executing, the runner
+verifies that every selected command's executable exists on `PATH`, so a host
+missing a render toolchain fails upfront instead of after training; skip the
+stage there and render later with `--start-from rendering`. Data-generation commands
 default to `resource: cpu`; preparation, training, and evaluation commands
 default to `resource: gpu`. Set `resource: cpu` explicitly for a CPU-only
 command in a normally GPU-backed stage.
@@ -132,8 +139,8 @@ factory expands it into the same explicit stage-and-command format used above.
 Factories belong with the dataset or benchmark adapter, not in the generic
 runner. See
 [`experiments/rmct_paper_vast_more_methods/experiment.yaml`](experiments/rmct_paper_vast_more_methods/experiment.yaml)
-for an example that expands five training methods, their controls, three
-learning rates, evaluation, and reports.
+for an example that expands five training methods, the rate-matching and BCT
+controls, three learning rates, evaluation, and reports.
 
 `${training_data}` is supplied by `--training-data`. `${checkpoint}` is either
 supplied by `--checkpoint` or obtained from the single selected training stage.
@@ -320,8 +327,8 @@ named checkpoint routing.
 
 The complete
 [`wrong_argument_cross_bias` experiment](experiments/mcq_bias/wrong_argument_cross_bias/README.md)
-shows data materialization, shared BCT target generation, six local training
-runs, seven official evaluations, strict aggregation, and Flint SVG rendering
+shows data materialization, shared BCT target generation, five local training
+runs, six official evaluations, strict aggregation, and Flint SVG rendering
 in one YAML file.
 
 ## Evaluation

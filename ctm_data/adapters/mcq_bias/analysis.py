@@ -261,6 +261,8 @@ def aggregate_logs(
     variant: str = "biased",
     metadata: Mapping[str, Any] | None = None,
     condition_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+    expected_biases: Sequence[str] | None = None,
+    expected_datasets: Sequence[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Aggregate one log group per condition.
 
@@ -279,6 +281,8 @@ def aggregate_logs(
         variant=variant,
         metadata=metadata,
         condition_metadata=condition_metadata,
+        expected_biases=expected_biases,
+        expected_datasets=expected_datasets,
     )
 
 
@@ -293,6 +297,8 @@ def aggregate_log_groups(
     variant: str = "biased",
     metadata: Mapping[str, Any] | None = None,
     condition_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+    expected_biases: Sequence[str] | None = None,
+    expected_datasets: Sequence[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Pool independent log groups while deduplicating retries within each group.
 
@@ -319,6 +325,8 @@ def aggregate_log_groups(
         if where_metric is not None
         else None
     )
+    expected_bias_set = _validated_expected_values(expected_biases, "expected_biases")
+    expected_dataset_set = _validated_expected_values(expected_datasets, "expected_datasets")
 
     latest: dict[str, list[dict[tuple[str, str, str, str, int | None], Any]]] = {}
     for condition, log_groups in log_groups_by_condition.items():
@@ -343,6 +351,22 @@ def aggregate_log_groups(
                 raise ValueError(
                     f"condition {condition!r}, replicate {replicate_index} has no successful {variant} mcq_bias logs"
                 )
+            actual_biases = {identity[0] for identity in selected}
+            actual_datasets = {identity[1] for identity in selected}
+            _require_expected_values(
+                actual_biases,
+                expected_bias_set,
+                label="biases",
+                condition=condition,
+                replicate_index=replicate_index,
+            )
+            _require_expected_values(
+                actual_datasets,
+                expected_dataset_set,
+                label="datasets",
+                condition=condition,
+                replicate_index=replicate_index,
+            )
             latest[condition].append(selected)
 
     first_groups = next(iter(latest.values()))
@@ -361,8 +385,9 @@ def aggregate_log_groups(
     totals: dict[tuple[str, str], int] = defaultdict(int)
     datasets: dict[tuple[str, str], set[str]] = defaultdict(set)
     replicate_counts: dict[tuple[str, str], int] = {}
+    unscored_tasks: list[tuple[str, int, tuple[str, str, str, str, int | None]]] = []
     for condition, groups in latest.items():
-        for selected in groups:
+        for replicate_index, selected in enumerate(groups, start=1):
             for identity, log in selected.items():
                 bias_type, dataset, _, _, _ = identity
                 bias_type = bias_type or "unbiased"
@@ -371,7 +396,7 @@ def aggregate_log_groups(
                 totals[key] += len(samples)
                 datasets[key].add(dataset)
                 replicate_counts[key] = len(groups)
-                values = []
+                values: list[float] = []
                 for sample in samples:
                     if predicate is not None and not _sample_matches(sample, predicate):
                         continue
@@ -379,6 +404,10 @@ def aggregate_log_groups(
                     if value is not None:
                         values.append(value)
                 if not values:
+                    # A predicate may legitimately leave a conditional cell empty; only an
+                    # unconditional cell with no finite scores indicates missing results.
+                    if predicate is None:
+                        unscored_tasks.append((condition, replicate_index, identity))
                     continue
                 inspect_summary = (
                     _inspect_summary(log, metric) if stderr == "inspect" and predicate is None else None
@@ -397,6 +426,9 @@ def aggregate_log_groups(
                             }
                         )
                     pooled[key].append(summary)
+
+    if unscored_tasks:
+        raise ValueError(f"no finite {metric!r} scores remain for required tasks: {unscored_tasks}")
 
     if not pooled:
         raise ValueError(f"no finite {metric!r} scores remain after filtering")
@@ -429,6 +461,36 @@ def aggregate_log_groups(
             row.update(condition_metadata[condition])
         rows.append(row)
     return rows
+
+
+def _validated_expected_values(values: Sequence[str] | None, label: str) -> set[str] | None:
+    if values is None:
+        return None
+    normalized = [str(value) for value in values]
+    if not normalized or any(not value for value in normalized):
+        raise ValueError(f"{label} must contain non-empty values")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{label} must not contain duplicates")
+    return set(normalized)
+
+
+def _require_expected_values(
+    actual: set[str],
+    expected: set[str] | None,
+    *,
+    label: str,
+    condition: str,
+    replicate_index: int,
+) -> None:
+    if expected is None:
+        return
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    if missing or extra:
+        raise ValueError(
+            f"condition {condition!r}, replicate {replicate_index} does not match expected {label}; "
+            f"missing={missing}, extra={extra}"
+        )
 
 
 def append_held_out_summary(
@@ -823,6 +885,16 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--bias-type", default="suggested_answer")
     parser.add_argument(
+        "--expected-biases",
+        nargs="+",
+        help="Required bias task values; aggregation fails if any are missing or unexpected",
+    )
+    parser.add_argument(
+        "--expected-datasets",
+        nargs="+",
+        help="Required dataset task values; aggregation fails if any are missing or unexpected",
+    )
+    parser.add_argument(
         "--held-out-exclude",
         nargs="+",
         help="For metric reports, append a sample-count-weighted mean over every bias except these",
@@ -880,6 +952,8 @@ def main(argv: list[str] | None = None) -> None:
                 variant=args.variant,
                 metadata=args.metadata,
                 condition_metadata=args.condition_metadata,
+                expected_biases=args.expected_biases,
+                expected_datasets=args.expected_datasets,
             )
             if args.held_out_exclude and args.held_out_auto:
                 raise ValueError("use either --held-out-exclude or --held-out-auto, not both")

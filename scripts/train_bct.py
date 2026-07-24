@@ -278,6 +278,11 @@ def main():
             f"--method {args.method} needs paired forward passes with internal activations "
             "(Tinker doesn't expose them) — pass --backend local"
         )
+    if args.method != "bct" and args.variant_messages_field == args.reference_messages_field:
+        parser.error(
+            f"--method {args.method} with identical --variant-messages-field and --reference-messages-field "
+            "is a training no-op: both passes see the same tokens, so the consistency loss is identically zero"
+        )
     if args.gradient_accumulation_steps < 1:
         parser.error("--gradient-accumulation-steps must be >= 1")
     try:

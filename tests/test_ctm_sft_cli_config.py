@@ -1,6 +1,34 @@
+import sys
+
 import pytest
 
+from scripts import train_bct
 from scripts.train_bct import resolve_lora_config, resolve_optimizer_config
+
+
+def test_consistency_methods_reject_identical_variant_and_reference_fields(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train_bct.py",
+            "--backend",
+            "local",
+            "--model",
+            "test-model",
+            "--method",
+            "act",
+            "--data",
+            "rows.jsonl",
+            "--reference-messages-field",
+            "unbiased_messages",
+            "--variant-messages-field",
+            "unbiased_messages",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        train_bct.main()
+    assert "identically zero" in capsys.readouterr().err
 
 
 def test_nested_training_configs_expose_portable_backend_parameters():

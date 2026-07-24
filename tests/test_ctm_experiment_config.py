@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ctm_data.adapters.mcq_bias.comparison import compile_experiment
+from ctm_data.adapters.mcq_bias.experiment_factory import compile_experiment
 from scripts import run_experiment as experiment
 
 EXAMPLE = Path(__file__).parent.parent / "experiments" / "example_rlct.yaml"
@@ -157,6 +157,7 @@ evaluation:
 """.strip())
     calls = []
     monkeypatch.setattr(experiment, "output_state_path", lambda _: tmp_path / "outputs.json")
+    monkeypatch.setattr(experiment, "_missing_executables", lambda _: {})
 
     def fake_run(command):
         calls.append(command)
@@ -192,15 +193,15 @@ def test_method_comparison_yaml_selects_all_supervised_family_methods():
 def test_wrong_argument_figure_yaml_routes_the_complete_pipeline():
     config = experiment.load_experiment(WRONG_ARGUMENT_COMPARISON)
     context = experiment.initial_context(config)
-    for name in ("rlct", "rlct_control", "act", "act_control", "bct", "bct_control"):
+    for name in ("rlct", "rlct_control", "act", "bct", "bct_control"):
         context[f"training.{name}.checkpoint"] = f"file:///checkpoints/{name}"
-    stages = ["data_generation", "data_preparation", "training", "evaluation", "analysis"]
+    stages = ["data_generation", "data_preparation", "training", "evaluation", "analysis", "rendering"]
     planned = experiment.planned_commands(config, stages, context, strict=True)
     by_stage = {stage: [] for stage in stages}
     for stage, name, command in planned:
         by_stage[stage].append((name, command))
 
-    assert [len(by_stage[stage]) for stage in stages] == [1, 1, 6, 7, 2]
+    assert [len(by_stage[stage]) for stage in stages] == [1, 1, 5, 6, 1, 1]
     assert "ctm_data.adapters.mcq_bias.materialize" in by_stage["data_generation"][0][1]
     target_command = by_stage["data_preparation"][0][1]
     assert "scripts/prepare_bct_targets.py" in target_command
@@ -208,13 +209,13 @@ def test_wrong_argument_figure_yaml_routes_the_complete_pipeline():
     training = dict(by_stage["training"])
     assert '"control":true' in " ".join(training["rlct_control"])
     assert training["act"][training["act"].index("--variant-messages-field") + 1] == "biased_messages"
-    assert training["act_control"][training["act_control"].index("--variant-messages-field") + 1] == "unbiased_messages"
+    assert "act_control" not in training
     assert training["bct"][training["bct"].index("--data-manifest") + 1].endswith("bct-targets.manifest.json")
     evaluations = dict(by_stage["evaluation"])
     assert evaluations["base"][evaluations["base"].index("--model") + 1].startswith("hf/")
     assert evaluations["bct"][evaluations["bct"].index("--local-checkpoint") + 1] == "file:///checkpoints/bct"
     assert "ctm_data.adapters.mcq_bias.analysis" in by_stage["analysis"][0][1]
-    assert by_stage["analysis"][1][1][:2] == ["node", "scripts/render_flint.mjs"]
+    assert by_stage["rendering"][0][1][:2] == ["node", "scripts/render_flint.mjs"]
 
 
 def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
@@ -222,13 +223,15 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     context = experiment.initial_context(config)
     for entry in config["training"]:
         context[f"training.{entry['name']}.checkpoint"] = f"file:///checkpoints/{entry['name']}"
-    stages = ["data_generation", "data_preparation", "training", "evaluation", "analysis"]
+    stages = ["data_generation", "data_preparation", "training", "evaluation", "analysis", "rendering"]
     planned = experiment.planned_commands(config, stages, context, strict=True)
     by_stage = {stage: [] for stage in stages}
     for stage, name, command in planned:
         by_stage[stage].append((name, command))
 
-    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 30, 31, 14]
+    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 21, 22, 7, 7]
+    assert all("ctm_data.adapters.mcq_bias.plot" in command for _, command in by_stage["rendering"])
+    assert not any("render_flint" in " ".join(command) for _, command in by_stage["rendering"])
     assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
     materialize_eval = dict(by_stage["data_preparation"])["evaluation-suite"]
     assert "ctm_data.adapters.mcq_bias.materialize_eval" in materialize_eval
@@ -247,9 +250,7 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     assert training["act_lr1"][training["act_lr1"].index("--method") + 1] == "act"
     assert training["attct_lr1"][training["attct_lr1"].index("--method") + 1] == "attct"
     assert training["mlpct_lr1"][training["mlpct_lr1"].index("--method") + 1] == "mlpct"
-    for method in ("act", "attct", "mlpct"):
-        control = training[f"{method}_control_lr1"]
-        assert control[control.index("--variant-messages-field") + 1] == "unbiased_messages"
+    assert not any(name.startswith(("act_control", "attct_control", "mlpct_control")) for name in training)
     analysis_commands = dict(by_stage["analysis"])
     unconditional_verbalisation = analysis_commands["aggregate-bias-verbalised"]
     assert unconditional_verbalisation[unconditional_verbalisation.index("--metric") + 1] == "bias_acknowledged"
@@ -268,13 +269,24 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     unbiased = analysis_commands["aggregate-unbiased-accuracy"]
     assert unbiased[unbiased.index("--variant") + 1] == "unbiased"
     assert "--held-out-exclude" not in unbiased
-    assert analysis_commands["render-towards-bias-switch"][1:4] == ["-m", "ctm_data.adapters.mcq_bias.plot", "--data"]
+    rendering_commands = dict(by_stage["rendering"])
+    assert rendering_commands["render-towards-bias-switch"][1:3] == ["-m", "ctm_data.adapters.mcq_bias.plot"]
+
+
+def test_rmct_compiler_rejects_representation_method_controls():
+    from ctm_data.adapters.mcq_bias.experiment_factory import compile_experiment
+
+    for method in ("act", "attct", "mlpct"):
+        spec = experiment.load_experiment_source(RMCT_HLE_COMPARISON)["spec"]
+        spec["conditions"] = [*spec["conditions"], {"name": f"{method}-control", "method": method, "control": True}]
+        with pytest.raises(ValueError, match="identically zero"):
+            compile_experiment(name="unit", spec=spec)
 
 
 def test_rmct_hle_yaml_is_a_concise_authored_spec():
     source = experiment.load_experiment_source(RMCT_HLE_COMPARISON)
 
-    assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.comparison:compile_experiment"
+    assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment"
     assert "training" not in source
     assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 180
 
@@ -306,10 +318,13 @@ def test_rmct_hle_smoke_covers_every_condition_once_with_tiny_counts():
     assert smoke["rate_matching"]["datapoints"] == 2
     assert set(smoke["rate_matching"]["rollouts"].values()) == {2}
     assert smoke["data"]["evaluation"]["questions"] == 2
+    assert smoke["data"]["training"]["minimum_per_dataset"] == 8
+    assert smoke["data"]["training"]["examples"] == 16
+    assert smoke["data"]["instruction"]["examples"] == 16
 
     compiled = experiment.load_experiment(RMCT_HLE_SMOKE)
-    assert len(compiled["training"]) == 10
-    assert len(compiled["evaluation"]) == 11
+    assert len(compiled["training"]) == 7
+    assert len(compiled["evaluation"]) == 8
 
 
 def test_resolved_plan_is_immutable_for_an_experiment_name(monkeypatch, tmp_path):
@@ -328,11 +343,12 @@ def test_resolved_plan_is_immutable_for_an_experiment_name(monkeypatch, tmp_path
         experiment.save_resolved_plan(changed)
 
 
-def test_bct_backend_yaml_shares_scientific_config_without_runtime_enforcement():
+def test_bct_backend_yaml_compares_local_platforms_only():
     config = experiment.load_experiment(BCT_BACKEND_COMPARISON)
     training = config["training"]
 
-    assert [entry["target"] for entry in training] == ["tinker", "vast", "isambard"]
+    assert [entry["target"] for entry in training] == ["vast", "isambard"]
+    assert {entry["args"]["backend"] for entry in training} == {"local"}
     for field in (
         "model",
         "method",
@@ -343,7 +359,7 @@ def test_bct_backend_yaml_shares_scientific_config_without_runtime_enforcement()
         "lora_config",
         "optimizer_config",
     ):
-        assert training[0]["args"][field] == training[1]["args"][field] == training[2]["args"][field]
+        assert training[0]["args"][field] == training[1]["args"][field]
 
     context = experiment.initial_context(config)
     context["training.bct_vast.checkpoint"] = "file:///vast"
@@ -359,6 +375,19 @@ def test_bct_backend_yaml_shares_scientific_config_without_runtime_enforcement()
     assert train_command[train_command.index("--backend") + 1] == "local"
     assert '"train_unembed":false' in train_command[train_command.index("--lora-config") + 1]
     assert '"beta2":0.95' in train_command[train_command.index("--optimizer-config") + 1]
+
+
+def test_experiment_rejects_mixed_training_backends():
+    with pytest.raises(experiment.ExperimentConfigError, match="cannot mix training backends"):
+        experiment.compile_experiment(
+            {
+                "name": "invalid-backend-comparison",
+                "training": [
+                    {"name": "managed", "command": ["python", "train.py"], "args": {"backend": "tinker"}},
+                    {"name": "on-box", "command": ["python", "train.py"], "args": {"backend": "local"}},
+                ],
+            }
+        )
 
 
 def test_experiment_variables_cannot_override_runner_context():
@@ -419,6 +448,7 @@ evaluation:
     command: [eval, "${training.second.checkpoint}"]
 """.strip())
     monkeypatch.setattr(experiment, "output_state_path", lambda _: tmp_path / "outputs.json")
+    monkeypatch.setattr(experiment, "_missing_executables", lambda _: {})
     training_barrier = threading.Barrier(2)
     calls = []
     lock = threading.Lock()
@@ -455,6 +485,59 @@ def test_parallel_gpu_stage_requires_explicit_gpu_ids():
             parallel=2,
             gpus=[],
         )
+
+
+def test_parallel_gpu_execution_requires_gpus_before_any_stage_runs(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "plan.yaml"
+    config_path.write_text("""
+name: plan-time-gpus
+data_generation:
+  - name: fetch
+    command: [fetch, data]
+training:
+  - name: train
+    command: [train, one]
+""".strip())
+    monkeypatch.setattr(
+        experiment, "run_command", lambda *args, **kwargs: pytest.fail("a stage executed before GPU validation")
+    )
+    with pytest.raises(SystemExit):
+        experiment.main([str(config_path), "--parallel", "2", "--yes"])
+    assert "pass --gpus" in capsys.readouterr().err
+
+    experiment.main([str(config_path), "--parallel", "2", "--dry-run"])
+    assert "Dry run complete." in capsys.readouterr().out
+
+
+def test_gpus_without_parallel_is_rejected(tmp_path, capsys):
+    config_path = tmp_path / "plan.yaml"
+    config_path.write_text("name: sequential-gpus\ntraining:\n  - command: [train, one]\n")
+    with pytest.raises(SystemExit):
+        experiment.main([str(config_path), "--gpus", "0", "--yes"])
+    assert "--parallel" in capsys.readouterr().err
+
+
+def test_execution_requires_command_executables_on_path(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "plan.yaml"
+    config_path.write_text("name: needs-node\nrendering:\n  - command: [ctm-missing-executable, chart.json]\n")
+    monkeypatch.setattr(
+        experiment, "run_command", lambda *args, **kwargs: pytest.fail("executed despite a missing executable")
+    )
+    with pytest.raises(SystemExit):
+        experiment.main([str(config_path), "--yes"])
+    assert "not on PATH" in capsys.readouterr().err
+
+    experiment.main([str(config_path), "--dry-run"])
+    assert "Dry run complete." in capsys.readouterr().out
+
+
+def test_rendering_stage_is_selectable_and_skippable():
+    config = {"name": "x", "analysis": {}, "rendering": {}}
+    assert experiment.select_stages(config, stages=["render"]) == ["rendering"]
+    assert experiment.select_stages(config, stages=["viz"]) == ["rendering"]
+    assert experiment.select_stages(config, stages=["analyze"]) == ["analysis"]
+    assert experiment.select_stages(config, start_from="rendering") == ["rendering"]
+    assert experiment.select_stages(config) == ["analysis", "rendering"]
 
 
 def test_dry_run_only_prints_commands(monkeypatch, capsys):

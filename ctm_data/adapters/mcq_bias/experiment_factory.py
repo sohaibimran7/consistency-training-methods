@@ -79,6 +79,13 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("condition control values must be booleans")
     if any(condition["method"] == "none" and condition.get("control", False) for condition in conditions):
         raise ValueError("an untrained condition cannot be a control")
+    if any(
+        condition["method"] in {"act", "attct", "mlpct"} and condition.get("control", False) for condition in conditions
+    ):
+        raise ValueError(
+            "act, attct, and mlpct cannot have control conditions: pairing unbiased_messages with "
+            "itself makes the consistency loss identically zero, so the run duplicates 'none'"
+        )
 
     data = _section(spec["data"], "data", {"training", "instruction", "evaluation"})
     train_data = _section(
@@ -368,7 +375,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
                             "data": [f"{paths['pairs']}:{train_data['examples']}"],
                             "data_manifest": [paths["pairs_manifest"]],
                             "reference_messages_field": "unbiased_messages",
-                            "variant_messages_field": "unbiased_messages" if control else "biased_messages",
+                            "variant_messages_field": "biased_messages",
                         }
                     )
                 command = ["${python}", "scripts/train_bct.py"]
@@ -424,6 +431,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
             analysis_runs.append(f"{condition_name}={log_dir}")
 
     analysis: list[dict[str, Any]] = []
+    rendering: list[dict[str, Any]] = []
     condition_metadata = {
         condition["name"]: {
             "method": condition["method"],
@@ -465,6 +473,8 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
             "held_out_exclude": reports["held_out_exclude"] if held_out_summary else None,
             "significance_baseline": reports.get("significance_baseline") if not ratio else None,
             "ratio_baseline": ratio_baseline,
+            "expected_biases": eval_data["biases"] if variant == "biased" else [""],
+            "expected_datasets": [paths["hle"]],
             "output": result,
             **yes,
         }
@@ -478,19 +488,19 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
             if not isinstance(report["where"], Mapping):
                 raise ValueError("report where must be an object")
             args["where"] = report["where"]
-        analysis.extend(
-            [
-                {
-                    "name": f"aggregate-{report['name']}",
-                    "command": ["${python}", "-m", "ctm_data.adapters.mcq_bias.analysis"],
-                    "args": args,
-                },
-                {
-                    "name": f"render-{report['name']}",
-                    "command": ["${python}", "-m", "ctm_data.adapters.mcq_bias.plot"],
-                    "args": {"data": result, "spec": charts[report["chart"]], "output": figure},
-                },
-            ]
+        analysis.append(
+            {
+                "name": f"aggregate-{report['name']}",
+                "command": ["${python}", "-m", "ctm_data.adapters.mcq_bias.analysis"],
+                "args": args,
+            }
+        )
+        rendering.append(
+            {
+                "name": f"render-{report['name']}",
+                "command": ["${python}", "-m", "ctm_data.adapters.mcq_bias.plot"],
+                "args": {"data": result, "spec": charts[report["chart"]], "output": figure},
+            }
         )
 
     return {
@@ -500,6 +510,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         "training": training,
         "evaluation": evals,
         "analysis": analysis,
+        "rendering": rendering,
     }
 
 

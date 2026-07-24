@@ -60,7 +60,7 @@ class FakeEngine:
             SimpleNamespace(token_ids=[7, 8], logprobs=[lp_dict(7, -0.5), lp_dict(8, -0.7)]),
             SimpleNamespace(token_ids=[9], logprobs=[lp_dict(9, -1.2)]),
         ]
-        return [SimpleNamespace(outputs=completions)]
+        return [SimpleNamespace(outputs=completions) for _ in prompts]
 
 
 def make_sampler(engine=None):
@@ -111,6 +111,26 @@ class TestVLLMSampler:
         assert [q.tokens for q in seqs] == [[7, 8], [9]]
         assert seqs[0].logprobs == pytest.approx([-0.5, -0.7])
         assert seqs[1].logprobs == pytest.approx([-1.2])
+
+    def test_batch_uses_one_engine_call_and_preserves_prompt_order(self):
+        engine = FakeEngine()
+        sampler = make_sampler(engine)
+
+        batches = sampler.sample_batch(
+            [[1], [2, 3]],
+            max_tokens=4,
+            temperature=1.0,
+            stop=[],
+            num_samples=2,
+            use_base=False,
+        )
+
+        assert len(engine.calls) == 1
+        assert [prompt.prompt_token_ids for prompt in engine.calls[0].prompts] == [[1], [2, 3]]
+        assert [[sequence.tokens for sequence in batch] for batch in batches] == [
+            [[7, 8], [9]],
+            [[7, 8], [9]],
+        ]
 
     def test_missing_sampled_logprob_marks_sequence_logprobless(self):
         s = make_sampler(FakeEngine(drop_logprob_for_token=8))
