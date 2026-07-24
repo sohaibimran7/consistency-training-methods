@@ -16,6 +16,9 @@ include = ["ctm*", "ctm_data", "ctm_data.adapters*", "ctm_data.sources*"]
 exclude = ["ctm_data.adapters.*.tests*"]
 namespaces = false
 
+[tool.setuptools.package-data]
+"ctm_data.adapters.mcq_bias" = ["*.toml"]
+
 [tool.black]
 line-length = 120
 target-version = ['py311']

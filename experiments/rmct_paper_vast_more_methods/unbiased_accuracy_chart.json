@@ -1,0 +1,8 @@
+{
+  "ylabel": "Unbiased accuracy",
+  "ylim": [0, 1.05],
+  "percent": true,
+  "ci_multiplier": 2,
+  "show_controls": true,
+  "show_significance": true
+}

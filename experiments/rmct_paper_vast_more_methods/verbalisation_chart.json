@@ -1,16 +1,9 @@
 {
-  "semantic_types": {
-    "condition": "Category",
-    "bias_type": "Category",
-    "mean": "Percentage"
-  },
-  "chart_spec": {
-    "chartType": "Grouped Bar Chart",
-    "encodings": {
-      "x": {"field": "bias_type"},
-      "y": {"field": "mean"},
-      "color": {"field": "condition"}
-    },
-    "baseSize": {"width": 1000, "height": 500}
-  }
+  "ylabel": "Bias verbalisation rate",
+  "ylim": [0, 1.05],
+  "percent": true,
+  "ci_multiplier": 2,
+  "show_controls": true,
+  "show_significance": true,
+  "held_out_label": "held_out_mean"
 }

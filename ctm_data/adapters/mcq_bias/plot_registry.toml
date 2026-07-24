@@ -1,0 +1,97 @@
+# Reusable presentation defaults. Experiment YAML and chart-ready JSON remain
+# authoritative for model identity, methods, controls, and training bias sets.
+
+[models."openai/gpt-oss-20b"]
+display_name = "OpenAI GPT OSS 20B"
+
+[models."gpt-oss-20b"]
+display_name = "OpenAI GPT OSS 20B"
+
+[biases.wrong_argument]
+display_name = "Distractor argument"
+
+[biases.suggested_answer]
+display_name = "Suggested answer"
+
+[biases.distractor_fact]
+display_name = "Distractor fact"
+
+[biases.post_hoc]
+display_name = "Post hoc"
+
+[biases.spurious_few_shot_squares]
+display_name = "Spurious few-shot"
+
+[biases.wrong_few_shot]
+display_name = "Wrong few-shot"
+
+[biases.held_out_mean]
+display_name = "Held-out avg."
+
+[biases.unbiased]
+display_name = "Held-out unbiased evaluation"
+
+[training_types.untrained]
+display_name = "Base"
+
+[training_types.rate-matching]
+display_name = "RMCT"
+
+[training_types.rate-matching-control]
+display_name = "RMCT Control"
+
+[training_types.bias-augmented-consistency]
+display_name = "BCT"
+
+[training_types.bias-augmented-consistency-control]
+display_name = "BCT Control"
+
+[training_types.act]
+display_name = "ACT"
+
+[training_types.act-control]
+display_name = "ACT Control"
+
+[training_types.attct]
+display_name = "AttCT"
+
+[training_types.attct-control]
+display_name = "AttCT Control"
+
+[training_types.mlpct]
+display_name = "MLPCT"
+
+[training_types.mlpct-control]
+display_name = "MLPCT Control"
+
+[methods.none]
+color = "#9aa0a6"
+
+[methods.bias_augmented_consistency]
+color = "#7aa7d9"
+
+[methods.rate_matching]
+color = "#8cc39a"
+
+[methods.act]
+color = "#d99a6c"
+
+[methods.attct]
+color = "#9e9ac8"
+
+[methods.mlpct]
+color = "#d58aaa"
+
+[ordering]
+training_types = [
+  "untrained",
+  "bias-augmented-consistency", "bias-augmented-consistency-control",
+  "rate-matching", "rate-matching-control",
+  "act", "act-control",
+  "attct", "attct-control",
+  "mlpct", "mlpct-control",
+]
+biases = [
+  "wrong_argument", "suggested_answer", "distractor_fact", "post_hoc",
+  "spurious_few_shot_squares", "wrong_few_shot", "held_out_mean", "unbiased",
+]

@@ -1,5 +1,5 @@
 {
-  "ylabel": "Towards-bias switch rate",
+  "ylabel": "Away-from-bias switch rate",
   "ylim": [0, 1.05],
   "percent": true,
   "ci_multiplier": 2,

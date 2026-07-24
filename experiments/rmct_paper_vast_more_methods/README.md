@@ -20,7 +20,7 @@ The concise specification is in [`experiment.yaml`](experiment.yaml). Its
 `experiment_factory` expands the condition and learning-rate matrix into the
 complete command plan. One invocation prepares the data, trains the thirty
 runs, evaluates every checkpoint and the base model, aggregates the results,
-and renders four Flint charts.
+and renders seven publication-style SVG charts from chart-ready JSON.
 
 ## Experimental design
 
@@ -62,11 +62,26 @@ The reports contain:
   questions for which a switch towards the biased answer was possible;
 - unconditional bias verbalisation over every successfully graded response;
 - bias verbalisation conditioned on a towards-bias switch; and
-- bias verbalisation conditioned on a total bias switch in either direction.
+- bias verbalisation conditioned on a total bias switch in either direction;
+- away-from-bias switch rate;
+- total switch rate; and
+- accuracy on the shared unbiased evaluation.
 
 The `mcq_bias` scorer calls the underlying verbalisation value
-`bias_acknowledged`. The conditional reports reuse saved sample scores and do
-not make additional grader calls.
+`bias_acknowledged`. Unfiltered reports use Inspect's stored means and standard
+errors. Conditional reports reuse saved sample scores, are marked as derived in
+the JSON, and do not make additional grader calls. Aggregation across datasets,
+learning rates, and held-out biases is sample-count weighted. Two-proportion
+tests against the untrained condition are computed before rendering and stored
+as `p_value` and `significance`; the renderer does not infer statistics.
+
+Additional report items may set `ratio: true` to emit percentage change from
+the configured untrained significance baseline. They may also replace the
+`given` shorthand with a declarative `where` predicate for arbitrary post-hoc
+conditioning. Chart recipes can enable `sample_labels`, override automatic
+model/training-bias faceting, and customize the publication theme. Common
+labels, ordering, and method colors come from the mcq-bias presentation TOML
+registry and remain overridable per chart.
 
 ## Reproduction boundary
 
@@ -82,15 +97,17 @@ a claim that the original experiment artifacts are byte-identical.
   `openrouter/google/gemma-4-31b-it` when the selected store is empty. Reusing a
   materialised store preserves its arguments; starting from an empty store
   creates a new frozen dataset and records its hashes.
-- The supplied reports use one binomial standard error. They do not implement
-  the paper's significance-marker tests.
+- The supplied reports prefer the exact metric and standard error recorded by
+  Inspect. Post-hoc conditional subsets necessarily use sample-derived standard
+  errors because Inspect has no aggregate for those subsets.
 - ACT, AttCT and MLPCT were not conditions in the referenced RMCT figure. Their
   inclusion tests additional CTM methods under the same experimental setting.
 
 ## Prerequisites
 
-Install the Python and JavaScript dependencies described in the repository
-README. The complete run requires:
+Install the Python dependencies described in the repository README. This
+experiment's publication renderer does not require Node or Flint. The complete
+run requires:
 
 - one 96 GB local GPU environment prepared with either the Vast.ai or Isambard
   launcher;
