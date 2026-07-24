@@ -2,10 +2,12 @@
 
 import sys
 import threading
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
+from ctm_data.adapters.mcq_bias.comparison import compile_experiment
 from scripts import run_experiment as experiment
 
 EXAMPLE = Path(__file__).parent.parent / "experiments" / "example_rlct.yaml"
@@ -18,9 +20,7 @@ WRONG_ARGUMENT_COMPARISON = (
     Path(__file__).parent.parent / "experiments" / "mcq_bias" / "wrong_argument_cross_bias" / "experiment.yaml"
 )
 BCT_BACKEND_COMPARISON = WRONG_ARGUMENT_COMPARISON.with_name("bct_backends.yaml")
-RMCT_HLE_COMPARISON = (
-    Path(__file__).parent.parent / "experiments" / "rmct_paper_vast_more_methods" / "experiment.yaml"
-)
+RMCT_HLE_COMPARISON = Path(__file__).parent.parent / "experiments" / "rmct_paper_vast_more_methods" / "experiment.yaml"
 RMCT_HLE_SMOKE = RMCT_HLE_COMPARISON.parent / "debug" / "smoke.yaml"
 
 
@@ -228,7 +228,7 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     for stage, name, command in planned:
         by_stage[stage].append((name, command))
 
-    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 30, 31, 8]
+    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 30, 31, 14]
     assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
     materialize_eval = dict(by_stage["data_preparation"])["evaluation-suite"]
     assert "ctm_data.adapters.mcq_bias.materialize_eval" in materialize_eval
@@ -236,14 +236,14 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     assert base_eval[base_eval.index("--model") + 1] == "hf/openai/gpt-oss-20b"
     assert all("--tinker-checkpoint" not in command for _, command in by_stage["evaluation"])
     assert all("--local-checkpoint" in command for _, command in by_stage["evaluation"][1:])
-    assert all(
-        '"generate_missing_arguments":false' in " ".join(command)
-        for _, command in by_stage["evaluation"]
-    )
+    assert all('"generate_missing_arguments":false' in " ".join(command) for _, command in by_stage["evaluation"])
     training = dict(by_stage["training"])
     for method in ("rate_matching_lr1", "bias_augmented_consistency_lr1", "act_lr1", "attct_lr1", "mlpct_lr1"):
         assert training[method][training[method].index("--backend") + 1] == "local"
-    assert training["bias_augmented_consistency_lr1"][training["bias_augmented_consistency_lr1"].index("--method") + 1] == "bct"
+    assert (
+        training["bias_augmented_consistency_lr1"][training["bias_augmented_consistency_lr1"].index("--method") + 1]
+        == "bct"
+    )
     assert training["act_lr1"][training["act_lr1"].index("--method") + 1] == "act"
     assert training["attct_lr1"][training["attct_lr1"].index("--method") + 1] == "attct"
     assert training["mlpct_lr1"][training["mlpct_lr1"].index("--method") + 1] == "mlpct"
@@ -259,7 +259,16 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     assert towards_verbalisation[towards_verbalisation.index("--where-metric") + 1] == "towards_bias_switch"
     total_verbalisation = analysis_commands["aggregate-bias-verbalised-given-total-bias-switch"]
     assert total_verbalisation[total_verbalisation.index("--metric") + 1] == "bias_acknowledged"
-    assert total_verbalisation[total_verbalisation.index("--where-metric") + 1] == "abs_switch"
+    assert '"metric":"abs_switch"' in total_verbalisation[total_verbalisation.index("--where") + 1]
+    assert '"op":"gt"' in total_verbalisation[total_verbalisation.index("--where") + 1]
+    towards = analysis_commands["aggregate-towards-bias-switch"]
+    assert towards[towards.index("--stderr") + 1] == "inspect"
+    assert towards[towards.index("--significance-baseline") + 1] == "untrained"
+    assert '"training_biases":["wrong_argument"]' in towards[towards.index("--metadata") + 1]
+    unbiased = analysis_commands["aggregate-unbiased-accuracy"]
+    assert unbiased[unbiased.index("--variant") + 1] == "unbiased"
+    assert "--held-out-exclude" not in unbiased
+    assert analysis_commands["render-towards-bias-switch"][1:4] == ["-m", "ctm_data.adapters.mcq_bias.plot", "--data"]
 
 
 def test_rmct_hle_yaml_is_a_concise_authored_spec():
@@ -268,6 +277,24 @@ def test_rmct_hle_yaml_is_a_concise_authored_spec():
     assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.comparison:compile_experiment"
     assert "training" not in source
     assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 180
+
+
+def test_rmct_report_recipe_can_request_ratio_output():
+    spec = deepcopy(experiment.load_experiment_source(RMCT_HLE_COMPARISON)["spec"])
+    spec["reports"]["items"] = [
+        {
+            "name": "towards-bias-switch-ratio",
+            "metric": "towards_bias_switch",
+            "chart": "switch",
+            "ratio": True,
+        }
+    ]
+
+    compiled = compile_experiment(name="ratio-test", spec=spec)
+    aggregation = next(item for item in compiled["analysis"] if item["name"].startswith("aggregate-"))
+
+    assert aggregation["args"]["ratio_baseline"] == "untrained"
+    assert aggregation["args"]["significance_baseline"] is None
 
 
 def test_rmct_hle_smoke_covers_every_condition_once_with_tiny_counts():
@@ -378,8 +405,7 @@ def test_runner_ignores_human_checkpoint_prose():
 
 def test_parallel_runner_assigns_one_process_per_gpu_and_preserves_stage_barrier(monkeypatch, tmp_path):
     config_path = tmp_path / "parallel.yaml"
-    config_path.write_text(
-        """
+    config_path.write_text("""
 name: parallel
 training:
   - name: first
@@ -391,8 +417,7 @@ evaluation:
     command: [eval, "${training.first.checkpoint}"]
   - name: eval-second
     command: [eval, "${training.second.checkpoint}"]
-""".strip()
-    )
+""".strip())
     monkeypatch.setattr(experiment, "output_state_path", lambda _: tmp_path / "outputs.json")
     training_barrier = threading.Barrier(2)
     calls = []

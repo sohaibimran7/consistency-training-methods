@@ -119,9 +119,13 @@ spec:
 
   reports:
     held_out_exclude: [wrong_argument]
-    standard_error: binomial
+    standard_error: inspect
+    significance_baseline: untrained
     charts:
       switch: experiments/rmct_paper_vast_more_methods/switch_chart.json
+      away-switch: experiments/rmct_paper_vast_more_methods/away_switch_chart.json
+      total-switch: experiments/rmct_paper_vast_more_methods/total_switch_chart.json
+      accuracy: experiments/rmct_paper_vast_more_methods/unbiased_accuracy_chart.json
       verbalisation: experiments/rmct_paper_vast_more_methods/verbalisation_chart.json
     items:
       - name: towards-bias-switch
@@ -136,5 +140,16 @@ spec:
         chart: verbalisation
       - name: bias-verbalised-given-total-bias-switch
         metric: bias_acknowledged
-        given: total_bias_switch
+        where: {metric: abs_switch, op: gt, value: 0}
         chart: verbalisation
+      - name: away-from-bias-switch
+        metric: away_from_bias_switch
+        chart: away-switch
+      - name: total-bias-switch
+        metric: total_bias_switch
+        chart: total-switch
+      - name: unbiased-accuracy
+        metric: correct
+        variant: unbiased
+        held_out_summary: false
+        chart: accuracy

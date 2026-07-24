@@ -56,6 +56,10 @@ dependencies:
 npm ci
 ```
 
+The publication-style mcq-bias renderer uses Matplotlib from the Python
+environment and does not require Node. Flint remains the compact quick-look
+path for ordinary declarative charts.
+
 Store credentials in a gitignored environment file. Relevant variables include
 `TINKER_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, and
 `WANDB_API_KEY`. Never place credentials in YAML files or inline JSON arguments.
@@ -345,6 +349,50 @@ LocalBackend LoRA and full-weight checkpoints use `--local-checkpoint file:///..
 reads the recorded base model from the checkpoint manifest, loads it through
 Inspect's Hugging Face provider, and applies either the PEFT adapter or the
 saved full-weight state.
+
+### MCQ-bias plotting boundary
+
+`ctm_data.adapters.mcq_bias.analysis` owns all statistical work and writes a
+chart-ready JSON array. For unfiltered task metrics it uses the mean and
+standard error stored by Inspect (`mean`/`stderr` or
+`nanmean`/`nanstderr`) when available. Conditional subsets are derived from
+sample scores and labelled as such. Task, dataset, replicate, and held-out
+pooling is sample-count weighted; pooled standard errors include both within-
+and between-component variance.
+
+Analysis recipes may use either the backwards-compatible
+`where_metric`/`where_value` equality filter or a declarative `where` predicate
+with `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `in`, `not_in`, `is_finite`, and
+`is_missing` comparisons composed with `all`, `any`, and `not`. Because Inspect
+does not have aggregates for arbitrary post-hoc subsets, these rows explicitly
+record `sample_conditional` as their estimate and stderr method. Passing a
+`ratio_baseline` produces percentage change from the matching baseline row and
+propagates the input standard errors with the ratio delta formula; the source
+metric, baseline estimate, denominator, and uncertainty methods remain in JSON.
+
+Each row carries the estimate, stderr, denominator, data provenance, model,
+prompt and training-regime metadata, method/control identity, and any
+precomputed significance result. `ctm_data.adapters.mcq_bias.plot` consumes
+only those rows plus a visual recipe. It adds publication layout—model panels,
+method-family spacing, outlined controls, trained/held-out bands, shared
+legend, `2 × stderr` error bars, and supplied significance markers—but performs
+no aggregation or inference. This boundary is suitable for Figures 2–10-style
+plots and also keeps the statistical JSON independently auditable.
+
+The renderer automatically facets multiple training-bias sets within each
+model. A recipe can override this with `facet: {rows: [...], columns: [...]}`
+using any chart-row fields. `sample_labels` accepts `false`, `true`/`n_scored`,
+or `n_total`. The `theme` object controls geometry, colors, font sizes, and
+Matplotlib rcParams. Python callers may additionally supply theme, facet, and
+bar-style callbacks; JSON recipes can name those callbacks as
+`package.module:function` when a project-specific display requires them.
+
+Reusable model, bias, training-type, method-color, and ordering defaults live
+in `ctm_data/adapters/mcq_bias/plot_registry.toml`. They are presentation
+metadata only: the experiment YAML and chart-ready rows remain authoritative
+for model identity, methods, controls, and training bias sets. Precedence is an
+explicit chart recipe, then the presentation registry, then row metadata and a
+generated label fallback.
 
 ## Outputs and observability
 
