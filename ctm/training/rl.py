@@ -958,6 +958,13 @@ class RLTrainer:
             except Exception:
                 pass
             raise
+        finally:
+            shutdown = getattr(self.backend, "shutdown", None)
+            if callable(shutdown):
+                try:
+                    shutdown()
+                except Exception:  # noqa: BLE001 — cleanup must not mask the training outcome
+                    _log.warning("Backend shutdown failed:\n%s", traceback.format_exc())
 
     async def _train_loop(
         self,

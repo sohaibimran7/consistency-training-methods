@@ -97,6 +97,10 @@ class FakeBackend:
         self.optim_lrs: list[float] = []
         self.kl_calls = 0
         self.checkpoints: list[str] = []
+        self.shutdown_calls = 0
+
+    def shutdown(self):
+        self.shutdown_calls += 1
 
     def setup(self, **kwargs):
         pass
@@ -211,6 +215,7 @@ class TestRLEndToEnd:
         assert backend.fb_loss_fns == ["ppo", "ppo"]
         assert len(backend.optim_lrs) == 2
         assert backend.kl_calls == 2  # kl_coef > 0 routes through the backend
+        assert backend.shutdown_calls == 1
         # real tinker datums with RL loss inputs
         datum = backend.fb_datums[0][0]
         assert {"advantages", "logprobs", "mask", "target_tokens"} <= set(datum.loss_fn_inputs)
