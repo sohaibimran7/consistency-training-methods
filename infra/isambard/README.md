@@ -6,10 +6,28 @@ Isambard and Vast.ai use the same `LocalBackend` implementation in
 ## One-time setup
 
 ```bash
-git clone <repo-url> ~/consistency-training-methods
-cd ~/consistency-training-methods
-bash infra/isambard/setup_env.sh     # uv venv + deps + peft + vllm (aarch64)
+mkdir -p "$PROJECTDIR/$USER"
+git clone https://github.com/sohaibimran7/consistency-training-methods.git \
+    "$PROJECTDIR/$USER/consistency-training-methods"
+cd "$PROJECTDIR/$USER/consistency-training-methods"
+bash infra/isambard/setup_env.sh     # uv venv + base deps + peft (aarch64)
 cp /path/to/.env .                   # grader provider keys; add WANDB_API_KEY only when W&B is enabled
+```
+
+The setup script places Hugging Face and uv caches under `$SCRATCHDIR/ctm`.
+Keep the checkout, virtual environment, logs, and durable artifacts under
+`$PROJECTDIR`; do not use the smaller home filesystem for model weights. The
+login-node step deliberately installs CPU PyTorch; the next step replaces it
+with the CUDA build selected for the allocated GH200.
+
+Finish the GPU-specific installation from an interactive allocation. This is
+required because `--torch-backend=auto` must see a GH200 to select the correct
+CUDA-enabled PyTorch and vLLM wheels:
+
+```bash
+srun --nodes=1 --gpus=1 --time=00:30:00 --pty /bin/bash --login
+cd "$PROJECTDIR/$USER/consistency-training-methods"
+bash infra/isambard/setup_gpu_env.sh
 ```
 
 Data is external to the repository. Copy each JSONL/manifest pair to an explicit
@@ -19,9 +37,10 @@ configuration.
 
 ## Launch a training run
 
-Configure the account, partition, and `REPO_DIR` values in
-`train_rlct.sbatch`. The batch launcher
-is non-interactive and supplies `-y`, so first review the identical run locally:
+The Clifton project login supplies the SLURM account association, and Isambard's
+default `workq` partition is used when no partition is specified. The launcher
+defaults `REPO_DIR` to `$PROJECTDIR/$USER/consistency-training-methods` and is
+non-interactive, so first review the identical run locally:
 
 ```bash
 python scripts/train_rlct.py --dry-run \
@@ -67,10 +86,10 @@ copy artifacts.
 ## Platform notes
 
 - **Architecture:** PyTorch and vLLM wheels must support AArch64.
-  `setup_env.sh` first attempts the standard package indexes. If vLLM cannot be
-  installed, use `--local-sampler hf` for diagnostic runs until a compatible
-  vLLM or NVIDIA NGC environment is available.
-- **Memory:** A GH200 node with 96 GB of HBM can accommodate gpt-oss-20b LoRA
+  `setup_gpu_env.sh` follows BriCS's supported vLLM 0.10.2 recipe and performs
+  the CUDA-dependent install only where a GH200 is visible. Use
+  `--local-sampler hf` for diagnostic runs until that step has passed.
+- **Memory:** A Phase 2 GH200 Superchip with 120 GB of HBM can accommodate gpt-oss-20b LoRA
   training and a colocated vLLM engine when
   `--local-gpu-mem-util 0.45` is used.
 - **Device count:** `LocalBackend` currently trains on one device and does not
