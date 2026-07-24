@@ -21,6 +21,7 @@ Notes / current limits (phase 1):
   paths use the ``file://`` scheme so eval runners can dispatch on it).
 """
 
+import asyncio
 import copy
 import fnmatch
 import json
@@ -159,23 +160,84 @@ def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Optio
 
 
 class LocalSamplerHandle:
-    """Samples from the backend's live model (policy) or its frozen base."""
+    """Samples from the backend's live model (policy) or its frozen base.
+
+    Concurrent coroutine calls are coalesced into one backend batch. This keeps
+    synchronous HF/vLLM generation off the event loop and lets vLLM schedule all
+    prompts together without making unsafe concurrent ``LLM.generate`` calls.
+    """
 
     def __init__(self, backend: "LocalBackend", use_base: bool):
         self._backend = backend
         self._use_base = use_base
+        self._pending: list[tuple[dict[str, Any], asyncio.Future]] = []
+        self._flush_task: asyncio.Task | None = None
 
     async def sample(
         self, prompt: Any, *, max_tokens: int, temperature: float, stop: Any, num_samples: int
     ) -> list[SampledSequence]:
-        return self._backend._sample(
-            prompt_tokens=list(prompt.to_ints()),
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stop=stop,
-            num_samples=num_samples,
-            use_base=self._use_base,
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self._pending.append(
+            (
+                {
+                    "prompt_tokens": list(prompt.to_ints()),
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stop": stop,
+                    "num_samples": num_samples,
+                },
+                future,
+            )
         )
+        if self._flush_task is None:
+            self._flush_task = loop.create_task(self._flush_pending())
+        return await future
+
+    async def _flush_pending(self) -> None:
+        # Give sibling tasks created by gather() one event-loop turn to enqueue.
+        await asyncio.sleep(0)
+        pending, self._pending = self._pending, []
+        try:
+            groups: dict[tuple[Any, ...], list[tuple[dict[str, Any], asyncio.Future]]] = {}
+            for request, future in pending:
+                stop_ids = tuple(token for token in (request["stop"] or []) if isinstance(token, int))
+                key = (
+                    request["max_tokens"],
+                    float(request["temperature"]),
+                    stop_ids,
+                    request["num_samples"],
+                )
+                groups.setdefault(key, []).append((request, future))
+
+            for group in groups.values():
+                first = group[0][0]
+                try:
+                    results = await asyncio.to_thread(
+                        self._backend._sample_batch,
+                        prompt_tokens_batch=[request["prompt_tokens"] for request, _ in group],
+                        max_tokens=first["max_tokens"],
+                        temperature=first["temperature"],
+                        stop=first["stop"],
+                        num_samples=first["num_samples"],
+                        use_base=self._use_base,
+                    )
+                    if len(results) != len(group):
+                        raise RuntimeError(
+                            f"local sampler returned {len(results)} prompt results for {len(group)} requests"
+                        )
+                except BaseException as exc:
+                    for _, future in group:
+                        if not future.done():
+                            future.set_exception(exc)
+                else:
+                    for result, (_, future) in zip(results, group):
+                        if not future.done():
+                            future.set_result(result)
+        finally:
+            self._flush_task = None
+            if self._pending:
+                self._flush_task = asyncio.get_running_loop().create_task(self._flush_pending())
 
 
 class LocalBackend:
@@ -394,17 +456,37 @@ class LocalBackend:
         use_base: bool,
     ) -> list[SampledSequence]:
         """Route sampling to the configured engine (vLLM if set, else HF generate)."""
+        return self._sample_batch(
+            prompt_tokens_batch=[prompt_tokens],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop,
+            num_samples=num_samples,
+            use_base=use_base,
+        )[0]
+
+    def _sample_batch(
+        self,
+        *,
+        prompt_tokens_batch: Sequence[Sequence[int]],
+        max_tokens: int,
+        temperature: float,
+        stop: Any,
+        num_samples: int,
+        use_base: bool,
+    ) -> list[list[SampledSequence]]:
+        """Route a prompt batch to one vLLM/HF generation call."""
         if self._vllm is not None:
-            return self._vllm.sample(
-                prompt_tokens,
+            return self._vllm.sample_batch(
+                [list(tokens) for tokens in prompt_tokens_batch],
                 max_tokens=max_tokens,
                 temperature=temperature,
                 stop=stop,
                 num_samples=num_samples,
                 use_base=use_base,
             )
-        return self._generate(
-            prompt_tokens=prompt_tokens,
+        return self._generate_batch(
+            prompt_tokens_batch=prompt_tokens_batch,
             max_tokens=max_tokens,
             temperature=temperature,
             stop=stop,
@@ -422,6 +504,27 @@ class LocalBackend:
         num_samples: int,
         use_base: bool,
     ) -> list[SampledSequence]:
+        return self._generate_batch(
+            prompt_tokens_batch=[prompt_tokens],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop,
+            num_samples=num_samples,
+            use_base=use_base,
+        )[0]
+
+    def _generate_batch(
+        self,
+        *,
+        prompt_tokens_batch: Sequence[Sequence[int]],
+        max_tokens: int,
+        temperature: float,
+        stop: Any,
+        num_samples: int,
+        use_base: bool,
+    ) -> list[list[SampledSequence]]:
+        if not prompt_tokens_batch:
+            return []
         model = self._model_for(use_base=use_base)
         was_training = model.training
         model.eval()
@@ -432,8 +535,22 @@ class LocalBackend:
         if isinstance(configured_eos, (list, tuple)):
             eos_ids.extend(t for t in configured_eos if isinstance(t, int))
         eos_ids = list(dict.fromkeys(eos_ids)) or None
-        input_ids = torch.tensor([prompt_tokens], dtype=torch.long, device=self.device)
-        attention_mask = torch.ones_like(input_ids)
+        max_prompt_len = max(len(tokens) for tokens in prompt_tokens_batch)
+        if max_prompt_len == 0:
+            raise ValueError("sampling prompts must contain at least one token")
+        pad_token_id = eos_ids[0] if eos_ids else 0
+        input_ids = torch.full(
+            (len(prompt_tokens_batch), max_prompt_len),
+            pad_token_id,
+            dtype=torch.long,
+            device=self.device,
+        )
+        attention_mask = torch.zeros_like(input_ids)
+        for index, tokens in enumerate(prompt_tokens_batch):
+            if not tokens:
+                raise ValueError("sampling prompts must contain at least one token")
+            input_ids[index, -len(tokens) :] = torch.tensor(tokens, dtype=torch.long, device=self.device)
+            attention_mask[index, -len(tokens) :] = 1
         try:
             with torch.no_grad():
                 ctx = self._base_ctx() if use_base else _nullcontext()
@@ -446,7 +563,7 @@ class LocalBackend:
                         max_new_tokens=max_tokens,
                         num_return_sequences=num_samples,
                         eos_token_id=eos_ids,
-                        pad_token_id=eos_ids[0] if eos_ids else 0,
+                        pad_token_id=pad_token_id,
                         return_dict_in_generate=True,
                         output_scores=True,
                     )
@@ -454,23 +571,26 @@ class LocalBackend:
             if was_training:
                 model.train()
 
-        prompt_len = input_ids.shape[1]
-        sequences = []
-        for s in range(out.sequences.shape[0]):
-            tokens: list[int] = []
-            logprobs: list[float] = []
-            for t, step_scores in enumerate(out.scores):
-                pos = prompt_len + t
-                if pos >= out.sequences.shape[1]:
-                    break
-                token = int(out.sequences[s, pos])
-                lp = torch.log_softmax(step_scores[s].float(), dim=-1)[token]
-                tokens.append(token)
-                logprobs.append(float(lp))
-                if eos_ids and token in eos_ids:
-                    break
-            sequences.append(SampledSequence(tokens=tokens, logprobs=logprobs))
-        return sequences
+        batches: list[list[SampledSequence]] = []
+        for prompt_index in range(len(prompt_tokens_batch)):
+            sequences: list[SampledSequence] = []
+            for sample_index in range(num_samples):
+                sequence_index = prompt_index * num_samples + sample_index
+                tokens: list[int] = []
+                logprobs: list[float] = []
+                for step, step_scores in enumerate(out.scores):
+                    position = max_prompt_len + step
+                    if position >= out.sequences.shape[1]:
+                        break
+                    token = int(out.sequences[sequence_index, position])
+                    logprob = torch.log_softmax(step_scores[sequence_index].float(), dim=-1)[token]
+                    tokens.append(token)
+                    logprobs.append(float(logprob))
+                    if eos_ids and token in eos_ids:
+                        break
+                sequences.append(SampledSequence(tokens=tokens, logprobs=logprobs))
+            batches.append(sequences)
+        return batches
 
     # ── training ─────────────────────────────────────────────────────────
 

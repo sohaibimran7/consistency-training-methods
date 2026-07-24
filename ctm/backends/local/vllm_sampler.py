@@ -144,9 +144,7 @@ class VLLMSampler:
             use_tqdm=False,
         )
         if len(outputs) != len(prompt_tokens_batch):
-            raise RuntimeError(
-                f"vLLM returned {len(outputs)} prompt results for a batch of {len(prompt_tokens_batch)}"
-            )
+            raise RuntimeError(f"vLLM returned {len(outputs)} prompt results for a batch of {len(prompt_tokens_batch)}")
         return [self._extract_sequences(output) for output in outputs]
 
     @staticmethod

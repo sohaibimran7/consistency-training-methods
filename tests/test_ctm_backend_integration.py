@@ -203,6 +203,29 @@ class TestRLEndToEnd:
             )
         return final, backend, trainer, logger
 
+    def test_preloop_failure_still_shuts_down_backend(self, tmp_path):
+        config = RLConfig(
+            experiment_name="itest",
+            run_name="preloop-failure",
+            lora=LoRAConfig(rank=4, seed=0),
+            optimizer=AdamConfig(learning_rate=1e-4),
+            reference_rate=RateEstimationConfig(perturbation_indices=[0], n_rollouts=2),
+            training=TrainingSamplingConfig(perturbation_indices=[1], n_rollouts_for_rate=2),
+            loop=TrainingLoopConfig(batch_size=1, n_epochs=1),
+            generation=GenerationConfig(max_new_tokens=4, temperature=0.7),
+            checkpoint=CheckpointConfig(),
+            log_base_dir=str(tmp_path / "logs"),
+        )
+        backend = FakeBackend()
+        trainer = RLTrainer(config=config, reward_function=ConsistencyReward(), backend=backend)
+        trainer.setup_done = True
+
+        with patch("ctm.training.rl.setup_logging", side_effect=RuntimeError("logger failed")):
+            with pytest.raises(RuntimeError, match="logger failed"):
+                asyncio.run(trainer.train([], [], _trait))
+
+        assert backend.shutdown_calls == 1
+
     def test_full_loop_trains_and_checkpoints(self, tmp_path):
         final, backend, _, _ = self._run(tmp_path)
         assert final == "fake://checkpoint/itest_rl"

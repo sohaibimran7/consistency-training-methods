@@ -19,6 +19,7 @@ from tinker_cookbook.supervised.common import datum_from_model_input_weights
 from ctm.backends.local.engine import (
     HAS_PEFT,
     LocalBackend,
+    LocalSamplerHandle,
     _lora_target_module_names,
     _lora_target_parameter_names,
 )
@@ -210,6 +211,37 @@ class TestLocalSampler:
         backend = make_backend()
         h = asyncio.run(backend.refresh_policy_sampler("x"))
         assert isinstance(h, type(backend.policy_sampler("x")))
+
+    def test_concurrent_calls_are_coalesced_into_one_backend_batch(self):
+        class BatchBackend:
+            def __init__(self):
+                self.calls = []
+
+            def _sample_batch(self, **kwargs):
+                self.calls.append(kwargs)
+                return [[] for _ in kwargs["prompt_tokens_batch"]]
+
+        backend = BatchBackend()
+        handle = LocalSamplerHandle(backend, use_base=True)
+
+        async def sample_all():
+            return await asyncio.gather(
+                *(
+                    handle.sample(
+                        types.ModelInput.from_ints(tokens=[token]),
+                        max_tokens=8,
+                        temperature=0.7,
+                        stop=[0],
+                        num_samples=1,
+                    )
+                    for token in (1, 2, 3, 4)
+                )
+            )
+
+        assert asyncio.run(sample_all()) == [[], [], [], []]
+        assert len(backend.calls) == 1
+        assert backend.calls[0]["prompt_tokens_batch"] == [[1], [2], [3], [4]]
+        assert backend.calls[0]["use_base"] is True
 
 
 class TestLocalCheckpoint:
