@@ -11,10 +11,10 @@
 # This job is non-interactive and supplies -y below. Run the identical command
 # with scripts/train_rlct.py --dry-run and obtain approval before submitting.
 #
-# EDIT-ME before first use: account, partition, time, and REPO_DIR.
+# The project association and default workq partition come from the Clifton
+# project login. Override time or REPO_DIR at submission time when needed.
 #SBATCH --job-name=rlct-local
-#SBATCH --account=EDIT-ME            # your Isambard project code
-#SBATCH --partition=EDIT-ME          # GH200 partition on your allocation
+#SBATCH --nodes=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-gpu=16
 #SBATCH --time=12:00:00
@@ -22,7 +22,13 @@
 
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-$HOME/consistency-training-methods}"
+if [[ -z "${REPO_DIR:-}" ]]; then
+    if [[ -n "${PROJECTDIR:-}" ]]; then
+        REPO_DIR="$PROJECTDIR/$USER/consistency-training-methods"
+    else
+        REPO_DIR="$HOME/consistency-training-methods"
+    fi
+fi
 cd "$REPO_DIR"
 
 # Isambard-AI is module-based; load your verified CUDA stack here if the venv's
@@ -30,7 +36,15 @@ cd "$REPO_DIR"
 # module load ...
 
 source .venv/bin/activate
-export HF_HOME="${HF_HOME:-$REPO_DIR/.hf_cache}"   # keep model downloads on project storage
+if [[ -z "${HF_HOME:-}" ]]; then
+    if [[ -n "${SCRATCHDIR:-}" ]]; then
+        HF_HOME="$SCRATCHDIR/ctm/huggingface"
+    else
+        HF_HOME="$REPO_DIR/.hf_cache"
+    fi
+fi
+export HF_HOME
+mkdir -p "$HF_HOME"
 
 srun python scripts/train_rlct.py \
     --backend local \

@@ -12,24 +12,43 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."   # repository root
 
-# uv (static binary, works on aarch64)
-if ! command -v uv >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+# Keep downloads and package caches off the smaller home filesystem when the
+# Isambard storage variables are available.
+if [[ -n "${SCRATCHDIR:-}" ]]; then
+    export HF_HOME="${HF_HOME:-$SCRATCHDIR/ctm/huggingface}"
+    export UV_CACHE_DIR="${UV_CACHE_DIR:-$SCRATCHDIR/ctm/uv-cache}"
+    export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+    mkdir -p "$HF_HOME" "$UV_CACHE_DIR"
+fi
+
+# Login nodes are cgroup-limited. Keep wheel extraction conservative so large
+# CUDA packages do not exhaust the session while the environment is created.
+export UV_CONCURRENT_BUILDS="${UV_CONCURRENT_BUILDS:-1}"
+export UV_CONCURRENT_DOWNLOADS="${UV_CONCURRENT_DOWNLOADS:-4}"
+export UV_CONCURRENT_INSTALLS="${UV_CONCURRENT_INSTALLS:-1}"
+
+# Isambard's supported vLLM recipe is tested with this uv release.
+UV_VERSION="${UV_VERSION:-0.8.16}"
+if ! command -v uv >/dev/null 2>&1 || [[ "$(uv --version)" != "uv $UV_VERSION" ]]; then
+    curl -LsSf "https://astral.sh/uv/$UV_VERSION/install.sh" | sh
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-uv venv --python 3.12 || uv venv   # use the system Python if 3.12 is unavailable
+if [[ ! -x .venv/bin/python ]]; then
+    uv venv --python 3.12 || uv venv   # use the system Python if 3.12 is unavailable
+fi
 
 # Complete repository environment (the top-level file includes both layers).
-uv pip install -r requirements.txt
+# Use CPU PyTorch on the login node; setup_gpu_env.sh replaces it with the
+# compatible CUDA build after uv can see the allocated GH200.
+uv pip install -r requirements.txt --torch-backend=cpu
 uv pip install -e . --no-deps
 uv run python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 
-# vLLM: aarch64 wheels exist but are version-sensitive on GH200 — install last and
-# verify. If the generic wheel fails, use the NGC pytorch container or a source build.
-uv pip install vllm || echo "WARNING: vllm install failed — HF sampler (--local-sampler hf) still works; fix vllm before production runs."
-
 echo
-echo "Sanity check:"
+echo "Login-node sanity check:"
 uv run python -c "import torch; print('torch', torch.__version__, 'cuda:', torch.cuda.is_available())"
 uv run python -c "import ctm.backends.local.engine as e; print('LocalBackend importable, peft:', e.HAS_PEFT)"
+echo
+echo "Base environment installed. Install and validate the Isambard-supported vLLM stack"
+echo "inside an approved GPU allocation with: bash infra/isambard/setup_gpu_env.sh"
