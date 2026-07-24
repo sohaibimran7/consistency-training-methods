@@ -59,6 +59,9 @@ def find_content_token_boundary(formatted_str: str, content_text: str, tokenizer
             start_index — index of first token that belongs to content_text
             content_len — number of tokens that span content_text
     """
+    if not isinstance(content_text, str) or not content_text.strip():
+        raise ValueError("content_text must be a non-empty string")
+
     # Try exact match first, then stripped (chat templates sometimes trim whitespace)
     idx = formatted_str.find(content_text)
     if idx == -1:
@@ -82,14 +85,33 @@ def find_content_token_boundary(formatted_str: str, content_text: str, tokenizer
     # the tokenizer fuses the last char(s) of the prefix with the first char(s)
     # of content_text into a single token — that merged token partially covers
     # the content region and must be included.
-    start_index = next(i for i, (tok_s, tok_e) in enumerate(offsets) if tok_e > content_char_start)
+    start_index = next(
+        (i for i, (_tok_s, tok_e) in enumerate(offsets) if tok_e > content_char_start),
+        None,
+    )
+    if start_index is None:
+        raise ValueError("tokenizer produced no token overlapping content_text")
     # First token whose start >= content_char_end (i.e. fully past the content)
     end_index = next((i for i, (tok_s, tok_e) in enumerate(offsets) if tok_s >= content_char_end), len(token_ids))
-    return token_ids, start_index, end_index - start_index
+    content_len = end_index - start_index
+    if content_len <= 0:
+        raise ValueError("content_text aligned to an empty token window")
+    return token_ids, start_index, content_len
 
 
 def _prompt_messages(messages: list[dict]) -> list[dict]:
     """Messages up to (and including) the last user turn — consistency training is prompt-only."""
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("prompt messages must be a non-empty list")
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            raise ValueError(f"prompt message {index} must be an object")
+        role = message.get("role")
+        content = message.get("content")
+        if not isinstance(role, str) or not role.strip():
+            raise ValueError(f"prompt message {index} must have a non-empty string role")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError(f"prompt message {index} must have non-empty string content")
     for i in range(len(messages) - 1, -1, -1):
         if messages[i].get("role") == "user":
             return messages[: i + 1]
@@ -131,10 +153,10 @@ def build_consistency_datum(
     reference_prompt = _prompt_messages(reference_messages)
     variant_prompt = _prompt_messages(variant_messages)
     if alignment_text_field is None:
-        content = str(reference_prompt[-1]["content"])
+        content = reference_prompt[-1]["content"]
     else:
         content = sample.get(alignment_text_field)
-        if not isinstance(content, str) or not content:
+        if not isinstance(content, str) or not content.strip():
             raise ValueError(
                 f"consistency sample needs non-empty string {alignment_text_field!r} for explicit alignment"
             )

@@ -91,6 +91,8 @@ class FakeSampler:
 class FakeBackend:
     """In-memory TrainingBackend that records every call."""
 
+    renderer_source = "tinker"
+
     def __init__(self):
         self.fb_datums: list[list] = []
         self.fb_loss_fns: list[str] = []

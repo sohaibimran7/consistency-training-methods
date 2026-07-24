@@ -83,6 +83,15 @@ def test_prepare_setting_instance_preflights_prompt_schema_without_mutating_data
     assert rows == [{"id": 0}]
 
 
+def test_prepare_setting_instance_rejects_blank_prompt_content():
+    setting = _Setting()
+    blank = lambda _row: {"messages": [{"role": "user", "content": "   "}]}  # noqa: E731
+    setting.perturbations = lambda: [blank, blank]
+    setting.training_perturbation_indices = lambda: [1]
+    with pytest.raises(TypeError, match="non-empty string role/content"):
+        prepare_setting_instance(setting)
+
+
 def test_setting_run_metadata_is_serializable(tmp_path):
     setting = _Setting()
     setting.run_metadata = lambda: {"data_path": tmp_path / "train.jsonl"}

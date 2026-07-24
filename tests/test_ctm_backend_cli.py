@@ -21,7 +21,9 @@ class TestBackendCLI:
     def test_default_is_tinker_and_builds_tinker_backend(self):
         args = parse([])
         assert args.backend == "tinker"
-        assert isinstance(build_backend(args), TinkerBackend)
+        backend = build_backend(args)
+        assert isinstance(backend, TinkerBackend)
+        assert backend.renderer_source == "tinker"
         assert "tinker" in describe_backend(args)
 
     def test_local_builds_localbackend_with_options(self):
@@ -45,6 +47,7 @@ class TestBackendCLI:
         assert backend.dtype == torch.float32
         assert backend.sampler == "hf"
         assert backend.use_lora is True
+        assert backend.renderer_source == "hf"
         assert backend.vllm_options == {"gpu_memory_utilization": 0.3}
         assert "local" in describe_backend(args) and "hf" in describe_backend(args)
 

@@ -37,7 +37,7 @@ def read_verified_artifact_manifest(
     if not sidecar.is_file():
         raise ArtifactManifestError(f"missing immutable artifact manifest: {sidecar}")
     try:
-        manifest = json.loads(sidecar.read_text())
+        manifest = json.loads(sidecar.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ArtifactManifestError(f"invalid artifact manifest {sidecar}: {exc}") from exc
     if not isinstance(manifest, dict):

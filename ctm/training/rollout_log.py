@@ -43,7 +43,7 @@ class RolloutLogger:
         index_path = self.directory / INDEX_NAME
         if index_path.exists():  # resumed run: extend the existing index
             try:
-                self._index = json.loads(index_path.read_text()).get("steps", [])
+                self._index = json.loads(index_path.read_text(encoding="utf-8")).get("steps", [])
             except (json.JSONDecodeError, OSError):
                 self._index = []
 
@@ -75,5 +75,8 @@ class RolloutLogger:
             }
         )
         self._index.sort(key=lambda e: e["step"])
-        (self.directory / INDEX_NAME).write_text(json.dumps({"steps": self._index}, indent=1))
+        (self.directory / INDEX_NAME).write_text(
+            json.dumps({"steps": self._index}, indent=1),
+            encoding="utf-8",
+        )
         return path

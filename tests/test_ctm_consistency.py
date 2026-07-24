@@ -101,6 +101,11 @@ class TestJSDAttentionConsistencyLoss:
         with pytest.raises(ValueError, match="output_attentions"):
             JSDAttentionConsistencyLoss()(SimpleNamespace(attentions=None), SimpleNamespace(attentions=None), **IDX)
 
+    def test_rejects_empty_alignment_instead_of_returning_nan(self):
+        clean, adv = paired_attentions()
+        with pytest.raises(ValueError, match="non-empty aligned content window"):
+            JSDAttentionConsistencyLoss()(clean, adv, **{**IDX, "clean_len": 0})
+
 
 class TestActivationConsistencyLoss:
     def test_zero_on_matching_suffix_ignores_embedding_layer(self):
@@ -127,6 +132,11 @@ class TestActivationConsistencyLoss:
         out = ActivationConsistencyLoss()(clean, adv, start_index=0, clean_start_index=0, clean_len=6, match_len=3)
         assert out["match_len"] == 3
         assert out["loss"].item() == pytest.approx(0.0, abs=1e-9)
+
+    def test_zero_match_does_not_silently_change_to_content_alignment(self):
+        clean, adv = paired_hidden_states()
+        with pytest.raises(ValueError, match="no matching token suffix"):
+            ActivationConsistencyLoss()(clean, adv, **{**IDX, "match_len": 0})
 
 
 class TestMLPConsistencyLoss:
@@ -295,6 +305,11 @@ class TestConsistencyData:
             build_consistency_datum(tok, {"messages": []})
         datums, skipped = build_consistency_datums(tok, [sample(), sample(biased="the answer is five .")])
         assert len(datums) == 1 and skipped == 1
+
+    @pytest.mark.parametrize("clean", ["", "   "])
+    def test_empty_reference_content_is_rejected(self, clean):
+        with pytest.raises(ValueError, match="non-empty string content"):
+            build_consistency_datum(word_tokenizer(), sample(biased=clean, clean=clean))
 
 
 # ── LocalBackend integration ─────────────────────────────────────────────────

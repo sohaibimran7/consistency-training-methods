@@ -107,7 +107,7 @@ def parse_json_object(value: str | None, *, label: str) -> dict:
     if not value:
         return {}
     candidate = Path(value).expanduser()
-    text = candidate.read_text() if candidate.is_file() else value
+    text = candidate.read_text(encoding="utf-8") if candidate.is_file() else value
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:

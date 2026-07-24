@@ -68,7 +68,7 @@ def load_experiment_source(path: str | Path) -> dict[str, Any]:
 
     source = Path(path)
     try:
-        value = yaml.safe_load(source.read_text())
+        value = yaml.safe_load(source.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise ExperimentConfigError(f"invalid YAML in {source}: {exc}") from exc
     if not isinstance(value, dict):
@@ -377,7 +377,7 @@ def validate_resolved_plan(config: Mapping[str, Any]) -> tuple[Path, str]:
     path = resolved_plan_path(config)
     content = resolved_plan_text(config)
     digest = hashlib.sha256(content.encode()).hexdigest()
-    if path.exists() and path.read_text() != content:
+    if path.exists() and path.read_text(encoding="utf-8") != content:
         raise ExperimentConfigError(
             f"resolved plan differs from {path}. Use a new experiment name, or move the existing "
             "experiment log directory to an archive before rerunning."
@@ -392,7 +392,7 @@ def save_resolved_plan(config: Mapping[str, Any]) -> tuple[Path, str]:
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".yaml.tmp")
-        temporary.write_text(resolved_plan_text(config))
+        temporary.write_text(resolved_plan_text(config), encoding="utf-8")
         temporary.replace(path)
     return path, digest
 
@@ -404,7 +404,7 @@ def load_output_context(config: Mapping[str, Any]) -> dict[str, str]:
     if not path.exists():
         return {}
     try:
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ExperimentConfigError(f"invalid experiment output state {path}: {exc}") from exc
     if state.get("schema_version") != OUTPUT_SCHEMA_VERSION or state.get("experiment") != config["name"]:
@@ -438,7 +438,7 @@ def save_training_checkpoint(config: Mapping[str, Any], name: str, checkpoint: s
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(path)
 
 

@@ -5,6 +5,8 @@ build/
 node_modules/
 *.egg-info/
 logs/
+artifacts/
+figures/
 # Dataset/artifact payloads stay local; adapter code is tracked.
 ctm_data/*
 !ctm_data/__init__.py

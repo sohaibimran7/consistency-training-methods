@@ -106,7 +106,7 @@ def load_and_combine(
     all_file_samples: list[list[dict]] = []
     for path, limit in file_specs:
         samples = []
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             for i, line in enumerate(f):
                 if limit is not None and i >= limit:
                     break

@@ -68,6 +68,7 @@ class _TinkerPendingOptimStep:
 class TinkerBackend:
     """TrainingBackend implementation on the Tinker service (LoRA training)."""
 
+    renderer_source = "tinker"
     policy_samplers_are_snapshots = True
 
     def __init__(self, service_client: Optional[tinker.ServiceClient] = None):

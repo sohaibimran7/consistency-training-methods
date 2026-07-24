@@ -66,6 +66,11 @@ def _jsd(p: torch.Tensor, q: torch.Tensor, eps: float = 1e-9) -> torch.Tensor:
 
     Bounded in [0, log 2], symmetric, always finite.
     """
+    if p.shape != q.shape:
+        raise ValueError(f"JSD inputs must have the same shape, got {p.shape} and {q.shape}")
+    if p.numel() == 0:
+        raise ValueError("JSD inputs must contain at least one probability")
+
     m = 0.5 * (p + q)
     log_m = torch.clamp(m, min=eps).log()
     log_p = torch.clamp(p, min=eps).log()
@@ -161,6 +166,10 @@ class JSDAttentionConsistencyLoss(ConsistencyLoss):
             raise ValueError(
                 "Model outputs must include attentions (output_attentions=True, eager attention implementation)."
             )
+        if clean_len <= 0:
+            raise ValueError("AttCT requires a non-empty aligned content window")
+        if start_index < 0 or clean_start_index < 0:
+            raise ValueError("AttCT alignment indices must be non-negative")
 
         total_loss = torch.tensor(0.0, device=clean_outputs.attentions[0].device)
         layer_losses = []
@@ -168,6 +177,13 @@ class JSDAttentionConsistencyLoss(ConsistencyLoss):
         end_index = start_index + clean_len
         clean_end_index = clean_start_index + clean_len
         layer_indices = _resolve_layer_indices(self.layer_selection, num_layers)
+        clean_seq_len = clean_outputs.attentions[0].shape[-1]
+        adv_seq_len = adv_outputs.attentions[0].shape[-1]
+        if clean_end_index > clean_seq_len or end_index > adv_seq_len:
+            raise ValueError(
+                "AttCT aligned content window exceeds model output lengths: "
+                f"clean_end={clean_end_index}/{clean_seq_len}, variant_end={end_index}/{adv_seq_len}"
+            )
 
         for layer_idx, (clean_att, adv_att) in enumerate(zip(clean_outputs.attentions, adv_outputs.attentions)):
             if layer_idx not in layer_indices:
@@ -258,8 +274,16 @@ class ActivationConsistencyLoss(ConsistencyLoss):
         layer_indices = _resolve_layer_indices(self.layer_selection, num_hs, first=1)
 
         # Pick the matching window: longest matching suffix (paper-correct) when
-        # provided, else the content-body window.
-        if match_len is not None and match_len > 0:
+        # provided, else the content-body window for legacy/direct callers. A
+        # measured zero suffix is not equivalent to a missing measurement: fail
+        # loudly instead of silently changing the ACT objective.
+        if match_len is not None:
+            if match_len <= 0:
+                raise ValueError("ACT found no matching token suffix; refusing to fall back to content alignment")
+            clean_seq_len = clean_outputs.hidden_states[0].shape[1]
+            adv_seq_len = adv_outputs.hidden_states[0].shape[1]
+            if match_len > min(clean_seq_len, adv_seq_len):
+                raise ValueError(f"ACT match_len={match_len} exceeds sequence lengths {clean_seq_len}/{adv_seq_len}")
             clean_start = clean_outputs.hidden_states[0].shape[1] - match_len
             adv_start = adv_outputs.hidden_states[0].shape[1] - match_len
             window_len = match_len
@@ -269,9 +293,7 @@ class ActivationConsistencyLoss(ConsistencyLoss):
             window_len = clean_len
 
         if window_len <= 0:
-            # No positions to compare — return a zero loss connected to the graph.
-            zero_loss = adv_outputs.hidden_states[-1].sum() * 0.0
-            return {"loss": zero_loss, "layer_losses": [], "mean_layer_loss": 0.0, "num_layers_used": 0, "match_len": 0}
+            raise ValueError("ACT requires a non-empty aligned token window")
 
         total_loss = torch.tensor(0.0, device=clean_outputs.hidden_states[0].device)
         layer_losses = []
@@ -362,6 +384,10 @@ class MLPConsistencyLoss(ConsistencyLoss):
     ) -> dict:
         if clean_mlp_states is None or adv_mlp_states is None:
             raise ValueError("MLPConsistencyLoss requires clean_mlp_states and adv_mlp_states.")
+        if clean_len <= 0:
+            raise ValueError("MLPCT requires a non-empty aligned content window")
+        if start_index < 0 or clean_start_index < 0:
+            raise ValueError("MLPCT alignment indices must be non-negative")
 
         num_layers = len(clean_mlp_states)
         layer_indices = _resolve_layer_indices(self.layer_selection, num_layers)

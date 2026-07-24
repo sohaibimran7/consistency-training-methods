@@ -40,7 +40,7 @@ def scan_manifests(logs_root: str | Path) -> dict[str, dict]:
     found: dict[str, dict] = {}
     for path in sorted(logs_root.glob(f"**/{MANIFEST_NAME}")):
         try:
-            manifest = json.loads(path.read_text())
+            manifest = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         if "kind" not in manifest or "config" not in manifest:

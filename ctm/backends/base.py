@@ -18,7 +18,7 @@ everyone). A local backend translates datums to tensors internally.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Literal, Optional, Protocol, Sequence, runtime_checkable
 
 import torch
 
@@ -76,6 +76,9 @@ class SamplerHandle(Protocol):
 @runtime_checkable
 class TrainingBackend(Protocol):
     """Everything a training loop needs from the compute substrate."""
+
+    renderer_source: Literal["tinker", "hf"]
+    """Authority used to render/tokenize model chat inputs."""
 
     policy_samplers_are_snapshots: bool
     """Whether an existing policy sampler stays frozen after optimizer updates."""

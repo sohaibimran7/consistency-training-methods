@@ -51,6 +51,15 @@ def test_invalid_native_rows_fail_at_the_file_and_line(tmp_path):
         load_paths([path], n_datapoints=1)
 
 
+def test_empty_message_content_fails_during_loading(tmp_path):
+    row = _frozen_row()
+    row["biased_messages"][0]["content"] = ""
+    path = _write_rows(tmp_path / "empty-message.jsonl", [row])
+
+    with pytest.raises(ValueError, match="non-empty string role/content"):
+        load_paths([path], n_datapoints=1)
+
+
 def test_are_you_sure_fails_until_multiturn_training_is_implemented(tmp_path):
     path = _write_rows(
         tmp_path / "are_you_sure.jsonl",
