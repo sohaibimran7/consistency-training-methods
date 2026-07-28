@@ -58,6 +58,7 @@ spec:
     - {name: rate-matching-control, method: rate_matching, control: true}
     - {name: bias-augmented-consistency, method: bias_augmented_consistency}
     - {name: bias-augmented-consistency-control, method: bias_augmented_consistency, control: true}
+    - {name: opct, method: opct}
     - {name: act, method: act}
     - {name: attct, method: attct}
     - {name: mlpct, method: mlpct}
@@ -85,6 +86,21 @@ spec:
         layer_weights: uniform
         distance_metric: cosine
         normalize: false
+
+  opct:
+    learning_rates:
+      - {name: "5e-6", value: 0.000005}
+    batch_size: 1
+    gradient_accumulation_steps: 1
+    epochs: 1
+    rollouts_per_prompt: 2
+    temperature: 0.7
+    max_new_tokens: 512
+    learning_rate_schedule: constant
+    kl_coefficient: 2.0
+    kl_discount_factor: 0.9
+    loss: importance_sampling
+    checkpoint_every: 1
 
   rate_matching:
     datapoints: 2

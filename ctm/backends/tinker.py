@@ -6,6 +6,7 @@ the cookbook helper, and checkpoint save. Construction is lazy (no ServiceClient
 until ``setup()``), so importing/instantiating never needs credentials.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -176,6 +177,49 @@ class TinkerBackend:
             kl_penalty_coef=kl_coef,
             kl_discount_factor=kl_discount_factor,
         )
+
+    async def score_reference_completions(
+        self,
+        reference_prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+    ) -> list[list[float]]:
+        """Score student continuations under the frozen base on reference prompts."""
+
+        if len(reference_prompts) != len(completion_tokens):
+            raise ValueError(
+                "reference_prompts and completion_tokens must have the same length, got "
+                f"{len(reference_prompts)} and {len(completion_tokens)}"
+            )
+        self.base_sampler()  # ensure the raw client used by compute_logprobs exists
+        assert self._base_sampling_client is not None
+
+        prompt_lengths: list[int] = []
+        full_inputs = []
+        for index, (prompt, completion) in enumerate(zip(reference_prompts, completion_tokens)):
+            prompt_tokens = list(prompt.to_ints())
+            continuation = list(completion)
+            if not prompt_tokens:
+                raise ValueError(f"reference prompt {index} is empty")
+            if not continuation:
+                raise ValueError(f"completion {index} is empty")
+            prompt_lengths.append(len(prompt_tokens))
+            full_inputs.append(types.ModelInput.from_ints(tokens=prompt_tokens + continuation))
+
+        scored = await asyncio.gather(
+            *[self._base_sampling_client.compute_logprobs_async(model_input) for model_input in full_inputs]
+        )
+        output: list[list[float]] = []
+        for index, (logprobs, prompt_length, completion) in enumerate(zip(scored, prompt_lengths, completion_tokens)):
+            action_logprobs = list(logprobs[prompt_length:])
+            if len(action_logprobs) != len(completion):
+                raise RuntimeError(
+                    f"teacher scoring returned {len(action_logprobs)} action logprobs for "
+                    f"completion {index} with {len(completion)} tokens"
+                )
+            if any(value is None for value in action_logprobs):
+                raise RuntimeError(f"teacher scoring returned a missing action logprob for completion {index}")
+            output.append([float(value) for value in action_logprobs])
+        return output
 
     # ── checkpoints ──────────────────────────────────────────────────────
 

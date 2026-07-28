@@ -1,25 +1,28 @@
-# GPT-OSS-20B five-method comparison on HLE
+# GPT-OSS-20B six-method comparison on HLE
 
-This experiment compares five consistency-training methods on the HLE
+This experiment compares six consistency-training methods on the HLE
 evaluation setting from Figures 4 and 5 of *Rate Matching Consistency
 Training* (arXiv:2606.02211):
 
 1. rate matching;
 2. bias-augmented consistency training (BCT);
-3. activation consistency training (ACT);
-4. attention consistency training (AttCT); and
-5. MLP consistency training (MLPCT).
+3. on-policy consistency training (OPCT);
+4. activation consistency training (ACT);
+5. attention consistency training (AttCT); and
+6. MLP consistency training (MLPCT).
 
 The untrained `openai/gpt-oss-20b` model is evaluated once. Rate matching and
-BCT have matched controls, and every trained condition runs at three learning
-rates, producing twenty-one trained checkpoints and twenty-two evaluated model
-states. The RMCT paper
+BCT have matched controls. Every trained condition runs at three learning rates
+except OPCT, which uses its paper value of `5e-6`. This produces twenty-two
+trained checkpoints and twenty-three evaluated model states. The RMCT paper
 directly reports the untrained, rate-matching and BCT families; ACT, AttCT and
-MLPCT are an extension on the same data and evaluation setting.
+MLPCT are extensions on the same data and evaluation setting. OPCT follows
+*On-Policy Consistency Training Improves LLM Safety with Minimal Capability
+Degradation* (arXiv:2605.21834).
 
 The concise specification is in [`experiment.yaml`](experiment.yaml). Its
 `experiment_factory` expands the condition and learning-rate matrix into the
-complete command plan. One invocation prepares the data, trains the twenty-one
+complete command plan. One invocation prepares the data, trains the twenty-two
 runs, evaluates every checkpoint and the base model, aggregates the results,
 and renders seven publication-style SVG charts from chart-ready JSON.
 Rendering runs as a separate final `rendering` stage, so charts can also be
@@ -41,17 +44,21 @@ Last Exam with the following six biases:
 
 Bias-augmented consistency training uses 2,048 biased examples and 2,048 fresh
 base-model responses to Cleaned Alpaca prompts. ACT, AttCT and MLPCT use the
-same 2,048 unbiased/biased prompt pairs. Rate matching uses 64 datapoints, 128
-reference rollouts and 128 biased rollouts per datapoint. All five methods use
-rank-8, alpha-16 LoRA over attention and MLP modules. The supervised methods use
-microbatches of one with 128-step gradient accumulation. Each trained condition
-is run at learning rates `1e-4`, `2.86e-4`, and `5e-4`; evaluation samples are
-pooled across those three checkpoints.
+same 2,048 unbiased/biased prompt pairs. OPCT also uses those pairs: it samples
+four biased-prompt responses online and scores each under the frozen base model
+conditioned on the paired unbiased prompt. Its configuration uses `lambda=2.0`,
+`gamma=0.9`, temperature `0.7`, maximum 2,048 generated tokens, and learning
+rate `5e-6`. Rate matching uses 64 datapoints, 128 reference rollouts and 128
+biased rollouts per datapoint. All six methods use rank-8, alpha-16 LoRA over
+attention and MLP modules. The supervised methods use microbatches of one with
+128-step gradient accumulation. Conditions other than OPCT run at learning
+rates `1e-4`, `2.86e-4`, and `5e-4`; evaluation samples are pooled across each
+condition's available checkpoints.
 
 MLPCT compares the GPT-OSS MoE block output because GPT-OSS stores expert
 projections as fused parameters rather than individual down-projection modules.
 
-All methods run through the same local PyTorch/PEFT backend. The complete plan
+All six methods run through the same local PyTorch/PEFT backend. The complete plan
 must run on one platform, either a Vast.ai instance or an Isambard GH200 node.
 Mixing local and Tinker checkpoints in this comparison is not supported.
 
@@ -60,8 +67,9 @@ path. Rate matching uses the unbiased prompt for both perturbations. BCT trains
 on frozen base-model responses to unbiased prompts. ACT, AttCT and MLPCT have
 no control conditions: pairing the unbiased prompt with itself makes their
 consistency losses identically zero, so such a run would only duplicate the
-untrained condition. The experiment compiler rejects control conditions for
-these methods.
+untrained condition. OPCT has no control in this matrix; clean-to-clean OPCT is
+a non-zero self-distillation intervention rather than a null control. The
+experiment compiler rejects control conditions for the representation methods.
 
 The reports contain:
 
@@ -107,8 +115,8 @@ a claim that the original experiment artifacts are byte-identical.
 - The supplied reports prefer the exact metric and standard error recorded by
   Inspect. Post-hoc conditional subsets necessarily use sample-derived standard
   errors because Inspect has no aggregate for those subsets.
-- ACT, AttCT and MLPCT were not conditions in the referenced RMCT figure. Their
-  inclusion tests additional CTM methods under the same experimental setting.
+- OPCT, ACT, AttCT and MLPCT were not conditions in the referenced RMCT figure.
+  Their inclusion tests additional CTM methods under the same experimental setting.
 
 ## Prerequisites
 
@@ -129,7 +137,7 @@ paths or a new experiment name.
 ### Integration smoke test
 
 Before submitting the full matrix on a new machine image, run the explicit
-integration configuration. It covers all five methods, both controls, the
+integration configuration. It covers all six methods, both controls, the
 untrained evaluation, checkpoint loading, reporting, and both remote-model
 uses. Its counts and token limits are not suitable for scientific comparison.
 
