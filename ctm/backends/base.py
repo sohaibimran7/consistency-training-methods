@@ -121,6 +121,19 @@ class TrainingBackend(Protocol):
         """Mutate ``datums``' advantages in place with a KL-to-base penalty; return metrics."""
         ...
 
+    async def score_reference_completions(
+        self,
+        reference_prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+    ) -> list[list[float]]:
+        """Score completions under the frozen base model on paired reference prompts.
+
+        Each returned list contains one log-probability per completion token.  Unlike
+        ``incorporate_kl_penalty``, the reference prompt may differ from the prompt
+        that produced the completion; OPCT relies on this cross-prompt distinction.
+        """
+        ...
+
     async def save_checkpoint(self, *, name: str, log_dir: str | Path, loop_state: dict, kind: str) -> dict:
         """Persist weights ("sampler"), optimizer state ("state"), or "both".
         Returns a dict with "sampler_path" / "state_path" entries (backend-native URIs)."""

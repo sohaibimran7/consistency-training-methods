@@ -795,6 +795,62 @@ class LocalBackend:
             )
         return {"kl_policy_base": float(avg_diff)}
 
+    async def score_reference_completions(
+        self,
+        reference_prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+    ) -> list[list[float]]:
+        """Score continuations under the immutable base on different prompts.
+
+        Logits at reference position ``R - 1 + t`` predict completion token
+        ``t``.  Computing this explicitly avoids constructing a student-prompt
+        datum and accidentally evaluating the ordinary same-prompt KL penalty.
+        """
+
+        if len(reference_prompts) != len(completion_tokens):
+            raise ValueError(
+                "reference_prompts and completion_tokens must have the same length, got "
+                f"{len(reference_prompts)} and {len(completion_tokens)}"
+            )
+        self._require_base()
+        if not reference_prompts:
+            return []
+
+        prompt_tokens = [list(prompt.to_ints()) for prompt in reference_prompts]
+        continuations = [list(tokens) for tokens in completion_tokens]
+        for index, (prompt, completion) in enumerate(zip(prompt_tokens, continuations)):
+            if not prompt:
+                raise ValueError(f"reference prompt {index} is empty")
+            if not completion:
+                raise ValueError(f"completion {index} is empty")
+
+        sequences = [prompt + completion for prompt, completion in zip(prompt_tokens, continuations)]
+        max_len = max(len(sequence) for sequence in sequences)
+        input_ids = torch.zeros((len(sequences), max_len), dtype=torch.long, device=self.device)
+        attention_mask = torch.zeros_like(input_ids)
+        for index, sequence in enumerate(sequences):
+            input_ids[index, : len(sequence)] = torch.tensor(sequence, dtype=torch.long, device=self.device)
+            attention_mask[index, : len(sequence)] = 1
+
+        model = self._model_for(use_base=True)
+        was_training = model.training
+        model.eval()
+        try:
+            with self._base_ctx(), torch.no_grad():
+                logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
+                logprobs = torch.log_softmax(logits.float(), dim=-1)
+        finally:
+            model.train(was_training)
+
+        output: list[list[float]] = []
+        for index, (prompt, completion) in enumerate(zip(prompt_tokens, continuations)):
+            start = len(prompt) - 1
+            positions = logprobs[index, start : start + len(completion)]
+            targets = torch.tensor(completion, dtype=torch.long, device=self.device)
+            values = positions.gather(1, targets.unsqueeze(1)).squeeze(1)
+            output.append(values.detach().cpu().tolist())
+        return output
+
     # ── checkpoints ──────────────────────────────────────────────────────
 
     async def save_checkpoint(self, *, name: str, log_dir: str | Path, loop_state: dict, kind: str) -> dict:

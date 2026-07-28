@@ -236,7 +236,7 @@ run. Set the policy to `raise` for a fail-fast diagnostic run. If all usable
 advantages in a batch are zero or missing, CTM records the batch and skips the
 optimizer update.
 
-## SFT and representation consistency
+## BCT, OPCT, and representation consistency
 
 `scripts/train_bct.py` is file-driven:
 
@@ -247,6 +247,31 @@ uv run python scripts/train_bct.py \
   --experiment-name supervised \
   --run-name main
 ```
+
+OPCT uses the same paired-prompt data contract but trains online through its
+own entry point. The student samples from the variant prompt and the frozen
+initial model scores those exact tokens under the reference prompt; no trait
+classifier or rate estimate is involved:
+
+```bash
+uv run python scripts/train_opct.py \
+  --backend local \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --data /absolute/path/to/paired-prompts.jsonl \
+  --reference-messages-field unbiased_messages \
+  --variant-messages-field biased_messages \
+  --rollouts-per-prompt 4 \
+  --kl-coef 2.0 \
+  --kl-discount-factor 0.9 \
+  --experiment-name opct \
+  --run-name main
+```
+
+The policy sampler is refreshed after every optimizer update. The default
+`importance_sampling` loss consumes the token-level negative reverse-KL signal;
+`--loss-fn ppo` is available as an explicit alternative. Local full-parameter
+training retains an immutable initial-model copy for teacher scoring, while
+local LoRA uses the base model with its adapter disabled.
 
 `act`, `attct`, and `mlpct` require the local backend. Pair-field names are
 explicit. Native `mcq-bias` files use `unbiased_messages` and
