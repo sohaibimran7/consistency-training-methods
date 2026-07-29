@@ -1,0 +1,58 @@
+schema_version: evalawarebench.figure6.protocol.v1
+
+source:
+  dataset_id: aisa-group/EvalAwareBench
+  dataset_revision: 736bda484525041972fa214eaf72f3beba492666
+  dataset_license: CC-BY-NC-4.0
+  configs:
+    - prompts_safety
+    - prompts_capability
+  upstream_code_repository: https://github.com/aisa-group/decomposing-eval-awareness
+  upstream_code_revision: 446be5c605b56a60d4efe2526f0cbf55522c523a
+
+prompts:
+  paper_natural:
+    upstream_filename: chat_prompt_realistic.txt
+    sha256: 8d46fa8eee79ba7372088d0bd138a463cc5255c8043a77f468bed937f609d735
+    response_protocol: natural
+  explicit_scratchpad:
+    upstream_filename: chat_prompt_realistic_scratchpad.txt
+    sha256: c7c16141e424217e334f4166fb34a5302ea880bddb67598297e7ed38dc103b33
+    response_protocol: explicit_scratchpad
+
+workload:
+  task_count: 100
+  valences:
+    - safety
+    - capability
+  conditions:
+    - baseline
+    - F1
+    - F2
+    - F3
+    - F4
+    - F5
+    - F6
+    - F7
+    - F8
+  condition_count: 1800
+  samples_per_condition: 3
+  generations_per_model: 5400
+  model_count: 7
+  total_generations: 37800
+
+generation:
+  temperature: 0.3
+  max_tokens: 4096
+  max_model_len: 8192
+
+serving:
+  host: 127.0.0.1
+  default_port: 8000
+  gpu_memory_utilization: 0.92
+  dtype: bfloat16
+
+judge:
+  execution_stage: manual_paid_external
+  submitted_by_gpu_jobs: false
+  approval_required_before_submission: true

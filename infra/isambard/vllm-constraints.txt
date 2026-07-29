@@ -1,4 +1,6 @@
-# vLLM 0.10.2 otherwise upgrades these beyond the ranges supported by the
-# repository's Inspect, datasets, s3fs, and Tinker dependencies.
+# vLLM 0.26.0 requires PyTorch 2.11 and Transformers >=5.5.3.  Keep the exact
+# compatible versions here while retaining the repository's datasets/s3fs and
+# Tinker-compatible fsspec selection.
+torch==2.11.0
 fsspec==2025.9.0
 transformers==5.5.4
