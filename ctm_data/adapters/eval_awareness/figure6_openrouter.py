@@ -83,7 +83,7 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
             "require_parameters": True,
             "sort": "throughput",
         },
-        "reasoning": {"effort": "low", "exclude": True},
+        "reasoning": {"effort": "high", "exclude": True},
         "response_format": {"type": "json_object"},
     },
     DEEPSEEK_V32_DIRECT_PROFILE: {

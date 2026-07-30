@@ -307,7 +307,7 @@ operator laptop through OpenRouter with
 the exact hash-pinned paper judge prompt and a 4,096-token output ceiling. This
 is a user-pinned alternative judge, not the paper's GPT-5 judge. The registered
 `gpt-oss-120b-nitro-direct` profile prohibits proxies and route attestations, uses
-the model's minimum supported mandatory reasoning effort (`low`) without returning
+the model's maximum supported mandatory reasoning effort (`high`) without returning
 the reasoning trace, requests a JSON object, and hash-binds temperature 0, concurrency 24,
 the 300-second retry cap, and exact provider routing. The Nitro suffix and the
 explicit `provider.sort=throughput` pin throughput-prioritized routing. The profile

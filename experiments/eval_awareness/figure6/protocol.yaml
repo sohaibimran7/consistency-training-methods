@@ -90,7 +90,7 @@ judge:
     require_parameters: true
     sort: throughput
   reasoning:
-    effort: low
+    effort: high
     exclude: true
   response_format:
     type: json_object
