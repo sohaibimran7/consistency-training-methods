@@ -79,6 +79,7 @@ fi
 
 cd "$REPO_DIR"
 source .venv/bin/activate
+source infra/isambard/activate_gpu_runtime.sh
 mkdir -p "$HF_HOME" "$FIGURE6_OUTPUT_ROOT/$MODEL_KEY" "$FIGURE6_OUTPUT_ROOT/_logs"
 export HF_HOME
 

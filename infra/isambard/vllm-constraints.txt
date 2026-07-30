@@ -4,3 +4,4 @@
 torch==2.11.0
 fsspec==2025.9.0
 transformers==5.5.4
+websockets==16.1.1

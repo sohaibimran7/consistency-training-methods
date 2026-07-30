@@ -140,7 +140,7 @@ test "$(sha256sum "$EXPLICIT_SCRATCHPAD_PROMPT_PATH" | awk '{print $1}')" = \
 The generator independently repeats these hash checks. Do not copy the prompt
 bodies into this repository.
 
-## 3. Optionally prefetch the seven pinned snapshots
+## 3. Validate the GPU environment and optionally prefetch the seven snapshots
 
 The standard Llama repository is gated. Request access beforehand, then read a
 Hugging Face token without displaying it:
@@ -151,12 +151,27 @@ printf '\n'
 export HF_TOKEN
 ```
 
-Submit the resumable prefetch with the live account association made explicit:
+First submit the one-GPU, 30-minute environment smoke gate. It installs the
+pinned AArch64 serving stack, exposes the CUDA 13 runtime bundled with vLLM,
+and imports vLLM on the allocated GH200. It downloads no model weights and
+runs no evaluation:
+
+```bash
+cd "$REPO_DIR"
+GPU_SMOKE_JOB_ID=$(sbatch --parsable \
+  --account="$ISAMBARD_ACCOUNT" \
+  --export=ALL \
+  infra/isambard/smoke_figure6_gpu.sbatch)
+printf 'GPU smoke job: %s\n' "$GPU_SMOKE_JOB_ID"
+```
+
+Submit the resumable prefetch only after the smoke gate succeeds:
 
 ```bash
 cd "$REPO_DIR"
 PREFETCH_JOB_ID=$(sbatch --parsable \
   --account="$ISAMBARD_ACCOUNT" \
+  --dependency="afterok:$GPU_SMOKE_JOB_ID" \
   --export=ALL \
   infra/isambard/prefetch_figure6.sbatch)
 printf 'prefetch job: %s\n' "$PREFETCH_JOB_ID"
@@ -187,14 +202,14 @@ export FIGURE6_LIMIT_CONDITIONS=100
 
 PILOT_QWEN_JOB=$(sbatch --parsable \
   --account="$ISAMBARD_ACCOUNT" \
-  --dependency="afterany:$PREFETCH_JOB_ID" \
+  --dependency="afterok:$GPU_SMOKE_JOB_ID,afterany:$PREFETCH_JOB_ID" \
   --time=12:00:00 \
   --export=ALL \
   infra/isambard/figure6_qwen.sbatch)
 
 PILOT_LLAMA_JOB=$(sbatch --parsable \
   --account="$ISAMBARD_ACCOUNT" \
-  --dependency="afterany:$PREFETCH_JOB_ID" \
+  --dependency="afterok:$GPU_SMOKE_JOB_ID,afterany:$PREFETCH_JOB_ID" \
   --time=12:00:00 \
   --export=ALL \
   infra/isambard/figure6_llama.sbatch)

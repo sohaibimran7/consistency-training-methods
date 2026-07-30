@@ -34,7 +34,44 @@ uv pip install --upgrade "vllm==0.26.0" \
     --constraint requirements.txt \
     --constraint infra/isambard/vllm-constraints.txt
 
-uv pip check
+# The AArch64 vLLM wheel uses NVIDIA's `manylinux2014_sbsa` tag for
+# cusparseLt. uv 0.9 currently reports that installed ARM library as a
+# different-platform package, even though the ELF object is AArch64.  Keep the
+# dependency check strict for every other incompatibility, and verify the
+# known false positive against the installed binary before allowing it.
+PIP_CHECK_OUTPUT=""
+if ! PIP_CHECK_OUTPUT=$(uv pip check 2>&1); then
+    printf '%s\n' "$PIP_CHECK_OUTPUT"
+    export PIP_CHECK_OUTPUT
+    python - <<'PY'
+import os
+import re
+
+lines = [line for line in os.environ["PIP_CHECK_OUTPUT"].splitlines() if line]
+allowed = {
+    "Found 1 incompatibility",
+    "The package `nvidia-cusparselt-cu12` was built for a different platform",
+}
+unexpected = [
+    line
+    for line in lines
+    if line not in allowed and not re.fullmatch(r"Checked [0-9]+ packages in .+", line)
+]
+if unexpected:
+    raise SystemExit(f"unexpected dependency incompatibilities: {unexpected}")
+if not allowed.issubset(lines):
+    raise SystemExit(f"unexpected uv pip check output: {lines}")
+PY
+    CUSPARSELT_LIBRARY=$(python -c 'import sysconfig; print(sysconfig.get_path("purelib") + "/nvidia/cusparselt/lib/libcusparseLt.so.0")')
+    if [[ ! -f "$CUSPARSELT_LIBRARY" ]] || ! file "$CUSPARSELT_LIBRARY" | grep -q 'ARM aarch64'; then
+        echo "ERROR: the allowed cusparseLt metadata mismatch is not an AArch64 library." >&2
+        exit 2
+    fi
+    echo "Accepted verified AArch64 cusparseLt sbsa-tag metadata mismatch."
+fi
+unset PIP_CHECK_OUTPUT
+
+source infra/isambard/activate_gpu_runtime.sh
 python - <<'PY'
 import torch
 import vllm

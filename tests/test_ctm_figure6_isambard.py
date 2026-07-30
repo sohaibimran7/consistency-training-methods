@@ -155,7 +155,9 @@ def test_protocol_has_exact_workload_and_prompt_pins():
 @pytest.mark.parametrize(
     "path",
     [
+        "activate_gpu_runtime.sh",
         "setup_gpu_env.sh",
+        "smoke_figure6_gpu.sbatch",
         "prefetch_figure6.sbatch",
         "run_figure6_model.sh",
         "figure6_qwen.sbatch",
@@ -183,10 +185,16 @@ def test_vllm_install_is_current_pinned_pypi_build_with_gpu_smoke_checks():
 
 
 def test_slurm_shape_and_serving_flags_are_exact():
+    smoke = (ISAMBARD / "smoke_figure6_gpu.sbatch").read_text(encoding="utf-8")
     prefetch = (ISAMBARD / "prefetch_figure6.sbatch").read_text(encoding="utf-8")
     qwen = (ISAMBARD / "figure6_qwen.sbatch").read_text(encoding="utf-8")
     llama = (ISAMBARD / "figure6_llama.sbatch").read_text(encoding="utf-8")
     runner = (ISAMBARD / "run_figure6_model.sh").read_text(encoding="utf-8")
+    assert "#SBATCH --time=00:30:00" in smoke
+    assert "#SBATCH --gpus-per-node=1" in smoke
+    assert "bash infra/isambard/setup_gpu_env.sh" in smoke
+    assert "figure6_generate" not in smoke
+    assert "snapshot_download" not in smoke
     assert "#SBATCH --time=12:00:00" in prefetch
     assert "#SBATCH --gpus-per-node=1" in prefetch
     assert "#SBATCH --array=0-3%4" in qwen
@@ -197,7 +205,7 @@ def test_slurm_shape_and_serving_flags_are_exact():
     assert "#SBATCH --cpus-per-gpu=72" in llama
     assert "#SBATCH --time=24:00:00" in qwen
     assert "#SBATCH --time=24:00:00" in llama
-    assert "#SBATCH --gpus=" not in qwen + llama + prefetch
+    assert "#SBATCH --gpus=" not in smoke + qwen + llama + prefetch
     assert '--served-model-name "$MODEL_ID"' in runner
     assert "VLLM_ARGS+=(--reasoning-parser qwen3)" in runner
     assert "VLLM_ARGS+=(--language-model-only)" in runner
@@ -210,7 +218,7 @@ def test_slurm_shape_and_serving_flags_are_exact():
     assert "--max-tokens 4096" in runner
     assert '--limit-conditions "$FIGURE6_LIMIT_CONDITIONS"' in runner
     assert "rm " not in runner
-    assert "figure6_judge" not in runner + qwen + llama + prefetch
+    assert "figure6_judge" not in smoke + runner + qwen + llama + prefetch
 
 
 def test_prefetch_enforces_capacity_resumption_and_llama_exclusion():
@@ -222,6 +230,30 @@ def test_prefetch_enforces_capacity_resumption_and_llama_exclusion():
     assert 'max_workers = int(os.environ.get("FIGURE6_PREFETCH_WORKERS", "4"))' in prefetch
     assert 'ignore_patterns=model.get("prefetch_ignore_patterns")' in prefetch
     assert 'os.environ.get("HF_TOKEN")' in prefetch
+
+
+def test_gpu_runtime_loader_path_and_dependency_gate():
+    setup = (ISAMBARD / "setup_gpu_env.sh").read_text(encoding="utf-8")
+    runner = (ISAMBARD / "run_figure6_model.sh").read_text(encoding="utf-8")
+    runtime = (ISAMBARD / "activate_gpu_runtime.sh").read_text(encoding="utf-8")
+    constraints = (ISAMBARD / "vllm-constraints.txt").read_text(encoding="utf-8")
+
+    assert "source infra/isambard/activate_gpu_runtime.sh" in setup
+    assert "source infra/isambard/activate_gpu_runtime.sh" in runner
+    assert "nvidia/cu13/lib" in runtime
+    assert "torch/lib" in runtime
+    assert "nvidia/cusparselt/lib" in runtime
+    assert 'export LD_LIBRARY_PATH="$GPU_RUNTIME_PREFIX' in runtime
+    assert "websockets==16.1.1" in constraints
+    assert "unexpected dependency incompatibilities" in setup
+    assert "ARM aarch64" in setup
+    assert ".venv/lib/python3.12" not in setup
+
+    runbook = (FIGURE6 / "README.md").read_text(encoding="utf-8")
+    assert 'GPU_SMOKE_JOB_ID=$(sbatch --parsable' in runbook
+    assert '--dependency="afterok:$GPU_SMOKE_JOB_ID"' in runbook
+    combined_gate = '--dependency="afterok:$GPU_SMOKE_JOB_ID,afterany:$PREFETCH_JOB_ID"'
+    assert runbook.count(combined_gate) == 2
 
 
 def test_resource_math_and_storage_headroom():
