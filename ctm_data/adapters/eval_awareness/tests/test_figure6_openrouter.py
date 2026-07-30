@@ -909,7 +909,7 @@ def test_openai_luna_public_dry_plan_pins_direct_500_way_profile(tmp_path: Path)
     assert summary["temperature"] is None
     assert summary["max_tokens"] == 32_768
     assert summary["concurrency"] == 500
-    assert summary["reasoning"] == {"effort": "max"}
+    assert summary["reasoning"] == {"effort": "medium"}
     assert summary["provider_routing"] == {}
     assert summary["store"] is False
     assert summary["response_format"]["type"] == "json_schema"
@@ -980,7 +980,7 @@ def test_openai_luna_uses_direct_chat_request_shape_and_normalizes_success(tmp_p
     body = seen[0]
     assert body["model"] == "gpt-5.6-luna"
     assert body["max_completion_tokens"] == 32_768
-    assert body["reasoning_effort"] == "max"
+    assert body["reasoning_effort"] == "medium"
     assert body["store"] is False
     assert body["response_format"]["type"] == "json_schema"
     assert body["messages"][0]["role"] == "system"

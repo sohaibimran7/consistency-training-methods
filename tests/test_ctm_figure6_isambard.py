@@ -167,7 +167,7 @@ def test_protocol_has_exact_workload_and_prompt_pins():
     assert judge["result_label"] == "user_pinned_alternative_judge"
     assert judge["route_mode"] == "direct"
     assert judge["route_attestation_required"] is False
-    assert judge["reasoning"] == {"effort": "max"}
+    assert judge["reasoning"] == {"effort": "medium"}
     assert judge["response_format"] == {
         "type": "json_schema",
         "name": "evalaware_figure6_judgment",

@@ -307,7 +307,7 @@ ordinary direct OpenAI Chat Completions requests. It does not use the Batch API.
 The exact hash-pinned paper judge prompt is paired with a 32,768-token output
 ceiling and strict JSON Schema output. This is a user-pinned alternative judge,
 not the paper's GPT-5 judge. The registered `openai-gpt-5.6-luna-direct` profile
-prohibits proxies and route attestations, sets the model's `max` reasoning effort,
+prohibits proxies and route attestations, sets the model's `medium` reasoning effort,
 disables response storage, and hash-binds the direct endpoint, request schema,
 500-way client concurrency, five-attempt ceiling, and 300-second Retry-After cap.
 The only accepted response model identity is `gpt-5.6-luna`.

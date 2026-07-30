@@ -83,7 +83,7 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         "concurrency": 500,
         "max_retry_after": 300.0,
         "provider_routing": {},
-        "reasoning": {"effort": "max"},
+        "reasoning": {"effort": "medium"},
         "response_format": {
             "type": "json_schema",
             "json_schema": {

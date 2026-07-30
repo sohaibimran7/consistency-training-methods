@@ -86,7 +86,7 @@ judge:
   max_retry_after: 300
   provider_routing: {}
   reasoning:
-    effort: max
+    effort: medium
   response_format:
     type: json_schema
     name: evalaware_figure6_judgment
