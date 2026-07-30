@@ -1,8 +1,8 @@
 """Train On-Policy Consistency Training (OPCT) on paired prompt JSONL.
 
 Each row supplies a frozen-teacher reference prompt and a student variant
-prompt.  The student samples online from the variant; the frozen initial model
-scores that continuation under the reference prompt.
+prompt.  The student samples online from the variant; an immutable snapshot of
+the run-start policy scores that continuation under the reference prompt.
 
 Example:
     python scripts/train_opct.py \
@@ -29,11 +29,11 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from ctm.artifacts import plain_file_identity  # noqa: E402
-from ctm.backends.cli import add_backend_args, build_backend, describe_backend  # noqa: E402
-from ctm.cli_safety import parse_json_object, reject_inline_secrets  # noqa: E402
-from ctm.core.config import AdamConfig, CheckpointConfig, resolve_lora_config  # noqa: E402
-from ctm.training.opct import OPCTConfig, OPCTGenerationConfig, OPCTTrainer, validate_opct_samples  # noqa: E402
+from ctm.artifacts import plain_file_identity
+from ctm.backends.cli import add_backend_args, build_backend, describe_backend
+from ctm.cli_safety import parse_json_object, reject_inline_secrets
+from ctm.core.config import AdamConfig, CheckpointConfig, resolve_lora_config
+from ctm.training.opct import OPCTConfig, OPCTGenerationConfig, OPCTTrainer, validate_opct_samples
 
 
 def parse_file_spec(spec: str) -> tuple[Path, int | None]:
@@ -63,7 +63,7 @@ def load_and_combine(file_specs: list[tuple[Path, int | None]], *, interleave: b
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
                 if not isinstance(value, dict):
-                    raise ValueError(f"{path}:{line_number}: each row must be a JSON object")
+                    raise TypeError(f"{path}:{line_number}: each row must be a JSON object")
                 rows.append(value)
         print(f"  {path.name}: {len(rows)} pairs")
         groups.append(rows)
@@ -103,7 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="On-Policy Consistency Training on paired clean/variant prompts",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--model", required=True, help="Base model used for both initial student and frozen teacher")
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="Base model used to initialize a fresh student and its run-start teacher",
+    )
     parser.add_argument("--data", nargs="+", required=True, metavar="FILE[:N]")
     parser.add_argument("--data-manifest", nargs="+", type=Path)
     parser.add_argument("--interleave", action="store_true", help="Round-robin rows from multiple data files")
@@ -144,19 +148,35 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-every", type=int, default=50)
     parser.add_argument("--save-state", action="store_true")
     parser.add_argument("--skip-near-final", type=int, default=0)
-    parser.add_argument("--resume-from")
     parser.add_argument(
+        "--rollout-log",
+        choices=["all", "none"],
+        default="all",
+        help="Persist every sampled student completion, including invalid/skipped samples",
+    )
+    parser.add_argument(
+        "--rollout-dir",
+        help="Rollout output directory (default: logs/EXPERIMENT/RUN/rollouts)",
+    )
+    parser.add_argument(
+        "--resume-from",
+        help="Tinker student checkpoint to load and freeze as this run's teacher",
+    )
+    resume_group = parser.add_mutually_exclusive_group()
+    resume_group.add_argument(
         "--resume-with-optimizer",
         dest="resume_with_optimizer",
         action="store_const",
         const=True,
         default=None,
+        help="Force optimizer-state restoration from --resume-from (default: infer from URI)",
     )
-    parser.add_argument(
+    resume_group.add_argument(
         "--no-resume-optimizer",
         dest="resume_with_optimizer",
         action="store_const",
         const=False,
+        help="Load only student weights from --resume-from",
     )
 
     add_backend_args(parser)
@@ -195,6 +215,17 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError("--checkpoint-every must be positive")
         if args.skip_near_final < 0:
             raise ValueError("--skip-near-final must be non-negative")
+        if args.resume_with_optimizer is not None and not args.resume_from:
+            raise ValueError("--resume-with-optimizer/--no-resume-optimizer requires --resume-from")
+        if args.resume_from and args.backend == "local":
+            raise ValueError(
+                "OPCT --resume-from is unavailable with --backend local because its policy handle is live; "
+                "use Tinker or start a fresh local run so the teacher remains immutable"
+            )
+        if args.rollout_dir is not None and not args.rollout_dir.strip():
+            raise ValueError("--rollout-dir must be a non-empty path")
+        if args.rollout_log == "none" and args.rollout_dir is not None:
+            raise ValueError("--rollout-dir requires --rollout-log all")
 
         print("Loading prompt pairs...")
         samples = load_and_combine(file_specs, interleave=args.interleave)
@@ -221,6 +252,8 @@ def main(argv: list[str] | None = None) -> None:
                 save_state=args.save_state,
                 skip_near_final_steps=args.skip_near_final,
             ),
+            rollout_log=args.rollout_log,
+            rollout_dir=args.rollout_dir,
             reference_messages_field=args.reference_messages_field,
             variant_messages_field=args.variant_messages_field,
             run_metadata={
@@ -230,6 +263,9 @@ def main(argv: list[str] | None = None) -> None:
                 "interleave": args.interleave,
                 "backend": args.backend,
                 "method": "opct",
+                "teacher_policy": "run_start",
+                "resume_from": args.resume_from,
+                "resume_with_optimizer": args.resume_with_optimizer,
             },
         )
         validate_opct_samples(samples, config)
@@ -253,6 +289,18 @@ def main(argv: list[str] | None = None) -> None:
         f"epochs={config.n_epochs}, optimizer_steps={steps}"
     )
     print(f"Pair fields: teacher={config.reference_messages_field!r}, " f"student={config.variant_messages_field!r}")
+    teacher_source = (
+        f"run-start Tinker checkpoint ({args.resume_from})" if args.resume_from else "run-start base policy"
+    )
+    print(f"Frozen teacher: {teacher_source}")
+    if config.rollout_log == "all":
+        rollout_dir = config.rollout_dir or f"logs/{config.experiment_name}/{config.run_name}/rollouts"
+        print(f"Rollout log: all sampled completions -> {rollout_dir}")
+    else:
+        print("Rollout log: disabled")
+    if args.resume_from:
+        optimizer_resume = "auto" if args.resume_with_optimizer is None else str(args.resume_with_optimizer).lower()
+        print(f"Student checkpoint: {args.resume_from} (optimizer restore: {optimizer_resume})")
     print("Policy refresh: after every optimizer update (fully on-policy)")
     if args.dry_run:
         print("Dry run complete; no backend was initialized.")

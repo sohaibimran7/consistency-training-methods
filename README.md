@@ -249,9 +249,9 @@ uv run python scripts/train_bct.py \
 ```
 
 OPCT uses the same paired-prompt data contract but trains online through its
-own entry point. The student samples from the variant prompt and the frozen
-initial model scores those exact tokens under the reference prompt; no trait
-classifier or rate estimate is involved:
+own entry point. The student samples from the variant prompt and an immutable
+snapshot of the run-start policy scores those exact tokens under the reference
+prompt; no trait classifier or rate estimate is involved:
 
 ```bash
 uv run python scripts/train_opct.py \
@@ -263,15 +263,29 @@ uv run python scripts/train_opct.py \
   --rollouts-per-prompt 4 \
   --kl-coef 2.0 \
   --kl-discount-factor 0.9 \
+  --rollout-log all \
   --experiment-name opct \
   --run-name main
 ```
 
 The policy sampler is refreshed after every optimizer update. The default
 `importance_sampling` loss consumes the token-level negative reverse-KL signal;
-`--loss-fn ppo` is available as an explicit alternative. Local full-parameter
-training retains an immutable initial-model copy for teacher scoring, while
-local LoRA uses the base model with its adapter disabled.
+`--loss-fn ppo` is available as an explicit alternative. Fresh local
+full-parameter training retains an immutable initial-model copy for teacher
+scoring, while local LoRA uses the base model with its adapter disabled.
+
+OPCT writes every sampled student completion to the shared compressed rollout
+log by default. Samples excluded from the update remain in the log with
+`skipped_from_training=true` and a concrete `skip_reason`. Use `--rollout-dir`
+to select a different location. `--rollout-log none` is available only for runs
+where response persistence is not permitted.
+
+Tinker `--resume-from` first restores the student and then freezes that exact
+run-start checkpoint as the teacher. Optimizer restoration can be forced with
+`--resume-with-optimizer` or disabled with `--no-resume-optimizer`; without
+either flag it is inferred from the checkpoint URI. OPCT resume is rejected for
+the local backend because its policy handles are live and cannot safely serve
+as an immutable resumed teacher; start a fresh local run instead.
 
 `act`, `attct`, and `mlpct` require the local backend. Pair-field names are
 explicit. Native `mcq-bias` files use `unbiased_messages` and

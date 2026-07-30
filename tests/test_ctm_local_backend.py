@@ -165,7 +165,7 @@ class TestLocalRL:
         with pytest.raises(NotImplementedError):
             backend.base_sampler()
 
-    def test_reference_completion_scoring_matches_frozen_base_logits(self):
+    def test_policy_handle_scoring_matches_raw_frozen_base_logits(self):
         model = tiny_model()
         backend = LocalBackend(
             device="cpu",
@@ -177,7 +177,8 @@ class TestLocalRL:
         prompt = types.ModelInput.from_ints(tokens=[5, 6])
         completion = [7, 8]
 
-        scored = asyncio.run(backend.score_reference_completions([prompt], [completion]))[0]
+        scored = asyncio.run(backend.base_sampler().score_completions([prompt], [completion]))[0]
+        current_scored = asyncio.run(backend.policy_sampler("current").score_completions([prompt], [completion]))[0]
         frozen = backend._frozen_base_model
         assert frozen is not None
         with torch.no_grad():
@@ -185,6 +186,7 @@ class TestLocalRL:
             logprobs = torch.log_softmax(logits.float(), dim=-1)
             expected = [float(logprobs[0, 1, 7]), float(logprobs[0, 2, 8])]
         assert scored == pytest.approx(expected)
+        assert current_scored == pytest.approx(expected)
 
 
 class TestLocalSampler:

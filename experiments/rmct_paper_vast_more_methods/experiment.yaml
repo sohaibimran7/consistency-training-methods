@@ -1,5 +1,5 @@
 name: rmct_paper_vast_more_methods
-experiment_factory: ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment
+experiment_factory: scripts.rmct_paper_vast_more_methods.experiment_factory:compile_experiment
 
 # Six-method comparison extending arXiv:2606.02211. This file states the
 # scientific choices; the factory expands repeated runs and deterministic paths.

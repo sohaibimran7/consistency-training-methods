@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ctm_data.adapters.mcq_bias.experiment_factory import compile_experiment
 from scripts import run_experiment as experiment
+from scripts.rmct_paper_vast_more_methods.experiment_factory import compile_experiment
 
 EXAMPLE = Path(__file__).parent.parent / "experiments" / "example_rlct.yaml"
 F6_PER_ITEM = Path(__file__).parent.parent / "experiments" / "eval_awareness" / "qwen_f6_snr_per_item.yaml"
@@ -287,7 +287,7 @@ def test_rmct_hle_yaml_routes_six_methods_controls_and_verbalisation_locally():
 
 
 def test_rmct_compiler_rejects_representation_method_controls():
-    from ctm_data.adapters.mcq_bias.experiment_factory import compile_experiment
+    from scripts.rmct_paper_vast_more_methods.experiment_factory import compile_experiment
 
     for method in ("act", "attct", "mlpct"):
         spec = experiment.load_experiment_source(RMCT_HLE_COMPARISON)["spec"]
@@ -299,7 +299,7 @@ def test_rmct_compiler_rejects_representation_method_controls():
 def test_rmct_hle_yaml_is_a_concise_authored_spec():
     source = experiment.load_experiment_source(RMCT_HLE_COMPARISON)
 
-    assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment"
+    assert source["experiment_factory"] == "scripts.rmct_paper_vast_more_methods.experiment_factory:compile_experiment"
     assert "training" not in source
     assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 180
 

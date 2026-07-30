@@ -7,8 +7,9 @@ until ``setup()``), so importing/instantiating never needs credentials.
 """
 
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import tinker
 from tinker import types
@@ -46,6 +47,45 @@ class TinkerSamplerHandle:
             for seq in result.sequences
         ]
 
+    async def score_completions(
+        self,
+        prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+    ) -> list[list[float]]:
+        """Score supplied tokens with this handle's raw policy distribution."""
+
+        if len(prompts) != len(completion_tokens):
+            raise ValueError(
+                "prompts and completion_tokens must have the same length, got "
+                f"{len(prompts)} and {len(completion_tokens)}"
+            )
+
+        prompt_lengths: list[int] = []
+        full_inputs = []
+        for index, (prompt, completion) in enumerate(zip(prompts, completion_tokens)):
+            prompt_tokens = list(prompt.to_ints())
+            continuation = list(completion)
+            if not prompt_tokens:
+                raise ValueError(f"prompt {index} is empty")
+            if not continuation:
+                raise ValueError(f"completion {index} is empty")
+            prompt_lengths.append(len(prompt_tokens))
+            full_inputs.append(types.ModelInput.from_ints(tokens=prompt_tokens + continuation))
+
+        scored = await asyncio.gather(*[self.client.compute_logprobs_async(model_input) for model_input in full_inputs])
+        output: list[list[float]] = []
+        for index, (logprobs, prompt_length, completion) in enumerate(zip(scored, prompt_lengths, completion_tokens)):
+            action_logprobs = list(logprobs[prompt_length:])
+            if len(action_logprobs) != len(completion):
+                raise RuntimeError(
+                    f"policy scoring returned {len(action_logprobs)} action logprobs for "
+                    f"completion {index} with {len(completion)} tokens"
+                )
+            if any(value is None for value in action_logprobs):
+                raise RuntimeError(f"policy scoring returned a missing action logprob for completion {index}")
+            output.append([float(value) for value in action_logprobs])
+        return output
+
 
 class _TinkerPendingForwardBackward:
     def __init__(self, future):
@@ -72,11 +112,11 @@ class TinkerBackend:
     renderer_source = "tinker"
     policy_samplers_are_snapshots = True
 
-    def __init__(self, service_client: Optional[tinker.ServiceClient] = None):
+    def __init__(self, service_client: tinker.ServiceClient | None = None):
         self._service_client = service_client
-        self.training_client: Optional[tinker.TrainingClient] = None
-        self._base_sampling_client: Optional[tinker.SamplingClient] = None
-        self.model: Optional[str] = None
+        self.training_client: tinker.TrainingClient | None = None
+        self._base_sampling_client: tinker.SamplingClient | None = None
+        self.model: str | None = None
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -87,16 +127,14 @@ class TinkerBackend:
         return self._service_client
 
     def setup(
-        self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False
+        self, *, model: str, lora: LoRAConfig, resume_from: str | None = None, resume_with_optimizer: bool = False
     ) -> None:
         if lora.target_modules is not None:
             raise NotImplementedError(
                 "Tinker exposes component-level LoRA selection only; exact target_modules are supported by LocalBackend"
             )
         if lora.resolved_alpha != 2 * lora.rank:
-            raise NotImplementedError(
-                "Tinker fixes LoRA alpha/r=2; use LocalBackend for an explicit non-default alpha"
-            )
+            raise NotImplementedError("Tinker fixes LoRA alpha/r=2; use LocalBackend for an explicit non-default alpha")
         if lora.dropout != 0.0:
             raise NotImplementedError("Tinker does not expose LoRA dropout; use LocalBackend")
         self.model = model
@@ -108,9 +146,7 @@ class TinkerBackend:
         self.training_client = self.service_client.create_lora_training_client(
             base_model=model,
             user_metadata=user_metadata,
-            **lora.model_dump(
-                include={"rank", "train_mlp", "train_attn", "train_unembed", "seed"}
-            ),
+            **lora.model_dump(include={"rank", "train_mlp", "train_attn", "train_unembed", "seed"}),
         )
         if resume_from:
             if resume_with_optimizer:
@@ -177,49 +213,6 @@ class TinkerBackend:
             kl_penalty_coef=kl_coef,
             kl_discount_factor=kl_discount_factor,
         )
-
-    async def score_reference_completions(
-        self,
-        reference_prompts: Sequence[Any],
-        completion_tokens: Sequence[Sequence[int]],
-    ) -> list[list[float]]:
-        """Score student continuations under the frozen base on reference prompts."""
-
-        if len(reference_prompts) != len(completion_tokens):
-            raise ValueError(
-                "reference_prompts and completion_tokens must have the same length, got "
-                f"{len(reference_prompts)} and {len(completion_tokens)}"
-            )
-        self.base_sampler()  # ensure the raw client used by compute_logprobs exists
-        assert self._base_sampling_client is not None
-
-        prompt_lengths: list[int] = []
-        full_inputs = []
-        for index, (prompt, completion) in enumerate(zip(reference_prompts, completion_tokens)):
-            prompt_tokens = list(prompt.to_ints())
-            continuation = list(completion)
-            if not prompt_tokens:
-                raise ValueError(f"reference prompt {index} is empty")
-            if not continuation:
-                raise ValueError(f"completion {index} is empty")
-            prompt_lengths.append(len(prompt_tokens))
-            full_inputs.append(types.ModelInput.from_ints(tokens=prompt_tokens + continuation))
-
-        scored = await asyncio.gather(
-            *[self._base_sampling_client.compute_logprobs_async(model_input) for model_input in full_inputs]
-        )
-        output: list[list[float]] = []
-        for index, (logprobs, prompt_length, completion) in enumerate(zip(scored, prompt_lengths, completion_tokens)):
-            action_logprobs = list(logprobs[prompt_length:])
-            if len(action_logprobs) != len(completion):
-                raise RuntimeError(
-                    f"teacher scoring returned {len(action_logprobs)} action logprobs for "
-                    f"completion {index} with {len(completion)} tokens"
-                )
-            if any(value is None for value in action_logprobs):
-                raise RuntimeError(f"teacher scoring returned a missing action logprob for completion {index}")
-            output.append([float(value) for value in action_logprobs])
-        return output
 
     # ── checkpoints ──────────────────────────────────────────────────────
 

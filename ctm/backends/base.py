@@ -16,9 +16,10 @@ package builds them offline; ``tinker_cookbook``'s ``trajectory_to_data`` /
 everyone). A local backend translates datums to tensors internally.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import torch
 
@@ -30,7 +31,7 @@ class SampledSequence:
     """One sampled completion: tokens plus (optionally) their sampling logprobs."""
 
     tokens: list[int]
-    logprobs: Optional[list[float]]
+    logprobs: list[float] | None
 
 
 @dataclass
@@ -54,8 +55,26 @@ class PendingOptimStep(Protocol):
 
 
 @runtime_checkable
-class SamplerHandle(Protocol):
-    """A handle that can sample completions for a rendered prompt.
+class PolicyScorerHandle(Protocol):
+    """A fixed or live policy handle that scores supplied completions.
+
+    Scores are raw-policy log-probabilities: generation temperature and other
+    sampling transforms are not applied.  Keeping the scorer on an explicit
+    handle lets callers choose the policy snapshot being used as a reference.
+    """
+
+    async def score_completions(
+        self,
+        prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+    ) -> list[list[float]]:
+        """Return one raw-policy log-probability per supplied completion token."""
+        ...
+
+
+@runtime_checkable
+class SamplerHandle(PolicyScorerHandle, Protocol):
+    """A policy handle that can sample and score completions.
 
     ``prompt`` is the renderer's prompt container (``tinker.types.ModelInput``
     for both current backends); ``stop`` is whatever the renderer's
@@ -88,7 +107,7 @@ class TrainingBackend(Protocol):
         *,
         model: str,
         lora: LoRAConfig,
-        resume_from: Optional[str] = None,
+        resume_from: str | None = None,
         resume_with_optimizer: bool = False,
     ) -> None:
         """Create/initialize the trainable model (and load a checkpoint if resuming)."""
@@ -119,19 +138,6 @@ class TrainingBackend(Protocol):
         self, datums: Sequence[Any], *, kl_coef: float, kl_discount_factor: float
     ) -> dict[str, float]:
         """Mutate ``datums``' advantages in place with a KL-to-base penalty; return metrics."""
-        ...
-
-    async def score_reference_completions(
-        self,
-        reference_prompts: Sequence[Any],
-        completion_tokens: Sequence[Sequence[int]],
-    ) -> list[list[float]]:
-        """Score completions under the frozen base model on paired reference prompts.
-
-        Each returned list contains one log-probability per completion token.  Unlike
-        ``incorporate_kl_penalty``, the reference prompt may differ from the prompt
-        that produced the completion; OPCT relies on this cross-prompt distinction.
-        """
         ...
 
     async def save_checkpoint(self, *, name: str, log_dir: str | Path, loop_state: dict, kind: str) -> dict:

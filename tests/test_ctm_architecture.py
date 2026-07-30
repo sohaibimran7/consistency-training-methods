@@ -70,5 +70,10 @@ def test_concrete_adapters_live_under_ctm_data_not_ctm():
     assert (ROOT / "ctm_data" / "adapters" / "eval_awareness").is_dir()
 
 
+def test_paper_experiment_factories_live_under_scripts():
+    assert not list((ROOT / "ctm_data").rglob("experiment_factory.py"))
+    assert (ROOT / "scripts" / "rmct_paper_vast_more_methods" / "experiment_factory.py").is_file()
+
+
 def test_rl_trainer_does_not_import_a_concrete_backend():
     assert "ctm.backends.tinker" not in _imports(CTM / "training" / "rl.py")

@@ -1,5 +1,5 @@
 name: rmct_paper_vast_more_methods_smoke
-experiment_factory: ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment
+experiment_factory: scripts.rmct_paper_vast_more_methods.experiment_factory:compile_experiment
 
 # Integration test only. Counts and token limits are intentionally too small
 # for scientific interpretation. The method definitions match experiment.yaml.

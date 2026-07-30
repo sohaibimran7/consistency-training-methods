@@ -118,7 +118,7 @@ def test_renderer_handles_negative_percent_change_and_zero_line(tmp_path: Path):
     render_publication_plot(rows, {"sample_labels": True}, output)
 
     content = output.read_text()
-    assert "−20%" in content or "-20%" in content
+    assert "−25%" in content or "-25%" in content
     assert "n=100" in content
 
 

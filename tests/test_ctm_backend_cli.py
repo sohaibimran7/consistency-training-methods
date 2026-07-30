@@ -9,7 +9,7 @@ from tinker import types
 
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend
 from ctm.backends.local.engine import LocalBackend
-from ctm.backends.tinker import TinkerBackend
+from ctm.backends.tinker import TinkerBackend, TinkerSamplerHandle
 from ctm.core.config import LoRAConfig
 
 
@@ -107,17 +107,14 @@ def test_tinker_training_run_records_renderer_metadata(monkeypatch):
     }
 
 
-def test_tinker_scores_only_completion_tokens_under_reference_prompt():
+def test_tinker_policy_handle_scores_only_completion_tokens_with_raw_policy():
     class SamplingClient:
         async def compute_logprobs_async(self, model_input):
             assert model_input.to_ints() == [1, 2, 3, 4]
             return [None, -0.1, -0.2, -0.3]
 
-    backend = TinkerBackend()
-    backend.model = "unit/model"
-    backend._base_sampling_client = SamplingClient()
     scored = asyncio.run(
-        backend.score_reference_completions(
+        TinkerSamplerHandle(SamplingClient()).score_completions(
             [types.ModelInput.from_ints(tokens=[1, 2])],
             [[3, 4]],
         )
