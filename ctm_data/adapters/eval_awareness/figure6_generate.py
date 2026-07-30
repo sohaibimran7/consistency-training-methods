@@ -161,11 +161,21 @@ def _parse_completion(completion: Any) -> dict[str, Any]:
     if message is None:
         raise ValueError("endpoint response choice has no message")
     response = _message_content(message)
+    reasoning = _field(message, "reasoning", _MISSING)
     reasoning_content = _field(message, "reasoning_content", _MISSING)
+    native_reasoning = reasoning
+    native_trace_source = "reasoning"
+    if native_reasoning is _MISSING or native_reasoning is None:
+        native_reasoning = reasoning_content
+        native_trace_source = "reasoning_content"
+    elif reasoning_content is not _MISSING and reasoning_content is not None and reasoning_content != native_reasoning:
+        raise ValueError("endpoint response has conflicting reasoning and reasoning_content fields")
     extracted = extract_reasoning(
         response,
-        None if reasoning_content is _MISSING or reasoning_content is None else reasoning_content,
+        None if native_reasoning is _MISSING or native_reasoning is None else native_reasoning,
     )
+    if extracted["trace_present"] and native_trace_source == "reasoning":
+        extracted["trace_source"] = native_trace_source
     usage = _field(completion, "usage")
     extracted.update(
         {

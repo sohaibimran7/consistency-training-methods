@@ -13,6 +13,7 @@ import pytest
 
 from ctm.artifacts import ArtifactManifestError
 from ctm_data.adapters.eval_awareness.figure6_generate import (
+    _parse_completion,
     extract_reasoning,
     generate_figure6,
     generation_provenance_path,
@@ -312,16 +313,39 @@ def _patch_generation_inputs(monkeypatch, rows) -> None:
     )
 
 
-def _completion(content: str, *, reasoning: Any = None, include_reasoning: bool = True) -> dict[str, Any]:
+def _completion(
+    content: str,
+    *,
+    reasoning: Any = None,
+    include_reasoning: bool = True,
+    reasoning_field: str = "reasoning_content",
+) -> dict[str, Any]:
     message = {"content": content}
     if include_reasoning:
-        message["reasoning_content"] = reasoning
+        message[reasoning_field] = reasoning
     return {
         "id": "completion-id",
         "model": MODEL_SPECS["qwen32"].model_id,
         "choices": [{"message": message, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
     }
+
+
+def test_vllm_reasoning_field_is_preserved_as_the_native_trace():
+    parsed = _parse_completion(_completion("final answer", reasoning="native vLLM trace", reasoning_field="reasoning"))
+
+    assert parsed["reasoning"] == "native vLLM trace"
+    assert parsed["answer"] == "final answer"
+    assert parsed["trace_present"] is True
+    assert parsed["trace_source"] == "reasoning"
+
+
+def test_conflicting_native_reasoning_fields_are_rejected():
+    completion = _completion("final answer", reasoning="new field", reasoning_field="reasoning")
+    completion["choices"][0]["message"]["reasoning_content"] = "old field"
+
+    with pytest.raises(ValueError, match="conflicting reasoning"):
+        _parse_completion(completion)
 
 
 class _FakeCompletions:
