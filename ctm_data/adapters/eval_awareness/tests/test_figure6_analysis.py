@@ -16,7 +16,6 @@ from ctm_data.adapters.eval_awareness.figure6_analysis import (
     EXPECTED_CELL_COUNT,
     EXPECTED_JUDGMENT_COUNT,
     EXPECTED_MODEL_JUDGMENT_COUNT,
-    OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL,
     OPENROUTER_MUSE_ALTERNATIVE_LABEL,
     PublicationValidationError,
     STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
@@ -531,8 +530,10 @@ def _attach_paid_manifest(
     judgments: list[dict],
     *,
     model_keys: tuple[str, ...],
+    profile_id: str = openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE,
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    profile = openrouter._judge_profile(openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE)
+    profile = openrouter._judge_profile(profile_id)
+    endpoint = f"{profile['base_url']}{profile['endpoint_path']}"
     proxy = {"enabled": False}
     route = None
     allowed_models = sorted(profile["allowed_response_models"])
@@ -541,8 +542,9 @@ def _attach_paid_manifest(
         custom_id = f"figure6-analysis-{index:05d}"
         generation_sha256 = hashlib.sha256(f"generation-{index}".encode()).hexdigest()
         request_protocols[custom_id] = {
-            "provider": "OpenRouter",
-            "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+            "provider": profile["provider"],
+            "endpoint": endpoint,
+            "api_style": profile["api_style"],
             "judge_profile": profile["id"],
             "model": profile["model"],
             "allowed_response_models": allowed_models,
@@ -551,6 +553,7 @@ def _attach_paid_manifest(
             "provider_routing": profile["provider_routing"],
             "reasoning": profile["reasoning"],
             "response_format": profile["response_format"],
+            "store": profile["store"],
             "route_mode": profile["route_mode"],
             "prompt_sha256": hashlib.sha256(f"prompt-{index}".encode()).hexdigest(),
             "generation_record_sha256": generation_sha256,
@@ -564,23 +567,47 @@ def _attach_paid_manifest(
                 "judge_profile": profile["id"],
                 "judge_profile_label": profile["label"],
                 "judge_model": profile["model"],
-                "judge_provider": "OpenRouter",
+                "judge_provider": profile["provider"],
                 "judge_requested_model": profile["model"],
                 "judge_response_model": profile["model"],
                 "judge_allowed_response_models": allowed_models,
                 "judge_response_id": f"response-{index:05d}",
                 "judge_request_id": f"request-{index:05d}",
-                "judge_endpoint": "https://openrouter.ai/api/v1/chat/completions",
+                "judge_endpoint": endpoint,
+                "judge_api_style": profile["api_style"],
                 "judge_temperature": profile["temperature"],
                 "judge_provider_routing": profile["provider_routing"],
                 "judge_reasoning": profile["reasoning"],
                 "judge_response_format": profile["response_format"],
+                "judge_store": profile["store"],
                 "judge_route_mode": profile["route_mode"],
                 "judge_max_completion_tokens": profile["max_tokens"],
                 "judge_proxy": proxy,
                 "judge_route": route,
             }
         )
+        if profile["response_format"].get("type") == "json_schema":
+            awareness = "Yes" if row["awareness_conclusion"] == "yes" else "No"
+            performance = "Yes" if row["performance_conclusion"] == "yes" else "No"
+            row["judge_finish_reason"] = "stop"
+            row["raw_judge_object"] = {
+                "model_awareness": {
+                    "conclusion": awareness,
+                    "awareness_type": row["awareness_type"],
+                    "evidence": [],
+                    "reasoning": "fixture",
+                },
+                "hypothetical_recognition": {
+                    "conclusion": "No",
+                    "evidence": [],
+                    "reasoning": "fixture",
+                },
+                "task_performance": {
+                    "conclusion": performance,
+                    "evidence": [],
+                    "reasoning": "fixture",
+                },
+            }
     matrix = {
         "model_keys": list(model_keys),
         "generation_count": 5_400 * len(model_keys),
@@ -594,8 +621,9 @@ def _attach_paid_manifest(
     }
     plan_document = {
         "schema": openrouter.PLAN_SCHEMA,
-        "provider": "OpenRouter",
-        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "provider": profile["provider"],
+        "endpoint": endpoint,
+        "api_style": profile["api_style"],
         "judge_profile": profile["id"],
         "judge_model": profile["model"],
         "allowed_response_models": allowed_models,
@@ -611,6 +639,7 @@ def _attach_paid_manifest(
         "provider_routing": profile["provider_routing"],
         "reasoning": profile["reasoning"],
         "response_format": profile["response_format"],
+        "store": profile["store"],
         "matrix": matrix,
         "requests": [
             {"custom_id": custom_id, "request": request_protocols[custom_id]} for custom_id in sorted(request_protocols)
@@ -624,6 +653,8 @@ def _attach_paid_manifest(
         plan_sha256=plan_sha256,
         request_protocols=request_protocols,
         judge_profile=profile["id"],
+        provider=profile["provider"],
+        api_style=profile["api_style"],
         judge_model=profile["model"],
         allowed_response_models=allowed_models,
         judge_template_sha256=judge.PAPER_JUDGE_TEMPLATE_SHA256,
@@ -632,13 +663,14 @@ def _attach_paid_manifest(
         max_attempts=5,
         concurrency=profile["concurrency"],
         max_retry_after=profile["max_retry_after"],
-        endpoint="https://openrouter.ai/api/v1/chat/completions",
+        endpoint=endpoint,
         proxy=proxy,
         route=route,
         route_mode=profile["route_mode"],
         provider_routing=profile["provider_routing"],
         reasoning=profile["reasoning"],
         response_format=profile["response_format"],
+        store=profile["store"],
         matrix=matrix,
         plan_document=plan_document,
         core_plan_sha256=core_plan_sha256,
@@ -678,7 +710,9 @@ def _attach_paid_manifest(
                 "approval_index": 1,
                 "plan_sha256": plan_sha256,
                 "core_plan_sha256": core_plan_sha256,
-                "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+                "endpoint": endpoint,
+                "provider": profile["provider"],
+                "api_style": profile["api_style"],
                 "judge_profile": profile["id"],
                 "proxy": proxy,
                 "route": route,
@@ -687,6 +721,7 @@ def _attach_paid_manifest(
                 "provider_routing": profile["provider_routing"],
                 "reasoning": profile["reasoning"],
                 "response_format": profile["response_format"],
+                "store": profile["store"],
                 "judge_model": profile["model"],
                 "allowed_response_models": allowed_models,
                 "observed_response_models": [profile["model"]],
@@ -735,10 +770,20 @@ def test_default_publication_matrix_is_37800_with_300_per_cell():
     assert len(result.summary["expected"]["pair_ids"]) == 100
 
 
-def test_current_three_qwen_gpt_oss_nitro_scope_is_strict_complete_at_16200(tmp_path: Path):
+@pytest.mark.parametrize(
+    "profile_id",
+    [
+        openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE,
+        openrouter.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+    ],
+)
+def test_current_three_qwen_direct_profile_scope_is_strict_complete_at_16200(
+    tmp_path: Path,
+    profile_id: str,
+):
     pytest.importorskip("matplotlib")
     judgments = _registered_publication_matrix(CURRENT_QWEN_MODEL_KEY_ORDER)
-    profile = openrouter._judge_profile(openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE)
+    profile = openrouter._judge_profile(profile_id)
     allowed_response_models = list(profile["allowed_response_models"])
     for row in judgments:
         row.update(
@@ -746,7 +791,7 @@ def test_current_three_qwen_gpt_oss_nitro_scope_is_strict_complete_at_16200(tmp_
                 "judge_profile": profile["id"],
                 "judge_profile_label": profile["label"],
                 "judge_model": profile["model"],
-                "judge_provider": "OpenRouter",
+                "judge_provider": profile["provider"],
                 "judge_response_model": profile["model"],
                 "judge_allowed_response_models": allowed_response_models,
                 "judge_max_completion_tokens": profile["max_tokens"],
@@ -767,6 +812,7 @@ def test_current_three_qwen_gpt_oss_nitro_scope_is_strict_complete_at_16200(tmp_
         model_artifacts, model_manifests, model_route_attestations = _attach_paid_manifest(
             judgments[start:end],
             model_keys=(model_key,),
+            profile_id=profile_id,
         )
         model_artifacts[0].update(
             {
@@ -809,11 +855,11 @@ def test_current_three_qwen_gpt_oss_nitro_scope_is_strict_complete_at_16200(tmp_
     assert "not the full seven-model paper reproduction" in result.summary["source_note"]
     assert len(validate_plot_rows(result.rows, summary=result.summary)) == 54
 
-    png = tmp_path / "qwen-only-gpt-oss-nitro.png"
-    pdf = tmp_path / "qwen-only-gpt-oss-nitro.pdf"
+    png = tmp_path / f"qwen-only-{profile_id}.png"
+    pdf = tmp_path / f"qwen-only-{profile_id}.pdf"
     render_figure6(result.rows, summary=result.summary, png_path=png, pdf_path=pdf)
     assert result.summary["scope_label"].encode() in png.read_bytes()
-    assert OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL.encode() in png.read_bytes()
+    assert profile["label"].encode() in png.read_bytes()
     assert pdf.read_bytes().startswith(b"%PDF")
 
 

@@ -300,22 +300,17 @@ error rows; those remain part of the audit history. The judge adapter selects
 exactly one terminal success for each logical key and rejects any history
 without one.
 
-## 7. Run the approved GPT-OSS 120B Nitro alternative judge through OpenRouter
+## 7. Run the approved GPT-5.6 Luna alternative judge through the direct OpenAI API
 
-The current reproduction uses `openai/gpt-oss-120b:nitro` directly from the
-operator laptop through OpenRouter with
-the exact hash-pinned paper judge prompt and a 32,768-token output ceiling. This
-is a user-pinned alternative judge, not the paper's GPT-5 judge. The registered
-`gpt-oss-120b-nitro-direct` profile prohibits proxies and route attestations, uses
-the model's maximum supported mandatory reasoning effort (`high`) without returning
-the reasoning trace, requests a JSON object, and hash-binds temperature 0, concurrency 4,
-the 300-second retry cap, and exact provider routing. The Nitro suffix and the
-explicit `provider.sort=throughput` pin throughput-prioritized routing. The profile
-accepts the requested Nitro model ID or OpenRouter's base response identity
-`openai/gpt-oss-120b`, while rejecting every other response model.
-It excludes the Cerebras provider because live paid responses stopped at 8,192
-tokens despite the larger advertised endpoint ceiling, and permits OpenRouter to
-fall through to the next fastest provider that supports every pinned parameter.
+The current reproduction uses `gpt-5.6-luna` from the operator laptop through
+ordinary direct OpenAI Chat Completions requests. It does not use the Batch API.
+The exact hash-pinned paper judge prompt is paired with a 32,768-token output
+ceiling and strict JSON Schema output. This is a user-pinned alternative judge,
+not the paper's GPT-5 judge. The registered `openai-gpt-5.6-luna-direct` profile
+prohibits proxies and route attestations, sets the model's `max` reasoning effort,
+disables response storage, and hash-binds the direct endpoint, request schema,
+500-way client concurrency, five-attempt ceiling, and 300-second Retry-After cap.
+The only accepted response model identity is `gpt-5.6-luna`.
 The approved scope is exactly
 `qwen32`, `qwen_mo_mid`, and `qwen_mo_post`; do not add `qwen36` or a Llama key. Each model has its own complete
 5,400-request paid lifecycle, so it can be judged as soon as that model's
@@ -379,8 +374,8 @@ test "$(sha256sum "$FIGURE6_JUDGE_TEMPLATE_PATH" | awk '{print $1}')" = \
 mkdir -p "$FIGURE6_JUDGE_ROOT"
 ```
 
-Keep `OPENROUTER_API_KEY` only on that operator machine. Do not configure a
-proxy or U.S. route evidence for the current direct GPT-OSS Nitro profile.
+Keep `OPENAI_API_KEY` only on that operator machine. Do not configure a proxy
+or U.S. route evidence for the current direct OpenAI profile.
 
 ### Optional Muse US-proxy profile
 
@@ -481,10 +476,10 @@ build_judge_args() {
   JUDGE_ARGS=(
     --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
     --expected-model-key "$MODEL_KEY"
-    --judge-profile gpt-oss-120b-nitro-direct
+    --judge-profile openai-gpt-5.6-luna-direct
     --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
-    --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
-    --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+    --attempt-log "$MODEL_JUDGE_ROOT/openai-attempts.jsonl"
+    --manifest "$MODEL_JUDGE_ROOT/openai-manifest.json"
     --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
     --max-attempts "$MAX_ATTEMPTS"
     --max-retry-after 300
@@ -515,16 +510,16 @@ mkdir -p "$MODEL_JUDGE_ROOT"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile gpt-oss-120b-nitro-direct
+  --judge-profile openai-gpt-5.6-luna-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
-  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
-  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --attempt-log "$MODEL_JUDGE_ROOT/openai-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openai-manifest.json"
   --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
   --max-attempts "$FIGURE6_MAX_ATTEMPTS"
   --max-retry-after 300
 )
 test "${#REVIEWED_PLAN_SHA256}" -eq 64
-test -n "${OPENROUTER_API_KEY:-}"
+test -n "${OPENAI_API_KEY:-}"
 python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" \
   --expected-plan-sha256 "$REVIEWED_PLAN_SHA256" \
   --yes
@@ -555,10 +550,10 @@ export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile gpt-oss-120b-nitro-direct
+  --judge-profile openai-gpt-5.6-luna-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
-  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
-  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --attempt-log "$MODEL_JUDGE_ROOT/openai-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openai-manifest.json"
   --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
   --max-attempts "$NEW_MAX_ATTEMPTS"
   --max-retry-after 300
@@ -581,16 +576,16 @@ export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile gpt-oss-120b-nitro-direct
+  --judge-profile openai-gpt-5.6-luna-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
-  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
-  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --attempt-log "$MODEL_JUDGE_ROOT/openai-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openai-manifest.json"
   --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
   --max-attempts "$NEW_MAX_ATTEMPTS"
   --max-retry-after 300
 )
 test "${#AMENDED_PLAN_SHA256}" -eq 64
-test -n "${OPENROUTER_API_KEY:-}"
+test -n "${OPENAI_API_KEY:-}"
 python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" \
   --expected-plan-sha256 "$AMENDED_PLAN_SHA256" \
   --amend-attempt-ceiling \
@@ -611,16 +606,16 @@ export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile gpt-oss-120b-nitro-direct
+  --judge-profile openai-gpt-5.6-luna-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
-  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
-  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --attempt-log "$MODEL_JUDGE_ROOT/openai-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openai-manifest.json"
   --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
   --max-attempts "$NEW_MAX_ATTEMPTS"
   --max-retry-after 300
 )
 test "${#AMENDED_PLAN_SHA256}" -eq 64
-test -n "${OPENROUTER_API_KEY:-}"
+test -n "${OPENAI_API_KEY:-}"
 python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" \
   --expected-plan-sha256 "$AMENDED_PLAN_SHA256" \
   --amend-attempt-ceiling \
@@ -767,13 +762,13 @@ python -m ctm_data.adapters.eval_awareness.figure6_analysis \
     "$FIGURE6_JUDGE_ROOT/qwen32/judgments.jsonl" \
     "$FIGURE6_JUDGE_ROOT/qwen_mo_mid/judgments.jsonl" \
     "$FIGURE6_JUDGE_ROOT/qwen_mo_post/judgments.jsonl" \
-  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen32/openrouter-manifest.json" \
-  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen_mo_mid/openrouter-manifest.json" \
-  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen_mo_post/openrouter-manifest.json" \
+  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen32/openai-manifest.json" \
+  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen_mo_mid/openai-manifest.json" \
+  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen_mo_post/openai-manifest.json" \
   --expected-model-key qwen32 \
   --expected-model-key qwen_mo_mid \
   --expected-model-key qwen_mo_post \
-  --expected-judge-profile gpt-oss-120b-nitro-direct \
+  --expected-judge-profile openai-gpt-5.6-luna-direct \
   --expected-judge-max-completion-tokens 32768 \
   --output-csv "$FIGURE6_JUDGE_ROOT/figure6-aggregation.csv" \
   --summary-json "$FIGURE6_JUDGE_ROOT/figure6-summary.json"
@@ -786,7 +781,7 @@ python -m ctm_data.adapters.eval_awareness.figure6_plot \
 
 Strict plotting derives the selected model order from the analysis summary and
 accepts this scope only when all three selected registered Qwen models have
-exactly 5,400 valid judgments (16,200 total). Strict GPT-OSS Nitro-profile analysis recomputes every judgment
+exactly 5,400 valid judgments (16,200 total). Strict GPT-5.6 Luna-profile analysis recomputes every judgment
 file digest, validates its unique `run_completed` event and approval, walks the
 reviewed ceiling-amendment chain, binds every row to its planned custom ID and
 generation digest, and checks the exact direct route, provider routing, reasoning/JSON settings, requested
@@ -794,11 +789,11 @@ and response model identities, provider request/response IDs, and plan hashes.
 It fails closed if any judgment file, manifest, or evidence file is absent,
 extra, mismatched, or tampered. Plotting automatically labels the title and source
 note with both `Qwen-only subset (3 of 7 models; 16,200 strict judgments)` and
-`OpenRouter GPT-OSS 120B Nitro alternative judge`; custom title/source text is rejected if it
+`OpenAI GPT-5.6 Luna direct alternative judge`; custom title/source text is rejected if it
 omits either exact label. The output is complete only for the requested subset,
 not the full seven-model paper reproduction or paper result data. Preserve the
 artifact, three selected Qwen generation logs and their provenance/selection sidecars,
-OpenRouter manifests and durable attempt logs, normalized judgments, summary,
+direct-provider manifests and durable attempt logs, normalized judgments, summary,
 CSV, PNG, and PDF together. Direct-mode strict analysis rejects route evidence.
 
 Omitting all three `--expected-model-key` options preserves the original strict
@@ -815,7 +810,7 @@ attempts and superseded plan hashes—they are part of the audit trail:
 
 ```bash
 export FIGURE6_HANDOFF_ROOT=/absolute/local/path/figure6-handoffs
-export FIGURE6_HANDOFF="$FIGURE6_HANDOFF_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-qwen-gpt-oss-nitro"
+export FIGURE6_HANDOFF="$FIGURE6_HANDOFF_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-qwen-gpt-5p6-luna"
 mkdir -p "$FIGURE6_HANDOFF/generations" "$FIGURE6_HANDOFF/judge" \
   "$FIGURE6_HANDOFF/results" "$FIGURE6_HANDOFF/source-identities"
 
@@ -826,8 +821,8 @@ for MODEL_KEY in qwen32 qwen_mo_mid qwen_mo_post; do
     "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl.provenance.json" \
     "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl.selections.jsonl" \
     "$FIGURE6_HANDOFF/generations/$MODEL_KEY/"
-  cp -a "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/openrouter-attempts.jsonl" \
-    "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/openrouter-manifest.json" \
+  cp -a "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/openai-attempts.jsonl" \
+    "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/openai-manifest.json" \
     "$FIGURE6_JUDGE_ROOT/$MODEL_KEY"/plan.*.json \
     "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/judgments.jsonl" \
     "$FIGURE6_HANDOFF/judge/$MODEL_KEY/"
@@ -842,7 +837,7 @@ if test "$FIGURE6_JUDGE_PROFILE" = muse-spark-1.1-us-proxy; then
   test -f "$VAST_CONSOLE_EVIDENCE"
   cp -a "$ROUTE_EVIDENCE" "$VAST_CONSOLE_EVIDENCE" \
     "$FIGURE6_HANDOFF/source-identities/"
-elif test "$FIGURE6_JUDGE_PROFILE" != gpt-oss-120b-nitro-direct; then
+elif test "$FIGURE6_JUDGE_PROFILE" != openai-gpt-5.6-luna-direct; then
   printf 'Unexpected handoff judge profile: %s\n' "$FIGURE6_JUDGE_PROFILE" >&2
   exit 1
 fi

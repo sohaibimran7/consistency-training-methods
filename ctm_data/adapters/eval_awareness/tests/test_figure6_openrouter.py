@@ -1,4 +1,4 @@
-"""Offline tests for the direct, resumable OpenRouter Figure 6 judge."""
+"""Offline tests for the direct, resumable Figure 6 judge."""
 
 from __future__ import annotations
 
@@ -174,6 +174,7 @@ def _success_response(request: httpx.Request) -> httpx.Response:
 
 
 def _run(tmp_path: Path, client: httpx.AsyncClient | None, **kwargs: Any) -> dict[str, Any]:
+    kwargs.setdefault("judge_profile", scorer.GPT_OSS_120B_NITRO_DIRECT_PROFILE)
     kwargs.setdefault("confirm_paid", True)
     if kwargs["confirm_paid"] and "expected_plan_sha256" not in kwargs:
         planning_kwargs = {
@@ -454,6 +455,27 @@ def test_cli_rejects_paid_mode_without_yes_before_loading_inputs(capsys: pytest.
             ]
         )
     assert "requires --expected-plan-sha256" in capsys.readouterr().err
+
+
+def test_cli_omitted_profile_defaults_to_direct_luna() -> None:
+    from scripts import judge_figure6_openrouter as cli
+
+    args = cli._build_parser().parse_args(
+        [
+            "--generations",
+            "generations.jsonl",
+            "--judge-template",
+            "judge.txt",
+            "--attempt-log",
+            "attempts.jsonl",
+            "--output",
+            "judgments.jsonl",
+            "--expected-model-key",
+            "qwen32",
+            "--dry-run",
+        ]
+    )
+    assert args.judge_profile == scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE
 
 
 def test_paid_malformed_response_is_preserved_and_requires_explicit_rescore(tmp_path: Path) -> None:
@@ -863,6 +885,189 @@ def test_public_dry_plan_binds_exact_scope_concurrency_retry_cap_and_route(tmp_p
     assert len(summary["plan_sha256"]) == 64
     assert len(summary["core_plan_sha256"]) == 64
     assert not Path(summary["manifest"]).exists()
+
+
+def test_openai_luna_public_dry_plan_pins_direct_500_way_profile(tmp_path: Path) -> None:
+    summary = asyncio.run(
+        scorer.judge_generations(
+            _qwen_matrix(("qwen32",)),
+            template=TEMPLATE,
+            attempt_log_path=tmp_path / "attempts.jsonl",
+            output_path=tmp_path / "judgments.jsonl",
+            api_key=None,
+            judge_template_sha256=TEMPLATE_SHA256,
+            judge_profile=scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+            expected_model_keys=("qwen32",),
+            dry_run=True,
+        )
+    )
+    assert summary["provider"] == "OpenAI"
+    assert summary["endpoint"] == "https://api.openai.com/v1/chat/completions"
+    assert summary["api_style"] == "openai_chat_completions"
+    assert summary["judge_model"] == "gpt-5.6-luna"
+    assert summary["allowed_response_models"] == ["gpt-5.6-luna"]
+    assert summary["temperature"] is None
+    assert summary["max_tokens"] == 32_768
+    assert summary["concurrency"] == 500
+    assert summary["reasoning"] == {"effort": "max"}
+    assert summary["provider_routing"] == {}
+    assert summary["store"] is False
+    assert summary["response_format"]["type"] == "json_schema"
+    assert summary["response_format"]["json_schema"]["strict"] is True
+    assert summary["pending"] == 5_400
+
+
+def test_openai_luna_uses_direct_chat_request_shape_and_normalizes_success(tmp_path: Path) -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        return httpx.Response(
+            200,
+            request=request,
+            headers={"x-request-id": "request-luna-unit"},
+            json={
+                "id": "chatcmpl-luna-unit",
+                "model": scorer.OPENAI_GPT_56_LUNA_JUDGE_MODEL,
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "model_awareness": {
+                                        "conclusion": "Yes",
+                                        "awareness_type": "safety",
+                                        "evidence": ["quote"],
+                                        "reasoning": "reason",
+                                    },
+                                    "hypothetical_recognition": {
+                                        "conclusion": "No",
+                                        "evidence": ["quote"],
+                                        "reasoning": "reason",
+                                    },
+                                    "task_performance": {
+                                        "conclusion": "No",
+                                        "evidence": ["detail"],
+                                        "reasoning": "reason",
+                                    },
+                                }
+                            ),
+                        },
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "total_tokens": 120,
+                    "completion_tokens_details": {"reasoning_tokens": 10},
+                },
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    summary = _run(
+        tmp_path,
+        client,
+        judge_profile=scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+    )
+    asyncio.run(client.aclose())
+    assert summary["completed"] == 1
+    assert len(seen) == 1
+    body = seen[0]
+    assert body["model"] == "gpt-5.6-luna"
+    assert body["max_completion_tokens"] == 32_768
+    assert body["reasoning_effort"] == "max"
+    assert body["store"] is False
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["messages"][0]["role"] == "system"
+    assert "temperature" not in body
+    assert "provider" not in body
+    assert "max_tokens" not in body
+    attempt = json.loads((tmp_path / "attempts.jsonl").read_text())
+    assert attempt["response"]["provider"] == "OpenAI"
+    assert attempt["judgment"]["judge_provider"] == "OpenAI"
+    assert attempt["judgment"]["judge_response_model"] == "gpt-5.6-luna"
+    assert attempt["judgment"]["judge_finish_reason"] == "stop"
+
+
+@pytest.mark.parametrize(
+    "content,finish_reason",
+    [
+        (
+            {
+                "model_awareness": {
+                    "conclusion": "Yes",
+                    "awareness_type": "safety",
+                    "evidence": [],
+                    "reasoning": "reason",
+                },
+                "task_performance": {
+                    "conclusion": "No",
+                    "evidence": [],
+                    "reasoning": "reason",
+                },
+            },
+            "stop",
+        ),
+        (
+            {
+                "model_awareness": {
+                    "conclusion": "Yes",
+                    "awareness_type": "safety",
+                    "evidence": [],
+                    "reasoning": "reason",
+                },
+                "hypothetical_recognition": {
+                    "conclusion": "No",
+                    "evidence": [],
+                    "reasoning": "reason",
+                },
+                "task_performance": {
+                    "conclusion": "No",
+                    "evidence": [],
+                    "reasoning": "reason",
+                },
+            },
+            "length",
+        ),
+    ],
+)
+def test_openai_luna_rejects_incomplete_schema_or_nonstop_finish(
+    tmp_path: Path, content: dict[str, Any], finish_reason: str
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "id": "chatcmpl-invalid-luna",
+                "model": scorer.OPENAI_GPT_56_LUNA_JUDGE_MODEL,
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": finish_reason,
+                        "message": {"role": "assistant", "content": json.dumps(content)},
+                    }
+                ],
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(scorer.OpenRouterJudgeError, match="raw response preserved"):
+        _run(
+            tmp_path,
+            client,
+            judge_profile=scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+            max_attempts=1,
+        )
+    asyncio.run(client.aclose())
+    attempt = json.loads((tmp_path / "attempts.jsonl").read_text())
+    assert attempt["status"] == "error"
+    assert attempt["retryable"] is False
 
 
 def test_plan_hash_changes_with_concurrency_retry_cap_and_ceiling_only_core_rule(tmp_path: Path) -> None:

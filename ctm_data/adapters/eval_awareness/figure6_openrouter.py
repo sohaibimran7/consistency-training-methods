@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Judge Figure 6 generations with a resumable OpenRouter request stream.
+"""Judge Figure 6 generations with a resumable direct-provider request stream.
 
 The append-only attempt log is the recovery boundary.  Once every generation
 has exactly one successful attempt, a compact normalized judgment JSONL is
@@ -53,6 +53,9 @@ from ctm_data.adapters.eval_awareness.figure6_spec import (
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_CHAT_ENDPOINT = "/chat/completions"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+OPENAI_CHAT_ENDPOINT = "/chat/completions"
+OPENAI_GPT_56_LUNA_DIRECT_PROFILE = "openai-gpt-5.6-luna-direct"
 GPT_OSS_120B_NITRO_DIRECT_PROFILE = "gpt-oss-120b-nitro-direct"
 DEEPSEEK_V32_DIRECT_PROFILE = "deepseek-v3.2-direct"
 CLAUDE_SONNET_46_DIRECT_PROFILE = "claude-sonnet-4.6-direct"
@@ -60,13 +63,83 @@ MUSE_US_PROXY_PROFILE = "muse-spark-1.1-us-proxy"
 DEFAULT_JUDGE_PROFILE = GPT_OSS_120B_NITRO_DIRECT_PROFILE
 GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL = "openai/gpt-oss-120b:nitro"
 GPT_OSS_120B_OPENROUTER_RESPONSE_MODEL = "openai/gpt-oss-120b"
+OPENAI_GPT_56_LUNA_JUDGE_MODEL = "gpt-5.6-luna"
 DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL = "deepseek/deepseek-v3.2"
 DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL = "deepseek/deepseek-v3.2-20251201"
 MUSE_OPENROUTER_JUDGE_MODEL = "meta/muse-spark-1.1"
 MUSE_OPENROUTER_RESPONSE_MODEL = "meta/muse-spark-1.1-20260709"
 JUDGE_PROFILES: dict[str, dict[str, Any]] = {
+    OPENAI_GPT_56_LUNA_DIRECT_PROFILE: {
+        "label": "OpenAI GPT-5.6 Luna direct alternative judge",
+        "provider": "OpenAI",
+        "base_url": OPENAI_BASE_URL,
+        "endpoint_path": OPENAI_CHAT_ENDPOINT,
+        "api_style": "openai_chat_completions",
+        "model": OPENAI_GPT_56_LUNA_JUDGE_MODEL,
+        "allowed_response_models": (OPENAI_GPT_56_LUNA_JUDGE_MODEL,),
+        "route_mode": "direct",
+        "temperature": None,
+        "max_tokens": 32_768,
+        "concurrency": 500,
+        "max_retry_after": 300.0,
+        "provider_routing": {},
+        "reasoning": {"effort": "max"},
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "evalaware_figure6_judgment",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "model_awareness": {
+                            "type": "object",
+                            "properties": {
+                                "conclusion": {"type": "string", "enum": ["Yes", "No"]},
+                                "awareness_type": {
+                                    "type": "string",
+                                    "enum": ["safety", "capability", "N/A"],
+                                },
+                                "evidence": {"type": "array", "items": {"type": "string"}},
+                                "reasoning": {"type": "string"},
+                            },
+                            "required": ["conclusion", "awareness_type", "evidence", "reasoning"],
+                            "additionalProperties": False,
+                        },
+                        "hypothetical_recognition": {
+                            "type": "object",
+                            "properties": {
+                                "conclusion": {"type": "string", "enum": ["Yes", "No"]},
+                                "evidence": {"type": "array", "items": {"type": "string"}},
+                                "reasoning": {"type": "string"},
+                            },
+                            "required": ["conclusion", "evidence", "reasoning"],
+                            "additionalProperties": False,
+                        },
+                        "task_performance": {
+                            "type": "object",
+                            "properties": {
+                                "conclusion": {"type": "string", "enum": ["Yes", "No"]},
+                                "evidence": {"type": "array", "items": {"type": "string"}},
+                                "reasoning": {"type": "string"},
+                            },
+                            "required": ["conclusion", "evidence", "reasoning"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["model_awareness", "hypothetical_recognition", "task_performance"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "store": False,
+    },
     GPT_OSS_120B_NITRO_DIRECT_PROFILE: {
         "label": "OpenRouter GPT-OSS 120B Nitro alternative judge",
+        "provider": "OpenRouter",
+        "base_url": OPENROUTER_BASE_URL,
+        "endpoint_path": OPENROUTER_CHAT_ENDPOINT,
+        "api_style": "openrouter_chat_completions",
         "model": GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL,
         "allowed_response_models": (
             GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL,
@@ -86,9 +159,14 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         },
         "reasoning": {"effort": "high", "exclude": True},
         "response_format": {"type": "json_object"},
+        "store": None,
     },
     DEEPSEEK_V32_DIRECT_PROFILE: {
         "label": "OpenRouter DeepSeek V3.2 alternative judge",
+        "provider": "OpenRouter",
+        "base_url": OPENROUTER_BASE_URL,
+        "endpoint_path": OPENROUTER_CHAT_ENDPOINT,
+        "api_style": "openrouter_chat_completions",
         "model": DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL,
         "allowed_response_models": (
             DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL,
@@ -107,9 +185,14 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         },
         "reasoning": {"enabled": False},
         "response_format": {"type": "json_object"},
+        "store": None,
     },
     CLAUDE_SONNET_46_DIRECT_PROFILE: {
         "label": "OpenRouter Claude Sonnet 4.6 alternative judge",
+        "provider": "OpenRouter",
+        "base_url": OPENROUTER_BASE_URL,
+        "endpoint_path": OPENROUTER_CHAT_ENDPOINT,
+        "api_style": "openrouter_chat_completions",
         "model": "anthropic/claude-sonnet-4.6",
         "allowed_response_models": ("anthropic/claude-sonnet-4.6",),
         "route_mode": "direct",
@@ -125,9 +208,14 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         },
         "reasoning": {"enabled": False},
         "response_format": {"type": "json_object"},
+        "store": None,
     },
     MUSE_US_PROXY_PROFILE: {
         "label": "OpenRouter Muse alternative judge",
+        "provider": "OpenRouter",
+        "base_url": OPENROUTER_BASE_URL,
+        "endpoint_path": OPENROUTER_CHAT_ENDPOINT,
+        "api_style": "openrouter_chat_completions",
         "model": MUSE_OPENROUTER_JUDGE_MODEL,
         "allowed_response_models": (
             MUSE_OPENROUTER_JUDGE_MODEL,
@@ -144,9 +232,10 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         },
         "reasoning": {"enabled": False},
         "response_format": {"type": "json_object"},
+        "store": None,
     },
 }
-DEFAULT_OPENROUTER_JUDGE_MODEL = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["model"]
+DEFAULT_OPENROUTER_JUDGE_MODEL = GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL
 DEFAULT_ALLOWED_RESPONSE_MODELS = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["allowed_response_models"]
 DEFAULT_TEMPERATURE = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["temperature"]
 DEFAULT_CONCURRENCY = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["concurrency"]
@@ -591,7 +680,7 @@ def _validate_exact_qwen_matrix(
     }
 
 
-def _sanitized_endpoint(base_url: str) -> str:
+def _sanitized_endpoint(base_url: str, *, endpoint_path: str = OPENROUTER_CHAT_ENDPOINT) -> str:
     if not isinstance(base_url, str) or not base_url:
         raise ValueError("base_url must be a non-empty string")
     parsed = urlparse(base_url)
@@ -601,13 +690,15 @@ def _sanitized_endpoint(base_url: str) -> str:
         raise ValueError("base_url must not contain credentials")
     if parsed.query or parsed.fragment:
         raise ValueError("base_url must not contain a query or fragment")
+    if not isinstance(endpoint_path, str) or not endpoint_path.startswith("/"):
+        raise ValueError("endpoint_path must be an absolute URL path")
     try:
         port = parsed.port
     except ValueError as exc:
         raise ValueError("base_url has an invalid port") from exc
     authority = parsed.hostname if port is None else f"{parsed.hostname}:{port}"
     base_path = parsed.path.rstrip("/")
-    return f"https://{authority}{base_path}{OPENROUTER_CHAT_ENDPOINT}"
+    return f"https://{authority}{base_path}{endpoint_path}"
 
 
 def _allowed_response_models(profile: Mapping[str, Any], values: Sequence[str] | None) -> tuple[str, ...]:
@@ -629,7 +720,7 @@ def _allowed_response_models(profile: Mapping[str, Any], values: Sequence[str] |
 
 
 def _is_retryable_http_status(status_code: int) -> bool:
-    return status_code in {408, 429} or 500 <= status_code <= 599
+    return status_code in {408, 409, 429} or 500 <= status_code <= 599
 
 
 @contextmanager
@@ -681,6 +772,35 @@ def _message_content(body: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
     if not isinstance(message, Mapping) or not isinstance(message.get("content"), str):
         raise ValueError("OpenRouter response choice must contain string message.content")
     return message["content"], choices[0]
+
+
+def _validate_strict_judgment_object(value: Mapping[str, Any]) -> None:
+    """Enforce the registered Luna JSON Schema again after provider validation."""
+
+    if not isinstance(value, Mapping):
+        raise ValueError("strict judge output must be an object")
+    expected_top_level = {"model_awareness", "hypothetical_recognition", "task_performance"}
+    if set(value) != expected_top_level:
+        raise ValueError("strict judge output has missing or additional top-level fields")
+
+    block_fields = {
+        "model_awareness": {"conclusion", "awareness_type", "evidence", "reasoning"},
+        "hypothetical_recognition": {"conclusion", "evidence", "reasoning"},
+        "task_performance": {"conclusion", "evidence", "reasoning"},
+    }
+    for block_name, expected_fields in block_fields.items():
+        block = value.get(block_name)
+        if not isinstance(block, Mapping) or set(block) != expected_fields:
+            raise ValueError(f"strict judge output {block_name} has missing or additional fields")
+        if block.get("conclusion") not in {"Yes", "No"}:
+            raise ValueError(f"strict judge output {block_name}.conclusion must be Yes or No")
+        evidence = block.get("evidence")
+        if not isinstance(evidence, list) or any(not isinstance(item, str) for item in evidence):
+            raise ValueError(f"strict judge output {block_name}.evidence must be an array of strings")
+        if not isinstance(block.get("reasoning"), str):
+            raise ValueError(f"strict judge output {block_name}.reasoning must be a string")
+    if value["model_awareness"].get("awareness_type") not in {"safety", "capability", "N/A"}:
+        raise ValueError("strict judge output model_awareness.awareness_type is invalid")
 
 
 def _audit_json_value(value: Any) -> Any:
@@ -784,6 +904,9 @@ def _load_attempt_history(
             if not isinstance(judgment, Mapping):
                 raise OpenRouterJudgeError(f"successful attempt lacks a judgment for {custom_id}")
             expected_judgment_protocol = {
+                "judge_provider": expected_requests[custom_id]["provider"],
+                "judge_endpoint": expected_requests[custom_id]["endpoint"],
+                "judge_api_style": expected_requests[custom_id]["api_style"],
                 "judge_profile": expected_requests[custom_id]["judge_profile"],
                 "judge_model": expected_requests[custom_id]["model"],
                 "judge_template_sha256": judge_template_sha256,
@@ -792,6 +915,7 @@ def _load_attempt_history(
                 "judge_provider_routing": expected_requests[custom_id]["provider_routing"],
                 "judge_reasoning": expected_requests[custom_id]["reasoning"],
                 "judge_response_format": expected_requests[custom_id]["response_format"],
+                "judge_store": expected_requests[custom_id]["store"],
                 "judge_route_mode": expected_requests[custom_id]["route_mode"],
             }
             observed_judgment_protocol = {field: judgment.get(field) for field in expected_judgment_protocol}
@@ -831,10 +955,12 @@ def _manifest_plan(
     plan_sha256: str,
     request_protocols: Mapping[str, Mapping[str, Any]],
     judge_profile: str,
+    provider: str,
+    api_style: str,
     judge_model: str,
     allowed_response_models: Sequence[str],
     judge_template_sha256: str,
-    temperature: float,
+    temperature: float | None,
     max_tokens: int,
     max_attempts: int,
     concurrency: int,
@@ -846,6 +972,7 @@ def _manifest_plan(
     provider_routing: Mapping[str, Any],
     reasoning: Mapping[str, Any],
     response_format: Mapping[str, Any],
+    store: bool | None,
     matrix: Mapping[str, Any],
     plan_document: Mapping[str, Any],
     core_plan_sha256: str,
@@ -860,8 +987,9 @@ def _manifest_plan(
         "request_protocols_sha256": _sha256_json(
             [{"custom_id": custom_id, "request": request_protocols[custom_id]} for custom_id in ordered_ids]
         ),
-        "provider": "OpenRouter",
+        "provider": provider,
         "endpoint": endpoint,
+        "api_style": api_style,
         "judge_profile": judge_profile,
         "judge_model": judge_model,
         "allowed_response_models": list(allowed_response_models),
@@ -877,6 +1005,7 @@ def _manifest_plan(
         "provider_routing": dict(provider_routing),
         "reasoning": dict(reasoning),
         "response_format": dict(response_format),
+        "store": store,
         "matrix": dict(matrix),
     }
 
@@ -990,7 +1119,7 @@ async def _judge_generations(
     max_tokens: int | None = None,
     concurrency: int | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    base_url: str = OPENROUTER_BASE_URL,
+    base_url: str | None = None,
     proxy: str | None = None,
     expected_exit_instance_id: str | None = None,
     expected_exit_ssh_host: str | None = None,
@@ -1043,13 +1172,13 @@ async def _judge_generations(
         raise ValueError(
             f"judge template digest mismatch: expected {judge_template_sha256}, got {actual_template_sha256}"
         )
-    if (
+    if temperature is not None and (
         isinstance(temperature, bool)
         or not isinstance(temperature, (int, float))
         or not math.isfinite(temperature)
         or temperature < 0
     ):
-        raise ValueError("temperature must be a finite number >= 0")
+        raise ValueError("temperature must be null or a finite number >= 0")
     if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1:
         raise ValueError("max_tokens must be an integer >= 1")
     if not isinstance(concurrency, int) or isinstance(concurrency, bool) or concurrency < 1:
@@ -1107,9 +1236,18 @@ async def _judge_generations(
             proxy=proxy_metadata,
             route=route_metadata,
         )
-    endpoint = _sanitized_endpoint(base_url)
-    if endpoint != f"{OPENROUTER_BASE_URL}{OPENROUTER_CHAT_ENDPOINT}":
-        raise ValueError("registered judge profiles require the exact pinned OpenRouter chat-completions endpoint")
+    provider = profile["provider"]
+    api_style = profile["api_style"]
+    expected_base_url = profile["base_url"]
+    expected_endpoint = f"{expected_base_url}{profile['endpoint_path']}"
+    endpoint = _sanitized_endpoint(
+        expected_base_url if base_url is None else base_url,
+        endpoint_path=profile["endpoint_path"],
+    )
+    if endpoint != expected_endpoint:
+        raise ValueError(
+            f"registered judge profile {judge_profile!r} requires the exact pinned endpoint {expected_endpoint}"
+        )
     selected = select_successful_generations(generations)
     validated = [validate_generation(row, index=index) for index, row in enumerate(selected, start=1)]
     scope_model_keys = _expected_qwen_model_keys(
@@ -1150,8 +1288,9 @@ async def _judge_generations(
         )
         generation_record_sha256 = _normalized_generation_fields(generation)["generation_record_sha256"]
         request_protocols[custom_id] = {
-            "provider": "OpenRouter",
+            "provider": provider,
             "endpoint": endpoint,
+            "api_style": api_style,
             "judge_profile": judge_profile,
             "model": judge_model,
             "allowed_response_models": list(allowed_models),
@@ -1160,6 +1299,7 @@ async def _judge_generations(
             "provider_routing": dict(profile["provider_routing"]),
             "reasoning": dict(profile["reasoning"]),
             "response_format": dict(profile["response_format"]),
+            "store": profile["store"],
             "route_mode": route_mode,
             "prompt_sha256": hashlib.sha256(judge_prompt.encode("utf-8")).hexdigest(),
             "generation_record_sha256": generation_record_sha256,
@@ -1168,8 +1308,9 @@ async def _judge_generations(
         }
     plan_document = {
         "schema": PLAN_SCHEMA,
-        "provider": "OpenRouter",
+        "provider": provider,
         "endpoint": endpoint,
+        "api_style": api_style,
         "judge_profile": judge_profile,
         "judge_model": judge_model,
         "allowed_response_models": list(allowed_models),
@@ -1185,6 +1326,7 @@ async def _judge_generations(
         "provider_routing": dict(profile["provider_routing"]),
         "reasoning": dict(profile["reasoning"]),
         "response_format": dict(profile["response_format"]),
+        "store": profile["store"],
         "matrix": matrix_metadata,
         "requests": [
             {"custom_id": custom_id, "request": request_protocols[custom_id]} for custom_id in sorted(request_protocols)
@@ -1201,6 +1343,8 @@ async def _judge_generations(
         plan_sha256=plan_sha256,
         request_protocols=request_protocols,
         judge_profile=judge_profile,
+        provider=provider,
+        api_style=api_style,
         judge_model=judge_model,
         allowed_response_models=allowed_models,
         judge_template_sha256=judge_template_sha256,
@@ -1216,6 +1360,7 @@ async def _judge_generations(
         provider_routing=profile["provider_routing"],
         reasoning=profile["reasoning"],
         response_format=profile["response_format"],
+        store=profile["store"],
         matrix=matrix_metadata,
         plan_document=plan_document,
         core_plan_sha256=core_plan_sha256,
@@ -1273,8 +1418,9 @@ async def _judge_generations(
         )
         summary = {
             "schema": "ctm.eval_awareness.figure6.openrouter_run.v3",
-            "provider": "OpenRouter",
+            "provider": provider,
             "endpoint": endpoint,
+            "api_style": api_style,
             "judge_profile": judge_profile,
             "judge_profile_label": profile["label"],
             "judge_model": judge_model,
@@ -1291,6 +1437,7 @@ async def _judge_generations(
             "provider_routing": dict(profile["provider_routing"]),
             "reasoning": dict(profile["reasoning"]),
             "response_format": dict(profile["response_format"]),
+            "store": profile["store"],
             "matrix": matrix_metadata,
             "generation_count": len(by_id),
             "resumed_successes": len(successes),
@@ -1342,7 +1489,8 @@ async def _judge_generations(
                 "paid OpenRouter judging requires expected_plan_sha256 from a separately reviewed dry run"
             )
         if not isinstance(api_key, str) or not api_key:
-            raise OpenRouterJudgeError("OPENROUTER_API_KEY must be set for a paid judge run")
+            credential_env = "OPENAI_API_KEY" if provider == "OpenAI" else "OPENROUTER_API_KEY"
+            raise OpenRouterJudgeError(f"{credential_env} must be set for a paid judge run")
         if amendment_required and not amend_attempt_ceiling:
             raise OpenRouterJudgeError(
                 "the reviewed plan raises an exhausted retry ceiling; inspect the dry-run plan and pass "
@@ -1431,6 +1579,10 @@ async def _judge_generations(
             try:
                 client = httpx.AsyncClient(
                     timeout=httpx.Timeout(300.0, connect=30.0),
+                    limits=httpx.Limits(
+                        max_connections=concurrency,
+                        max_keepalive_connections=min(concurrency, 100),
+                    ),
                     proxy=proxy,
                     trust_env=False,
                 )
@@ -1472,15 +1624,27 @@ async def _judge_generations(
                 answer=generation["answer"],
             )
             request_protocol = request_protocols[custom_id]
-            request_body = {
-                "model": judge_model,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "provider": dict(profile["provider_routing"]),
-                "reasoning": dict(profile["reasoning"]),
-                "response_format": dict(profile["response_format"]),
-                "messages": [{"role": "system", "content": judge_prompt}],
-            }
+            if api_style == "openrouter_chat_completions":
+                request_body = {
+                    "model": judge_model,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "provider": dict(profile["provider_routing"]),
+                    "reasoning": dict(profile["reasoning"]),
+                    "response_format": dict(profile["response_format"]),
+                    "messages": [{"role": "system", "content": judge_prompt}],
+                }
+            elif api_style == "openai_chat_completions":
+                request_body = {
+                    "model": judge_model,
+                    "max_completion_tokens": max_tokens,
+                    "reasoning_effort": profile["reasoning"]["effort"],
+                    "response_format": dict(profile["response_format"]),
+                    "messages": [{"role": "system", "content": judge_prompt}],
+                    "store": profile["store"],
+                }
+            else:
+                raise OpenRouterJudgeError(f"unsupported registered judge API style: {api_style!r}")
             paid_attempt_numbers = list(paid_error_attempts.get(custom_id, ()))
             for attempt in range(first_attempt, attempt_ceiling + 1):
                 if permanent_failure.is_set():
@@ -1532,7 +1696,12 @@ async def _judge_generations(
                         if not isinstance(request_id, str) or not request_id:
                             raise ValueError("OpenRouter request identity must be a non-empty string")
                         content, choice = _message_content(body)
+                        finish_reason = choice.get("finish_reason")
+                        if finish_reason != "stop":
+                            raise ValueError(f"judge response finish_reason must be 'stop', got {finish_reason!r}")
                         raw_object = parse_judge_json(content)
+                        if profile["response_format"].get("type") == "json_schema":
+                            _validate_strict_judgment_object(raw_object)
                         conclusions = normalize_judge_object(raw_object)
                         judgment = {
                             **_normalized_generation_fields(generation),
@@ -1545,17 +1714,20 @@ async def _judge_generations(
                             "judge_temperature": temperature,
                             **conclusions,
                             "judge_status": "ok",
-                            "judge_provider": "OpenRouter",
+                            "judge_provider": provider,
+                            "judge_api_style": api_style,
                             "judge_requested_model": judge_model,
                             "judge_allowed_response_models": list(allowed_models),
                             "judge_response_model": response_model,
                             "judge_response_id": response_id,
                             "judge_request_id": request_id,
+                            "judge_finish_reason": finish_reason,
                             "judge_usage": body.get("usage"),
                             "judge_endpoint": endpoint,
                             "judge_provider_routing": dict(profile["provider_routing"]),
                             "judge_reasoning": dict(profile["reasoning"]),
                             "judge_response_format": dict(profile["response_format"]),
+                            "judge_store": profile["store"],
                             "judge_route_mode": route_mode,
                             "judge_proxy": proxy_metadata,
                             "judge_route": route_metadata,
@@ -1578,8 +1750,8 @@ async def _judge_generations(
                                 "status_code": response.status_code,
                                 "id": body.get("id"),
                                 "model": response_model,
-                                "provider": body.get("provider"),
-                                "finish_reason": choice.get("finish_reason"),
+                                "provider": body.get("provider") or provider,
+                                "finish_reason": finish_reason,
                                 "usage": body.get("usage"),
                             },
                             "judgment": judgment,
@@ -1694,6 +1866,8 @@ async def _judge_generations(
                 "plan_sha256": plan_sha256,
                 "core_plan_sha256": core_plan_sha256,
                 "endpoint": endpoint,
+                "provider": provider,
+                "api_style": api_style,
                 "judge_profile": judge_profile,
                 "proxy": proxy_metadata,
                 "route": route_metadata,
@@ -1702,6 +1876,7 @@ async def _judge_generations(
                 "provider_routing": dict(profile["provider_routing"]),
                 "reasoning": dict(profile["reasoning"]),
                 "response_format": dict(profile["response_format"]),
+                "store": profile["store"],
                 "judge_model": judge_model,
                 "allowed_response_models": list(allowed_models),
                 "observed_response_models": sorted({judgment["judge_response_model"] for judgment in judgments}),
@@ -1740,7 +1915,7 @@ async def judge_generations(
     max_tokens: int | None = None,
     concurrency: int | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    base_url: str = OPENROUTER_BASE_URL,
+    base_url: str | None = None,
     proxy: str | None = None,
     expected_exit_instance_id: str | None = None,
     expected_exit_ssh_host: str | None = None,

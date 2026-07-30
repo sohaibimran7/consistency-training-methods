@@ -68,34 +68,30 @@ judge:
   execution_stage: manual_paid_external
   submitted_by_gpu_jobs: false
   approval_required_before_submission: true
-  provider: OpenRouter
-  profile: gpt-oss-120b-nitro-direct
-  model: openai/gpt-oss-120b:nitro
+  provider: OpenAI
+  profile: openai-gpt-5.6-luna-direct
+  model: gpt-5.6-luna
   allowed_response_models:
-    - openai/gpt-oss-120b
-    - openai/gpt-oss-120b:nitro
-  endpoint: https://openrouter.ai/api/v1/chat/completions
-  api_shape: /api/v1/chat/completions
+    - gpt-5.6-luna
+  endpoint: https://api.openai.com/v1/chat/completions
+  api_shape: ordinary direct /v1/chat/completions requests; never Batch API
+  api_style: openai_chat_completions
   route_mode: direct
   proxy_policy: prohibited; httpx trust_env disabled
   route_attestation_required: false
-  temperature: 0.0
+  temperature: null
   max_tokens: 32768
-  concurrency: 4
+  concurrency: 500
   max_attempts_per_generation: 5
   max_retry_after: 300
-  provider_routing:
-    allow_fallbacks: true
-    data_collection: deny
-    ignore:
-      - cerebras
-    require_parameters: true
-    sort: throughput
+  provider_routing: {}
   reasoning:
-    effort: high
-    exclude: true
+    effort: max
   response_format:
-    type: json_object
+    type: json_schema
+    name: evalaware_figure6_judgment
+    strict: true
+  store: false
   prompt_sha256: e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
   result_label: user_pinned_alternative_judge
   access_region: no region attestation required for direct mode
@@ -105,6 +101,9 @@ judge:
     - exact_request_protocols
     - exact_registered_model_scope
     - judge_profile
+    - provider
+    - endpoint
+    - api_style
     - temperature
     - max_tokens
     - concurrency
@@ -115,6 +114,7 @@ judge:
     - provider_routing
     - reasoning
     - response_format
+    - store
   malformed_paid_response_rescore_flag: --rescore-paid-errors
   exhausted_retry_amendment_flag: --amend-attempt-ceiling
   retry_amendment_policy: reviewed strictly higher ceiling only; preserve all attempts and successes
@@ -139,5 +139,5 @@ judge:
       sanitized_evidence_sha256_in_plan: true
   single_writer_policy: OS flock held across history, requests, attempts, and final output
   strict_analysis_policy: exactly three per-model judgment files and manifests must match reviewed run_completed events for the selected profile; direct mode rejects route evidence
-  plot_label: OpenRouter GPT-OSS 120B Nitro alternative judge
-  note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge. Cerebras is excluded because live paid responses truncated at 8192 tokens despite the larger advertised ceiling.
+  plot_label: OpenAI GPT-5.6 Luna direct alternative judge
+  note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge. Requests use the ordinary direct OpenAI Chat Completions API with up to 500 concurrent in-flight judgments, never the Batch API.

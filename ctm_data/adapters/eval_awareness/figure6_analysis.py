@@ -19,6 +19,7 @@ from ctm_data.adapters.eval_awareness.figure6_judge import (
     DEFAULT_JUDGE_MODEL,
     MAX_JUDGE_TOKENS,
     PAPER_JUDGE_TEMPLATE_SHA256,
+    normalize_judge_object,
 )
 from ctm_data.adapters.eval_awareness.figure6_openrouter import JUDGE_PROFILES
 from ctm_data.adapters.eval_awareness.figure6_spec import (
@@ -58,6 +59,9 @@ OPENROUTER_MUSE_ALTERNATIVE_LABEL = "OpenRouter Muse alternative judge"
 OPENROUTER_GPT_OSS_120B_NITRO_PROFILE = "gpt-oss-120b-nitro-direct"
 OPENROUTER_GPT_OSS_120B_NITRO_JUDGE_MODEL = "openai/gpt-oss-120b:nitro"
 OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL = "OpenRouter GPT-OSS 120B Nitro alternative judge"
+OPENAI_GPT_56_LUNA_PROFILE = "openai-gpt-5.6-luna-direct"
+OPENAI_GPT_56_LUNA_JUDGE_MODEL = "gpt-5.6-luna"
+OPENAI_GPT_56_LUNA_ALTERNATIVE_LABEL = "OpenAI GPT-5.6 Luna direct alternative judge"
 OPENROUTER_DEEPSEEK_V32_PROFILE = "deepseek-v3.2-direct"
 OPENROUTER_DEEPSEEK_V32_JUDGE_MODEL = "deepseek/deepseek-v3.2"
 OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL = "OpenRouter DeepSeek V3.2 alternative judge"
@@ -283,11 +287,14 @@ def _normalize_record(record: Mapping[str, Any], *, index: int) -> dict[str, Any
             "judge_allowed_response_models": record.get("judge_allowed_response_models"),
             "judge_response_id": record.get("judge_response_id"),
             "judge_request_id": record.get("judge_request_id"),
+            "judge_finish_reason": record.get("judge_finish_reason"),
             "judge_endpoint": record.get("judge_endpoint"),
+            "judge_api_style": record.get("judge_api_style"),
             "judge_temperature": record.get("judge_temperature"),
             "judge_provider_routing": record.get("judge_provider_routing"),
             "judge_reasoning": record.get("judge_reasoning"),
             "judge_response_format": record.get("judge_response_format"),
+            "judge_store": record.get("judge_store"),
             "judge_route_mode": record.get("judge_route_mode"),
             "judge_proxy": record.get("judge_proxy"),
             "judge_route": record.get("judge_route"),
@@ -300,6 +307,7 @@ def _normalize_record(record: Mapping[str, Any], *, index: int) -> dict[str, Any
                 record.get("max_completion_tokens"),
             ),
             "judge_status": _string(record, "judge_status").casefold(),
+            "raw_judge_object": record.get("raw_judge_object"),
         }
     )
     if not isinstance(output["trace_present"], bool):
@@ -315,7 +323,9 @@ def _normalize_record(record: Mapping[str, Any], *, index: int) -> dict[str, Any
         "judge_response_model",
         "judge_response_id",
         "judge_request_id",
+        "judge_finish_reason",
         "judge_endpoint",
+        "judge_api_style",
         "judge_plan_sha256",
         "custom_id",
         "generation_record_sha256",
@@ -323,18 +333,22 @@ def _normalize_record(record: Mapping[str, Any], *, index: int) -> dict[str, Any
     ):
         if output[field] is not None and (not isinstance(output[field], str) or not output[field]):
             raise ValueError(f"{field} must be null or a non-empty string")
-    for field in (
-        "judge_proxy",
-        "judge_route",
-        "judge_provider_routing",
-        "judge_reasoning",
-        "judge_response_format",
-    ):
+    for field in ("judge_proxy", "judge_route", "judge_reasoning", "judge_response_format"):
         if output[field] is not None:
             if not isinstance(output[field], Mapping) or not output[field]:
                 raise ValueError(f"{field} must be null or a non-empty object")
             output[field] = dict(output[field])
             _canonical_json(output[field])
+    if output["judge_provider_routing"] is not None:
+        if not isinstance(output["judge_provider_routing"], Mapping):
+            raise ValueError("judge_provider_routing must be null or an object")
+        output["judge_provider_routing"] = dict(output["judge_provider_routing"])
+        _canonical_json(output["judge_provider_routing"])
+    if output["raw_judge_object"] is not None:
+        if not isinstance(output["raw_judge_object"], Mapping):
+            raise ValueError("raw_judge_object must be null or an object")
+        output["raw_judge_object"] = dict(output["raw_judge_object"])
+        _canonical_json(output["raw_judge_object"])
     if output["judge_temperature"] is not None and (
         isinstance(output["judge_temperature"], bool)
         or not isinstance(output["judge_temperature"], (int, float))
@@ -342,6 +356,8 @@ def _normalize_record(record: Mapping[str, Any], *, index: int) -> dict[str, Any
         or output["judge_temperature"] < 0
     ):
         raise ValueError("judge_temperature must be null or a finite number >= 0")
+    if output["judge_store"] is not None and not isinstance(output["judge_store"], bool):
+        raise ValueError("judge_store must be null or a boolean")
     if output["judge_allowed_response_models"] is not None:
         allowed = output["judge_allowed_response_models"]
         if (
@@ -387,17 +403,17 @@ def _verified_openrouter_manifest_provenance(
     expected_response_models: Sequence[str],
     expected_max_tokens: int,
 ) -> dict[str, Any]:
-    """Bind strict OpenRouter records to exact files and reviewed paid lifecycle manifests."""
+    """Bind strict direct-provider records to exact files and reviewed paid lifecycle manifests."""
 
     if not judgment_artifacts or not judge_manifests:
         raise PublicationValidationError(
-            "strict OpenRouter output requires judgment artifacts and matching paid judge manifests"
+            "strict direct-provider output requires judgment artifacts and matching paid judge manifests"
         )
     if len(judgment_artifacts) != len(CURRENT_QWEN_MODEL_KEY_ORDER) or len(judge_manifests) != len(
         CURRENT_QWEN_MODEL_KEY_ORDER
     ):
         raise PublicationValidationError(
-            "strict current OpenRouter analysis requires exactly three per-model judgment artifacts and manifests"
+            "strict current direct-provider analysis requires exactly three per-model judgment artifacts and manifests"
         )
     if len(raw_judgments) != len(records):
         raise PublicationValidationError(
@@ -418,7 +434,7 @@ def _verified_openrouter_manifest_provenance(
         raise PublicationValidationError("strict analysis token limit differs from the selected profile")
     if tuple(expected_model_keys) != CURRENT_QWEN_MODEL_KEY_ORDER:
         raise PublicationValidationError(
-            "strict OpenRouter analysis authorizes exactly qwen32, qwen_mo_mid, and qwen_mo_post"
+            "strict direct-provider analysis authorizes exactly qwen32, qwen_mo_mid, and qwen_mo_post"
         )
     route_attestations = tuple(route_attestations or ())
     if profile["route_mode"] == "muse_us_proxy" and not route_attestations:
@@ -519,8 +535,9 @@ def _verified_openrouter_manifest_provenance(
             plan_model_keys = matrix.get("model_keys") if isinstance(matrix, Mapping) else None
             if (
                 document.get("schema") != openrouter.PLAN_SCHEMA
-                or document.get("provider") != "OpenRouter"
-                or document.get("endpoint") != f"{openrouter.OPENROUTER_BASE_URL}{openrouter.OPENROUTER_CHAT_ENDPOINT}"
+                or document.get("provider") != profile["provider"]
+                or document.get("endpoint") != f"{profile['base_url']}{profile['endpoint_path']}"
+                or document.get("api_style") != profile["api_style"]
                 or document.get("judge_profile") != expected_judge_profile
                 or document.get("judge_model") != expected_judge_model
                 or document.get("allowed_response_models") != sorted(expected_response_models)
@@ -533,6 +550,7 @@ def _verified_openrouter_manifest_provenance(
                 or document.get("provider_routing") != profile["provider_routing"]
                 or document.get("reasoning") != profile["reasoning"]
                 or document.get("response_format") != profile["response_format"]
+                or document.get("store") != profile["store"]
                 or not isinstance(document.get("max_attempts_per_generation"), int)
                 or isinstance(document.get("max_attempts_per_generation"), bool)
                 or document["max_attempts_per_generation"] < 1
@@ -621,8 +639,9 @@ def _verified_openrouter_manifest_provenance(
                 if not isinstance(custom_id, str) or not custom_id or custom_id in request_map:
                     raise PublicationValidationError(f"paid judge manifest {path} has duplicate/invalid custom IDs")
                 expected_request = {
-                    "provider": "OpenRouter",
+                    "provider": profile["provider"],
                     "endpoint": document["endpoint"],
+                    "api_style": document["api_style"],
                     "judge_profile": document["judge_profile"],
                     "model": document["judge_model"],
                     "allowed_response_models": document["allowed_response_models"],
@@ -631,6 +650,7 @@ def _verified_openrouter_manifest_provenance(
                     "provider_routing": document["provider_routing"],
                     "reasoning": document["reasoning"],
                     "response_format": document["response_format"],
+                    "store": document["store"],
                     "route_mode": document["route_mode"],
                     "proxy": proxy,
                     "route": route,
@@ -658,6 +678,7 @@ def _verified_openrouter_manifest_provenance(
             mirrored_fields = (
                 "provider",
                 "endpoint",
+                "api_style",
                 "judge_profile",
                 "judge_model",
                 "allowed_response_models",
@@ -673,6 +694,7 @@ def _verified_openrouter_manifest_provenance(
                 "provider_routing",
                 "reasoning",
                 "response_format",
+                "store",
                 "matrix",
             )
             if any(plan.get(field) != document.get(field) for field in mirrored_fields):
@@ -754,7 +776,7 @@ def _verified_openrouter_manifest_provenance(
             if request is None or request.get("generation_record_sha256") != record["generation_record_sha256"]:
                 raise PublicationValidationError("judgment custom/generation identity does not match its paid plan")
             expected_record_protocol = {
-                "judge_provider": "OpenRouter",
+                "judge_provider": profile["provider"],
                 "judge_profile": plan["judge_profile"],
                 "judge_profile_label": profile["label"],
                 "judge_model": plan["judge_model"],
@@ -763,9 +785,11 @@ def _verified_openrouter_manifest_provenance(
                 "judge_max_completion_tokens": plan["max_tokens"],
                 "judge_temperature": plan["temperature"],
                 "judge_endpoint": plan["endpoint"],
+                "judge_api_style": plan["api_style"],
                 "judge_provider_routing": plan["provider_routing"],
                 "judge_reasoning": plan["reasoning"],
                 "judge_response_format": plan["response_format"],
+                "judge_store": plan["store"],
                 "judge_route_mode": plan["route_mode"],
                 "judge_proxy": plan["proxy"],
                 "judge_route": plan["route"],
@@ -777,6 +801,19 @@ def _verified_openrouter_manifest_provenance(
                 )
             if record["judge_response_model"] not in plan["allowed_response_models"]:
                 raise PublicationValidationError("judgment response model is outside its reviewed plan")
+            if profile["response_format"].get("type") == "json_schema":
+                if record["judge_finish_reason"] != "stop":
+                    raise PublicationValidationError("strict-schema judgment did not finish with reason stop")
+                raw_object = record["raw_judge_object"]
+                if raw_object is None:
+                    raise PublicationValidationError("strict-schema judgment lacks raw_judge_object")
+                try:
+                    openrouter._validate_strict_judgment_object(raw_object)
+                    raw_conclusions = normalize_judge_object(raw_object)
+                except ValueError as exc:
+                    raise PublicationValidationError(f"strict-schema judgment object is invalid: {exc}") from exc
+                if any(record[field] != value for field, value in raw_conclusions.items()):
+                    raise PublicationValidationError("strict-schema judgment conclusions differ from raw_judge_object")
             if not record["judge_request_id"] or not record["judge_response_id"]:
                 raise PublicationValidationError("judgment lacks provider request/response identity")
             request_ids.append(record["judge_request_id"])
@@ -789,6 +826,8 @@ def _verified_openrouter_manifest_provenance(
         expected_event = {
             "core_plan_sha256": completion_plan["core_plan_sha256"],
             "endpoint": completion_plan["endpoint"],
+            "provider": completion_plan["provider"],
+            "api_style": completion_plan["api_style"],
             "judge_profile": completion_plan["judge_profile"],
             "proxy": completion_plan["proxy"],
             "route": completion_plan["route"],
@@ -797,6 +836,7 @@ def _verified_openrouter_manifest_provenance(
             "provider_routing": completion_plan["provider_routing"],
             "reasoning": completion_plan["reasoning"],
             "response_format": completion_plan["response_format"],
+            "store": completion_plan["store"],
             "judge_model": completion_plan["judge_model"],
             "allowed_response_models": completion_plan["allowed_response_models"],
             "observed_response_models": sorted(response_models),
@@ -1401,9 +1441,9 @@ def analyze_judgments(
         elif expected_judge_model != openrouter_profile["model"]:
             raise ValueError("expected_judge_model differs from the selected registered judge profile")
         if expected_judge_provider is None:
-            expected_judge_provider = "OpenRouter"
-        elif expected_judge_provider != "OpenRouter":
-            raise ValueError("registered OpenRouter judge profiles require expected_judge_provider=OpenRouter")
+            expected_judge_provider = openrouter_profile["provider"]
+        elif expected_judge_provider != openrouter_profile["provider"]:
+            raise ValueError("expected_judge_provider differs from the selected registered judge profile")
         if expected_judge_response_models is None:
             expected_judge_response_models = openrouter_profile["allowed_response_models"]
         if expected_judge_max_completion_tokens is None:
@@ -1420,12 +1460,12 @@ def analyze_judgments(
         raise ValueError("expected_judge_provider must be null or a non-empty string")
     if (
         not allow_partial
-        and expected_judge_provider == "OpenRouter"
+        and expected_judge_provider in {"OpenRouter", "OpenAI"}
         and expected_judge_model != DEFAULT_JUDGE_MODEL
         and openrouter_profile is None
     ):
         raise PublicationValidationError(
-            "strict OpenRouter analysis requires an explicit registered expected_judge_profile"
+            "strict direct-provider analysis requires an explicit registered expected_judge_profile"
         )
     if expected_judge_response_models is not None:
         expected_judge_response_models = tuple(expected_judge_response_models)
@@ -1454,7 +1494,7 @@ def analyze_judgments(
         raise ValueError("expected_model_keys must be non-empty and unique")
     if openrouter_profile is not None and not allow_partial and model_keys != CURRENT_QWEN_MODEL_KEY_ORDER:
         raise PublicationValidationError(
-            "strict current OpenRouter analysis requires exactly qwen32, qwen_mo_mid, and qwen_mo_post"
+            "strict current direct-provider analysis requires exactly qwen32, qwen_mo_mid, and qwen_mo_post"
         )
     if not expected_replicates or len(set(expected_replicates)) != len(expected_replicates):
         raise ValueError("expected_replicates must be non-empty and unique")
@@ -1783,7 +1823,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         action="append",
         dest="judge_manifests",
-        help="Paid OpenRouter lifecycle manifest; repeat for per-model judgment files.",
+        help="Paid direct-provider lifecycle manifest; repeat for per-model judgment files.",
     )
     parser.add_argument(
         "--route-attestation-evidence",
@@ -1812,7 +1852,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--expected-judge-profile",
         choices=sorted(JUDGE_PROFILES),
-        help="Exact registered OpenRouter profile required by strict paid-manifest verification.",
+        help="Exact registered direct-provider profile required by strict paid-manifest verification.",
     )
     parser.add_argument(
         "--expected-judge-provider",

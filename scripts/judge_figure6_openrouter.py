@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run resumable EvalAwareBench Figure 6 judging through OpenRouter."""
+"""Run resumable EvalAwareBench Figure 6 judging through a registered direct provider."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ from ctm_data.adapters.eval_awareness.figure6_judge import (
 )
 from ctm_data.adapters.eval_awareness.figure6_openrouter import (
     CURRENT_QWEN_MODEL_KEYS,
-    DEFAULT_JUDGE_PROFILE,
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_MAX_RETRY_AFTER,
     JUDGE_PROFILES,
+    OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
     judge_generations,
 )
 
@@ -40,10 +40,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--judge-profile",
         choices=sorted(JUDGE_PROFILES),
-        default=DEFAULT_JUDGE_PROFILE,
+        default=OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
         help=(
-            "Exact registered paid judge profile. The default is the direct GPT-OSS 120B Nitro alternative judge; "
-            "models and request settings cannot be overridden independently."
+            "Exact registered paid judge profile; provider, model, endpoint, concurrency, and request settings "
+            "cannot be overridden independently."
         ),
     )
     parser.add_argument("--max-attempts", type=int, default=DEFAULT_MAX_ATTEMPTS)
@@ -111,9 +111,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run and args.amend_attempt_ceiling:
         parser.error("--dry-run reports amendment requirements but cannot authorize --amend-attempt-ceiling")
     if not args.dry_run and not args.yes:
-        parser.error("paid OpenRouter judging requires explicit --yes; use --dry-run to inspect the plan")
+        parser.error("paid judging requires explicit --yes; use --dry-run to inspect the plan")
     if not args.dry_run and args.expected_plan_sha256 is None:
-        parser.error("paid OpenRouter judging requires --expected-plan-sha256 from a reviewed dry run")
+        parser.error("paid judging requires --expected-plan-sha256 from a reviewed dry run")
     route_attestation_evidence = None
     if args.route_attestation_evidence is not None:
         route_attestation_evidence = args.route_attestation_evidence.read_bytes()
@@ -123,13 +123,15 @@ def main(argv: list[str] | None = None) -> int:
         args.route_attestation_sha256 = evidence_sha256
     generations = _read_jsonl(args.generations, label="generation")
     template = load_judge_template(args.judge_template, expected_sha256=args.expected_template_sha256)
+    profile = JUDGE_PROFILES[args.judge_profile]
+    credential_env = "OPENAI_API_KEY" if profile["provider"] == "OpenAI" else "OPENROUTER_API_KEY"
     summary = asyncio.run(
         judge_generations(
             generations,
             template=template,
             attempt_log_path=args.attempt_log,
             output_path=args.output,
-            api_key=os.environ.get("OPENROUTER_API_KEY"),
+            api_key=os.environ.get(credential_env),
             manifest_path=args.manifest,
             judge_template_sha256=args.expected_template_sha256,
             judge_profile=args.judge_profile,

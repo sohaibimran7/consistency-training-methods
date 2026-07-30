@@ -15,6 +15,9 @@ from ctm_data.adapters.eval_awareness.figure6_analysis import (
     EXPECTED_CELL_COUNT,
     EXPECTED_MODEL_JUDGMENT_COUNT,
     MODEL_KEY_ORDER,
+    OPENAI_GPT_56_LUNA_ALTERNATIVE_LABEL,
+    OPENAI_GPT_56_LUNA_JUDGE_MODEL,
+    OPENAI_GPT_56_LUNA_PROFILE,
     OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL,
     OPENROUTER_DEEPSEEK_V32_JUDGE_MODEL,
     OPENROUTER_DEEPSEEK_V32_PROFILE,
@@ -168,6 +171,13 @@ def _alternative_plot_label(summary: Mapping[str, Any] | None) -> str | None:
             or label != OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL
         ):
             raise ValueError("OpenRouter GPT-OSS Nitro summary has an invalid profile, provider, or label")
+    if provenance.get("expected_judge_model") == OPENAI_GPT_56_LUNA_JUDGE_MODEL:
+        if (
+            provenance.get("judge_provider") != "OpenAI"
+            or provenance.get("judge_profile") != OPENAI_GPT_56_LUNA_PROFILE
+            or label != OPENAI_GPT_56_LUNA_ALTERNATIVE_LABEL
+        ):
+            raise ValueError("OpenAI GPT-5.6 Luna summary has an invalid profile, provider, or label")
     source_note = value.get("source_note")
     if not isinstance(source_note, str) or label not in source_note:
         raise ValueError("alternative-judge analysis source note must include its plot label")
