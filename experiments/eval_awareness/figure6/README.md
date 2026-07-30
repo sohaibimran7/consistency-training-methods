@@ -313,6 +313,9 @@ the 300-second retry cap, and exact provider routing. The Nitro suffix and the
 explicit `provider.sort=throughput` pin throughput-prioritized routing. The profile
 accepts the requested Nitro model ID or OpenRouter's base response identity
 `openai/gpt-oss-120b`, while rejecting every other response model.
+It excludes the Cerebras provider because live paid responses stopped at 8,192
+tokens despite the larger advertised endpoint ceiling, and permits OpenRouter to
+fall through to the next fastest provider that supports every pinned parameter.
 The approved scope is exactly
 `qwen32`, `qwen_mo_mid`, and `qwen_mo_post`; do not add `qwen36` or a Llama key. Each model has its own complete
 5,400-request paid lifecycle, so it can be judged as soon as that model's

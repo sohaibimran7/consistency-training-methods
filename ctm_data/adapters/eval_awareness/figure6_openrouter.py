@@ -78,8 +78,9 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         "concurrency": 4,
         "max_retry_after": 300.0,
         "provider_routing": {
-            "allow_fallbacks": False,
+            "allow_fallbacks": True,
             "data_collection": "deny",
+            "ignore": ["cerebras"],
             "require_parameters": True,
             "sort": "throughput",
         },

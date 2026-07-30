@@ -85,8 +85,10 @@ judge:
   max_attempts_per_generation: 5
   max_retry_after: 300
   provider_routing:
-    allow_fallbacks: false
+    allow_fallbacks: true
     data_collection: deny
+    ignore:
+      - cerebras
     require_parameters: true
     sort: throughput
   reasoning:
@@ -138,4 +140,4 @@ judge:
   single_writer_policy: OS flock held across history, requests, attempts, and final output
   strict_analysis_policy: exactly three per-model judgment files and manifests must match reviewed run_completed events for the selected profile; direct mode rejects route evidence
   plot_label: OpenRouter GPT-OSS 120B Nitro alternative judge
-  note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge.
+  note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge. Cerebras is excluded because live paid responses truncated at 8192 tokens despite the larger advertised ceiling.

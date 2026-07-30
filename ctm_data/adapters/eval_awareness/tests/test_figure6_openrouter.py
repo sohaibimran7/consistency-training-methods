@@ -855,6 +855,8 @@ def test_public_dry_plan_binds_exact_scope_concurrency_retry_cap_and_route(tmp_p
         scorer.GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL,
     ]
     assert summary["provider_routing"]["sort"] == "throughput"
+    assert summary["provider_routing"]["allow_fallbacks"] is True
+    assert summary["provider_routing"]["ignore"] == ["cerebras"]
     assert summary["reasoning"] == {"effort": "high", "exclude": True}
     assert summary["route"] is None
     assert summary["route_mode"] == "direct"
