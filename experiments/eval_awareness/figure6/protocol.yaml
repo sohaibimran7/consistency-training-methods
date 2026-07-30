@@ -73,6 +73,7 @@ judge:
   model: deepseek/deepseek-v3.2
   allowed_response_models:
     - deepseek/deepseek-v3.2
+    - deepseek/deepseek-v3.2-20251201
   endpoint: https://openrouter.ai/api/v1/chat/completions
   api_shape: /api/v1/chat/completions
   route_mode: direct

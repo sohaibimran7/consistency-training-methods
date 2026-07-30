@@ -159,7 +159,10 @@ def test_protocol_has_exact_workload_and_prompt_pins():
     assert judge["provider"] == "OpenRouter"
     assert judge["profile"] == "deepseek-v3.2-direct"
     assert judge["model"] == "deepseek/deepseek-v3.2"
-    assert judge["allowed_response_models"] == ["deepseek/deepseek-v3.2"]
+    assert judge["allowed_response_models"] == [
+        "deepseek/deepseek-v3.2",
+        "deepseek/deepseek-v3.2-20251201",
+    ]
     assert judge["api_shape"] == "/api/v1/chat/completions"
     assert judge["max_tokens"] == 4096
     assert judge["prompt_sha256"] == "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870"

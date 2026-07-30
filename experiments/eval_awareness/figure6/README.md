@@ -308,7 +308,10 @@ the exact hash-pinned paper judge prompt and a 4,096-token output ceiling. This
 is a user-pinned alternative judge, not the paper's GPT-5 judge. The registered
 `deepseek-v3.2-direct` profile prohibits proxies and route attestations, disables
 reasoning, requests a JSON object, and hash-binds temperature 0, concurrency 24,
-the 300-second retry cap, and exact provider routing. The approved scope is exactly
+the 300-second retry cap, and exact provider routing. It accepts OpenRouter's
+requested model ID and its canonical dated response identity
+`deepseek/deepseek-v3.2-20251201`, while rejecting every other response model.
+The approved scope is exactly
 `qwen32`, `qwen_mo_mid`, and `qwen_mo_post`; do not add `qwen36` or a Llama key. Each model has its own complete
 5,400-request paid lifecycle, so it can be judged as soon as that model's
 generation log finishes. The three verified outputs are combined only during

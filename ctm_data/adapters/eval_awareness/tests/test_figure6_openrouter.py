@@ -151,7 +151,7 @@ def _success_response(request: httpx.Request) -> httpx.Response:
         headers={"x-request-id": "request-unit"},
         json={
             "id": "generation-unit",
-            "model": "deepseek/deepseek-v3.2",
+            "model": scorer.DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL,
             "provider": "DeepSeek",
             "choices": [
                 {
@@ -261,8 +261,8 @@ def test_success_writes_durable_attempt_and_normalized_output(tmp_path: Path) ->
     assert attempt["status"] == "success"
     assert attempt["response"]["provider"] == "DeepSeek"
     assert judgment["judge_profile"] == scorer.DEEPSEEK_V32_DIRECT_PROFILE
-    assert judgment["judge_model"] == "deepseek/deepseek-v3.2"
-    assert judgment["judge_response_model"] == "deepseek/deepseek-v3.2"
+    assert judgment["judge_model"] == scorer.DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL
+    assert judgment["judge_response_model"] == scorer.DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL
     assert judgment["judge_request_id"] == "request-unit"
     assert judgment["awareness_conclusion"] == "yes"
     manifest = json.loads((tmp_path / "attempts.jsonl.manifest.json").read_text())

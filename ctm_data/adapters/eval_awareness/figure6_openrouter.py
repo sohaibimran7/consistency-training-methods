@@ -57,13 +57,18 @@ DEEPSEEK_V32_DIRECT_PROFILE = "deepseek-v3.2-direct"
 CLAUDE_SONNET_46_DIRECT_PROFILE = "claude-sonnet-4.6-direct"
 MUSE_US_PROXY_PROFILE = "muse-spark-1.1-us-proxy"
 DEFAULT_JUDGE_PROFILE = DEEPSEEK_V32_DIRECT_PROFILE
+DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL = "deepseek/deepseek-v3.2"
+DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL = "deepseek/deepseek-v3.2-20251201"
 MUSE_OPENROUTER_JUDGE_MODEL = "meta/muse-spark-1.1"
 MUSE_OPENROUTER_RESPONSE_MODEL = "meta/muse-spark-1.1-20260709"
 JUDGE_PROFILES: dict[str, dict[str, Any]] = {
     DEEPSEEK_V32_DIRECT_PROFILE: {
         "label": "OpenRouter DeepSeek V3.2 alternative judge",
-        "model": "deepseek/deepseek-v3.2",
-        "allowed_response_models": ("deepseek/deepseek-v3.2",),
+        "model": DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL,
+        "allowed_response_models": (
+            DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL,
+            DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL,
+        ),
         "route_mode": "direct",
         "temperature": 0.0,
         "max_tokens": MAX_JUDGE_TOKENS,
