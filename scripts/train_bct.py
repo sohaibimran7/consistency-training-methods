@@ -46,20 +46,20 @@ from dotenv import load_dotenv
 
 load_dotenv(_PROJECT_ROOT / ".env")
 
-import asyncio  # noqa: E402
+import asyncio
 
-import tinker  # noqa: E402
+import tinker
 
-from ctm.training.sft import METHOD_LOSS_FNS, SFTConfig, train_sft  # noqa: E402
-from ctm.artifacts import plain_file_identity  # noqa: E402
-from ctm.core.config import (  # noqa: E402
+from ctm.artifacts import plain_file_identity, verify_data_manifest_bindings
+from ctm.backends.cli import add_backend_args, build_backend, describe_backend
+from ctm.cli_safety import parse_json_object, reject_inline_secrets
+from ctm.core.config import (
     AdamConfig,
     CheckpointConfig,
     resolve_lora_config,
 )
-from ctm.backends.cli import add_backend_args, build_backend, describe_backend  # noqa: E402
-from ctm.cli_safety import parse_json_object, reject_inline_secrets  # noqa: E402
-from ctm.training.consistency_losses import create_consistency_loss  # noqa: E402
+from ctm.training.consistency_losses import create_consistency_loss
+from ctm.training.sft import METHOD_LOSS_FNS, SFTConfig, train_sft
 
 
 def list_available_models() -> list[str]:
@@ -81,8 +81,8 @@ def print_available_models() -> None:
             print(f"  {model}")
         print("-" * 50)
         print(f"Total: {len(models)} models")
-    except Exception as e:
-        print(f"Error querying models: {e}")
+    except Exception as exc:  # noqa: BLE001 - optional remote discovery should degrade to hints
+        print(f"Error querying models: {exc}")
         print()
         print("Common models (may not all be available):")
         print("  meta-llama/Llama-3.1-8B-Instruct")
@@ -171,7 +171,7 @@ def main():
         "--data-manifest",
         nargs="+",
         type=Path,
-        help="Optional provenance manifest(s) associated with --data; paths and hashes are recorded",
+        help="Optional one-per-file manifest(s); each must bind the exact corresponding --data bytes",
     )
     parser.add_argument("--interleave", action="store_true", help="Round-robin interleave samples across files")
     parser.add_argument(
@@ -261,6 +261,7 @@ def main():
     add_backend_args(parser)
 
     # Execution
+    parser.add_argument("--dry-run", action="store_true", help="Validate data/config and exit before backend setup")
     parser.add_argument("-y", "--yes", action="store_true")
 
     args = parser.parse_args()
@@ -313,6 +314,14 @@ def main():
     for path in args.data_manifest or []:
         if not path.is_file():
             parser.error(f"Data manifest not found: {path}")
+    if args.data_manifest:
+        try:
+            verify_data_manifest_bindings(
+                [path for path, _limit in file_specs],
+                args.data_manifest,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            parser.error(str(exc))
 
     # Load samples
     print("Loading samples...")
@@ -322,11 +331,10 @@ def main():
 
     # If multiple files or limits, write combined data to temp file
     if len(file_specs) > 1 or any(limit is not None for _, limit in file_specs):
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False)
-        for sample in all_samples:
-            tmp.write(json.dumps(sample) + "\n")
-        tmp.close()
-        data_path = Path(tmp.name)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as tmp:
+            for sample in all_samples:
+                tmp.write(json.dumps(sample) + "\n")
+            data_path = Path(tmp.name)
         print(f"Combined data written to {data_path}")
     else:
         data_path = file_specs[0][0]
@@ -394,10 +402,13 @@ def main():
     if args.resume_from:
         print(f"Resuming from: {args.resume_from}")
 
-    if not args.yes:
-        if input("\nProceed? (y/n): ").lower() != "y":
-            print("Cancelled.")
-            return
+    if args.dry_run:
+        print("Dry run complete; no backend was initialized.")
+        return
+
+    if not args.yes and input("\nProceed? (y/n): ").lower() != "y":
+        print("Cancelled.")
+        return
 
     # Train
     final_checkpoint = asyncio.run(

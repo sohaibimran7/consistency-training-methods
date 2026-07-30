@@ -1,6 +1,6 @@
 import pytest
 
-from ctm_data.sources.hle import canonical_rows, parse_multiple_choice_question
+from scripts.rmct_paper_vast_more_methods.hle_source import canonical_rows, parse_multiple_choice_question
 
 
 def test_parse_hle_inline_choices():

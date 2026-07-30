@@ -1,4 +1,4 @@
-"""Export a deterministic prompt subset from the paper-cited Cleaned Alpaca data.
+"""Export the RMCT reproduction's deterministic Cleaned Alpaca prompt subset.
 
 The original responses are deliberately ignored. CTM samples fresh responses
 from the experiment's frozen base model before training, matching the paper's
@@ -12,9 +12,10 @@ import hashlib
 import json
 import random
 import urllib.request
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from ctm.artifacts import write_atomic_bytes
 
@@ -31,13 +32,13 @@ def select_prompt_rows(records: Sequence[Any], *, count: int, seed: str) -> list
     validated: list[tuple[int, str]] = []
     for index, record in enumerate(records):
         if not isinstance(record, dict):
-            raise ValueError(f"Cleaned Alpaca row {index + 1} must be an object")
+            raise TypeError(f"Cleaned Alpaca row {index + 1} must be an object")
         instruction = record.get("instruction")
         input_text = record.get("input", "")
         if not isinstance(instruction, str) or not instruction.strip():
             raise ValueError(f"Cleaned Alpaca row {index + 1} has no instruction")
         if not isinstance(input_text, str):
-            raise ValueError(f"Cleaned Alpaca row {index + 1} input must be a string")
+            raise TypeError(f"Cleaned Alpaca row {index + 1} input must be a string")
         content = instruction.strip()
         if input_text.strip():
             content += f"\n\nInput:\n{input_text.strip()}"
@@ -90,20 +91,20 @@ def main(argv: list[str] | None = None) -> None:
         print("Aborted.")
         return
 
-    with urllib.request.urlopen(SOURCE_URL) as response:  # noqa: S310 - immutable HTTPS URL above
+    with urllib.request.urlopen(SOURCE_URL) as response:
         source_bytes = response.read()
     actual_hash = hashlib.sha256(source_bytes).hexdigest()
     if actual_hash != SOURCE_SHA256:
         raise ValueError(f"Cleaned Alpaca source hash changed: expected {SOURCE_SHA256}, got {actual_hash}")
     records = json.loads(source_bytes)
     if not isinstance(records, list):
-        raise ValueError("Cleaned Alpaca source must contain a JSON array")
+        raise TypeError("Cleaned Alpaca source must contain a JSON array")
     rows = select_prompt_rows(records, count=args.count, seed=args.seed)
     payload = b"".join((json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8") for row in rows)
     manifest = {
         "schema_version": 1,
         "kind": "cleaned_alpaca_prompt_selection",
-        "written_at": datetime.now(timezone.utc).isoformat(),
+        "written_at": datetime.now(UTC).isoformat(),
         "source": {
             "url": SOURCE_URL,
             "revision": SOURCE_REVISION,

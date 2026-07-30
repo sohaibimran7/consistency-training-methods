@@ -1,9 +1,47 @@
+import json
 import sys
 
 import pytest
 
 from scripts import train_bct
 from scripts.train_bct import resolve_lora_config, resolve_optimizer_config
+
+
+def test_dry_run_loads_bct_rows_without_initializing_backend(monkeypatch, tmp_path, capsys):
+    data = tmp_path / "bct.jsonl"
+    data.write_text(
+        json.dumps(
+            {
+                "messages": [
+                    {"role": "user", "content": "Question?"},
+                    {"role": "assistant", "content": "Answer."},
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(train_bct, "build_backend", lambda *_args, **_kwargs: pytest.fail("backend initialized"))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train_bct.py",
+            "--backend",
+            "local",
+            "--model",
+            "test-model",
+            "--method",
+            "bct",
+            "--data",
+            str(data),
+            "--dry-run",
+        ],
+    )
+
+    train_bct.main()
+
+    assert "Dry run complete; no backend was initialized." in capsys.readouterr().out
 
 
 def test_consistency_methods_reject_identical_variant_and_reference_fields(monkeypatch, capsys):

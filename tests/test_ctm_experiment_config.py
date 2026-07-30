@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ctm_data.adapters.mcq_bias.experiment_factory import compile_experiment
 from scripts import run_experiment as experiment
+from scripts.rmct_paper_vast_more_methods.experiment_factory import compile_experiment
 
 EXAMPLE = Path(__file__).parent.parent / "experiments" / "example_rlct.yaml"
 F6_PER_ITEM = Path(__file__).parent.parent / "experiments" / "eval_awareness" / "qwen_f6_snr_per_item.yaml"
@@ -218,7 +218,7 @@ def test_wrong_argument_figure_yaml_routes_the_complete_pipeline():
     assert by_stage["rendering"][0][1][:2] == ["node", "scripts/render_flint.mjs"]
 
 
-def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
+def test_rmct_hle_yaml_routes_six_methods_controls_and_verbalisation_locally():
     config = experiment.load_experiment(RMCT_HLE_COMPARISON)
     context = experiment.initial_context(config)
     for entry in config["training"]:
@@ -229,10 +229,10 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     for stage, name, command in planned:
         by_stage[stage].append((name, command))
 
-    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 21, 22, 7, 7]
+    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 22, 23, 7, 7]
     assert all("ctm_data.adapters.mcq_bias.plot" in command for _, command in by_stage["rendering"])
     assert not any("render_flint" in " ".join(command) for _, command in by_stage["rendering"])
-    assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
+    assert "scripts.rmct_paper_vast_more_methods.cleaned_alpaca_source" in by_stage["data_generation"][2][1]
     materialize_eval = dict(by_stage["data_preparation"])["evaluation-suite"]
     assert "ctm_data.adapters.mcq_bias.materialize_eval" in materialize_eval
     base_eval = by_stage["evaluation"][0][1]
@@ -241,7 +241,14 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     assert all("--local-checkpoint" in command for _, command in by_stage["evaluation"][1:])
     assert all('"generate_missing_arguments":false' in " ".join(command) for _, command in by_stage["evaluation"])
     training = dict(by_stage["training"])
-    for method in ("rate_matching_lr1", "bias_augmented_consistency_lr1", "act_lr1", "attct_lr1", "mlpct_lr1"):
+    for method in (
+        "rate_matching_lr1",
+        "bias_augmented_consistency_lr1",
+        "opct_lr1",
+        "act_lr1",
+        "attct_lr1",
+        "mlpct_lr1",
+    ):
         assert training[method][training[method].index("--backend") + 1] == "local"
     assert (
         training["bias_augmented_consistency_lr1"][training["bias_augmented_consistency_lr1"].index("--method") + 1]
@@ -250,6 +257,12 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
     assert training["act_lr1"][training["act_lr1"].index("--method") + 1] == "act"
     assert training["attct_lr1"][training["attct_lr1"].index("--method") + 1] == "attct"
     assert training["mlpct_lr1"][training["mlpct_lr1"].index("--method") + 1] == "mlpct"
+    opct = training["opct_lr1"]
+    assert "scripts/train_opct.py" in opct
+    assert opct[opct.index("--reference-messages-field") + 1] == "unbiased_messages"
+    assert opct[opct.index("--variant-messages-field") + 1] == "biased_messages"
+    assert opct[opct.index("--kl-coef") + 1] == "2.0"
+    assert opct[opct.index("--loss-fn") + 1] == "importance_sampling"
     assert not any(name.startswith(("act_control", "attct_control", "mlpct_control")) for name in training)
     analysis_commands = dict(by_stage["analysis"])
     unconditional_verbalisation = analysis_commands["aggregate-bias-verbalised"]
@@ -274,7 +287,7 @@ def test_rmct_hle_yaml_routes_five_methods_controls_and_verbalisation_locally():
 
 
 def test_rmct_compiler_rejects_representation_method_controls():
-    from ctm_data.adapters.mcq_bias.experiment_factory import compile_experiment
+    from scripts.rmct_paper_vast_more_methods.experiment_factory import compile_experiment
 
     for method in ("act", "attct", "mlpct"):
         spec = experiment.load_experiment_source(RMCT_HLE_COMPARISON)["spec"]
@@ -286,7 +299,7 @@ def test_rmct_compiler_rejects_representation_method_controls():
 def test_rmct_hle_yaml_is_a_concise_authored_spec():
     source = experiment.load_experiment_source(RMCT_HLE_COMPARISON)
 
-    assert source["experiment_factory"] == "ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment"
+    assert source["experiment_factory"] == "scripts.rmct_paper_vast_more_methods.experiment_factory:compile_experiment"
     assert "training" not in source
     assert len(RMCT_HLE_COMPARISON.read_text().splitlines()) < 180
 
@@ -323,8 +336,8 @@ def test_rmct_hle_smoke_covers_every_condition_once_with_tiny_counts():
     assert smoke["data"]["instruction"]["examples"] == 16
 
     compiled = experiment.load_experiment(RMCT_HLE_SMOKE)
-    assert len(compiled["training"]) == 7
-    assert len(compiled["evaluation"]) == 8
+    assert len(compiled["training"]) == 8
+    assert len(compiled["evaluation"]) == 9
 
 
 def test_resolved_plan_is_immutable_for_an_experiment_name(monkeypatch, tmp_path):

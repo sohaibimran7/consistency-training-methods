@@ -14,9 +14,10 @@ import math
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from types import MappingProxyType
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 from weakref import WeakKeyDictionary
 
+from ctm.training.judging import run_judge_attempts
 from ctm.training.refusal.parse import RefusalParseError, parse_refusal_verdict
 
 DEFAULT_REFUSAL_MODEL = "openrouter/google/gemma-4-31b-it"
@@ -132,7 +133,7 @@ class RefusalJudge:
     def __init__(
         self,
         model: str = DEFAULT_REFUSAL_MODEL,
-        completion: Optional[CompletionCallback] = None,
+        completion: CompletionCallback | None = None,
         *,
         retries: int = 2,
         retry_delay: float = 1.0,
@@ -276,27 +277,26 @@ class RefusalJudge:
             return verdict
 
         complete = self._completion or self._inspect_completion
-        last_error: BaseException | None = None
-        for attempt in range(self.retries + 1):
-            try:
-                async with self._loop_semaphore():
-                    raw = await complete(
-                        system=_SYSTEM_PROMPT,
-                        user=_USER_PROMPT.format(
-                            request=html.escape(request, quote=False),
-                            response=html.escape(response, quote=False),
-                        ),
-                        model=self.model,
-                    )
-                if not isinstance(raw, str):
-                    raise TypeError(f"refusal completion callback returned {type(raw).__name__}, expected str")
-                verdict = parse_refusal_verdict(raw)
-            except Exception as exc:  # noqa: BLE001 - retry boundary covers provider and parse errors
-                last_error = exc
-                if attempt < self.retries and self.retry_delay:
-                    await asyncio.sleep(self.retry_delay * (2**attempt))
-                continue
+        user_prompt = _USER_PROMPT.format(
+            request=html.escape(request, quote=False),
+            response=html.escape(response, quote=False),
+        )
 
+        async def complete_attempt() -> str:
+            async with self._loop_semaphore():
+                raw = await complete(system=_SYSTEM_PROMPT, user=user_prompt, model=self.model)
+            if not isinstance(raw, str):
+                raise TypeError(f"refusal completion callback returned {type(raw).__name__}, expected str")
+            return raw
+
+        result = await run_judge_attempts(
+            complete_attempt,
+            parse_refusal_verdict,
+            retries=self.retries,
+            retry_delay=self.retry_delay,
+        )
+        verdict = result.verdict
+        if verdict is not None:
             # Only a successfully parsed yes/no reaches the cache. Provider
             # failures and malformed generations remain retryable on future calls.
             if self.cache_size:
@@ -305,12 +305,12 @@ class RefusalJudge:
                     self._cache.popitem(last=False)
             return verdict
 
-        detail = f"{type(last_error).__name__}: {last_error}" if last_error else "unknown grader failure"
+        detail = result.last_error or "unknown grader failure"
         error = RefusalJudgeError(
             f"refusal judge failed after {self.retries + 1} attempt(s) for model {self.model!r}: {detail}"
         )
         if self.failure_policy == "raise":
-            raise error from last_error
+            raise error
         # Do not log request/response text. The digest is enough to correlate a
         # repeated provider failure without leaking prompt contents.
         _log.warning("%s; abstaining (sample=%s)", error, key[:12])
@@ -333,9 +333,9 @@ class RefusalJudge:
 
 
 __all__ = [
-    "CompletionCallback",
     "DEFAULT_REFUSAL_GENERATION_CONFIG",
     "DEFAULT_REFUSAL_MODEL",
+    "CompletionCallback",
     "RefusalJudge",
     "RefusalJudgeError",
     "RefusalParseError",

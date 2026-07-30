@@ -239,14 +239,25 @@ def _pooled_method_label(methods: Iterable[str]) -> str:
     return f"pooled:{'+'.join(sorted(components))}"
 
 
-def _task_identity(log: Any) -> tuple[str, str, str, str, int | None]:
+def _task_identity(log: Any) -> tuple[Any, ...]:
     args = log.eval.task_args
+    source_spec = {
+        "dataset_config": args.get("dataset_config"),
+        "split": args.get("split"),
+        "revision": args.get("revision"),
+        "question_field": args.get("question_field", "question"),
+        "choices_field": args.get("choices_field", "choices"),
+        "answer_field": args.get("answer_field", "answer"),
+    }
     return (
         str(args.get("bias_type", "")),
         str(args.get("dataset", "")),
         str(args.get("prompt_style", "none")),
         str(args.get("seed", "42")),
         args.get("n_questions"),
+        json.dumps(source_spec, sort_keys=True, separators=(",", ":")),
+        str(args.get("prompt_family", "chua")),
+        args.get("wrong_option_seed"),
     )
 
 
@@ -321,14 +332,16 @@ def aggregate_log_groups(
     predicate = (
         _validated_predicate(where)
         if where is not None
-        else _validated_predicate({"metric": where_metric, "op": "eq", "value": where_value})
-        if where_metric is not None
-        else None
+        else (
+            _validated_predicate({"metric": where_metric, "op": "eq", "value": where_value})
+            if where_metric is not None
+            else None
+        )
     )
     expected_bias_set = _validated_expected_values(expected_biases, "expected_biases")
     expected_dataset_set = _validated_expected_values(expected_datasets, "expected_datasets")
 
-    latest: dict[str, list[dict[tuple[str, str, str, str, int | None], Any]]] = {}
+    latest: dict[str, list[dict[tuple[Any, ...], Any]]] = {}
     for condition, log_groups in log_groups_by_condition.items():
         if not condition:
             raise ValueError("condition names must be non-empty")
@@ -336,7 +349,7 @@ def aggregate_log_groups(
             raise ValueError(f"condition {condition!r} has no log groups")
         latest[condition] = []
         for replicate_index, logs in enumerate(log_groups, start=1):
-            selected: dict[tuple[str, str, str, str, int | None], Any] = {}
+            selected: dict[tuple[Any, ...], Any] = {}
             for log in logs:
                 if getattr(log, "status", None) != "success":
                     continue
@@ -385,11 +398,11 @@ def aggregate_log_groups(
     totals: dict[tuple[str, str], int] = defaultdict(int)
     datasets: dict[tuple[str, str], set[str]] = defaultdict(set)
     replicate_counts: dict[tuple[str, str], int] = {}
-    unscored_tasks: list[tuple[str, int, tuple[str, str, str, str, int | None]]] = []
+    unscored_tasks: list[tuple[str, int, tuple[Any, ...]]] = []
     for condition, groups in latest.items():
         for replicate_index, selected in enumerate(groups, start=1):
             for identity, log in selected.items():
-                bias_type, dataset, _, _, _ = identity
+                bias_type, dataset, *_ = identity
                 bias_type = bias_type or "unbiased"
                 key = (condition, bias_type)
                 samples = list(log.samples or [])
@@ -409,9 +422,7 @@ def aggregate_log_groups(
                     if predicate is None:
                         unscored_tasks.append((condition, replicate_index, identity))
                     continue
-                inspect_summary = (
-                    _inspect_summary(log, metric) if stderr == "inspect" and predicate is None else None
-                )
+                inspect_summary = _inspect_summary(log, metric) if stderr == "inspect" and predicate is None else None
                 if inspect_summary is not None:
                     pooled[key].append(inspect_summary)
                 else:
@@ -643,8 +654,7 @@ def append_percent_change(
             "stderr": transformed_stderr,
             "estimate_method": "derived:percent_change",
             "stderr_method": (
-                f"delta:{source.get('stderr_method', 'unknown')}+"
-                f"{baseline.get('stderr_method', 'unknown')}"
+                f"delta:{source.get('stderr_method', 'unknown')}+" f"{baseline.get('stderr_method', 'unknown')}"
             ),
             "transform": "percent_change",
             "ratio_baseline": baseline_condition,
@@ -761,9 +771,9 @@ def aggregate_sycophancy_tradeoff(
     """Combine biased non-compliance and clean accuracy into the paper's F1."""
 
     output = []
-    expected_pairs: set[tuple[str, str, str, int | None]] | None = None
+    expected_pairs: set[tuple[Any, ...]] | None = None
     for condition, logs in logs_by_condition.items():
-        latest: dict[tuple[str, str, str, str, int | None], Any] = {}
+        latest: dict[tuple[Any, ...], Any] = {}
         for log in logs:
             if getattr(log, "status", None) != "success":
                 continue
@@ -775,7 +785,7 @@ def aggregate_sycophancy_tradeoff(
         biased = {identity: log for identity, log in latest.items() if identity[0] == bias_type}
         if not biased:
             raise ValueError(f"condition {condition!r} has no successful {bias_type!r} logs")
-        pair_keys = {(identity[1], identity[2], identity[3], identity[4]) for identity in biased}
+        pair_keys = {identity[1:] for identity in biased}
         if expected_pairs is None:
             expected_pairs = pair_keys
         elif pair_keys != expected_pairs:
@@ -783,10 +793,20 @@ def aggregate_sycophancy_tradeoff(
 
         not_sycophantic = []
         clean_accuracy = []
+        base_keys = {identity[1:7] for identity in biased}
+        if len(base_keys) != len(biased):
+            raise ValueError(f"condition {condition!r} has multiple wrong-option seeds for the same clean task")
+        clean_by_pair = {candidate[1:7]: log for candidate, log in latest.items() if candidate[0] == ""}
+        missing_clean = sorted(base_keys - set(clean_by_pair))
+        extra_clean = sorted(set(clean_by_pair) - base_keys)
+        if missing_clean or extra_clean:
+            raise ValueError(
+                f"condition {condition!r} does not have one matching clean task per biased task; "
+                f"missing={missing_clean}, extra={extra_clean}"
+            )
         for identity, biased_log in biased.items():
-            key = (identity[1], identity[2], identity[3], identity[4])
-            clean_identity = ("", *key)
-            clean_log = latest.get(clean_identity)
+            key = identity[1:7]
+            clean_log = clean_by_pair.get(key)
             if clean_log is None:
                 raise ValueError(f"condition {condition!r} has no matching unbiased log for dataset={identity[1]!r}")
             not_sycophantic.extend(
@@ -867,7 +887,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--where",
         type=_json_object,
-        help="Declarative sample predicate, e.g. '{\"metric\":\"correct\",\"op\":\"eq\",\"value\":1}'",
+        help='Declarative sample predicate, e.g. \'{"metric":"correct","op":"eq","value":1}\'',
     )
     parser.add_argument(
         "--stderr",

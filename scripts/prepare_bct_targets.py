@@ -15,14 +15,27 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from ctm.backends.cli import add_backend_args, build_backend, describe_backend  # noqa: E402
-from ctm.backends.renderers import get_renderer_and_tokenizer  # noqa: E402
-from ctm.core.config import LoRAConfig  # noqa: E402
-from ctm.training.bct_targets import (  # noqa: E402
+from ctm.artifacts import (
+    artifact_identity,
+    artifact_manifest_path,
+    read_verified_jsonl_artifact,
+    verify_data_manifest_bindings,
+)
+from ctm.backends.cli import add_backend_args, build_backend, describe_backend
+from ctm.backends.renderers import get_renderer_and_tokenizer
+from ctm.cli_safety import parse_json_object, reject_inline_secrets
+from ctm.core.config import LoRAConfig
+from ctm.generation_provenance import validate_generator_identity
+from ctm.training.bct_targets import (
+    COMPLETION_EXPORT_SCHEMA,
+    COMPLETION_EXPORT_SCHEMA_VERSION,
     BCTProgressStore,
     build_bct_progress_identity,
+    build_bct_rows_from_completions,
+    completions_from_rows,
     generate_bct_rows,
     prepare_paired_prompts,
+    validate_completion_export_generation_provenance,
     write_bct_target_artifacts,
 )
 
@@ -41,7 +54,7 @@ def _read_rows(paths: list[Path], limit: int | None) -> list[dict]:
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"{path}:{line_number}: invalid JSON: {exc.msg}") from exc
                 if not isinstance(value, dict):
-                    raise ValueError(f"{path}:{line_number}: row must be a JSON object")
+                    raise TypeError(f"{path}:{line_number}: row must be a JSON object")
                 rows.append(value)
     if limit is not None and len(rows) < limit:
         raise ValueError(f"input files contain only {len(rows)}/{limit} requested rows")
@@ -55,6 +68,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--model", required=True)
     parser.add_argument("--data", nargs="+", type=Path, required=True, help="Paired-prompt JSONL file(s), in order")
+    parser.add_argument(
+        "--data-manifest",
+        nargs="+",
+        type=Path,
+        help="One immutable manifest per --data file; required with --responses",
+    )
     parser.add_argument("--limit", type=int, help="Exact total row count to use across the input files")
     parser.add_argument("--source-messages-field", default="reference_messages")
     parser.add_argument("--main-messages-field", default="variant_messages")
@@ -62,6 +81,22 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--main-output", type=Path, required=True)
     parser.add_argument("--control-output", type=Path, required=True)
     parser.add_argument("--manifest-output", type=Path, required=True)
+    parser.add_argument(
+        "--responses",
+        type=Path,
+        help="Optional offline JSONL completion export; skips backend/model execution",
+    )
+    parser.add_argument(
+        "--responses-manifest",
+        type=Path,
+        help="Verified completion-export sidecar (default: RESPONSES.manifest.json)",
+    )
+    parser.add_argument("--response-id-field", default="source_id")
+    parser.add_argument("--response-field", default="response")
+    parser.add_argument(
+        "--generator-identity",
+        help="Optional canonical JSON identity for the model/provider that produced offline responses",
+    )
     parser.add_argument(
         "--progress-dir",
         type=Path,
@@ -94,8 +129,36 @@ def main(argv: list[str] | None = None) -> None:
     if args.local_full_finetune:
         parser.error("BCT target generation requires frozen-base access; do not pass --local-full-finetune")
     missing = [str(path) for path in args.data if not path.is_file()]
+    missing.extend(str(path) for path in (args.data_manifest or []) if not path.is_file())
+    if args.responses is not None and not args.responses.is_file():
+        missing.append(str(args.responses))
     if missing:
         parser.error(f"input file(s) not found: {missing}")
+    generator_identity = None
+    if args.generator_identity is not None:
+        try:
+            generator_identity = validate_generator_identity(
+                parse_json_object(args.generator_identity, label="generator_identity")
+            )
+            reject_inline_secrets(generator_identity, path="generator_identity")
+        except ValueError as exc:
+            parser.error(str(exc))
+        if generator_identity["model"] != args.model:
+            parser.error(
+                "generator_identity.model must exactly equal --model "
+                f"({generator_identity['model']!r} != {args.model!r})"
+            )
+    if args.responses is not None:
+        if not args.data_manifest:
+            parser.error("--responses requires one verified --data-manifest per --data file")
+        if generator_identity is None:
+            parser.error("--responses requires --generator-identity")
+        if args.responses_manifest is None:
+            args.responses_manifest = artifact_manifest_path(args.responses)
+        if not args.responses_manifest.is_file():
+            parser.error(f"completion export manifest not found: {args.responses_manifest}")
+    elif args.responses_manifest is not None:
+        parser.error("--responses-manifest requires --responses")
     output_paths = (args.main_output, args.control_output, args.manifest_output)
     if len({path.resolve() for path in output_paths}) != len(output_paths):
         parser.error("--main-output, --control-output, and --manifest-output must be different paths")
@@ -104,6 +167,7 @@ def main(argv: list[str] | None = None) -> None:
     partial_outputs = [str(path) for path in (args.main_output, args.control_output) if path.exists()]
 
     try:
+        prompt_manifests = verify_data_manifest_bindings(args.data, args.data_manifest) if args.data_manifest else []
         rows = _read_rows(args.data, args.limit)
         prompts = prepare_paired_prompts(
             rows,
@@ -111,7 +175,7 @@ def main(argv: list[str] | None = None) -> None:
             main_messages_field=args.main_messages_field,
             control_messages_field=args.control_messages_field,
         )
-    except (OSError, ValueError) as exc:
+    except (OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
 
     print("\nBCT target preparation:")
@@ -126,6 +190,8 @@ def main(argv: list[str] | None = None) -> None:
         f"max_concurrency={args.max_concurrency}"
     )
     print(f"  manifest={args.manifest_output}")
+    if args.responses is not None:
+        print(f"  responses={args.responses} " f"({args.response_id_field} -> {args.response_field}; backend disabled)")
     if partial_outputs:
         print(f"  partial_outputs={partial_outputs} (must match regenerated bytes exactly)")
     progress_dir = args.progress_dir or args.manifest_output.with_name(args.manifest_output.name + ".progress")
@@ -138,7 +204,64 @@ def main(argv: list[str] | None = None) -> None:
         "max_tokens": args.max_tokens,
         "temperature": args.temperature,
         "max_concurrency": args.max_concurrency,
+        "mode": "offline_responses" if args.responses is not None else "model_sampling",
+        "generator_identity": generator_identity,
     }
+    if args.responses is not None:
+        try:
+            response_rows, response_manifest = read_verified_jsonl_artifact(
+                args.responses,
+                expected_schema=COMPLETION_EXPORT_SCHEMA,
+                expected_schema_version=COMPLETION_EXPORT_SCHEMA_VERSION,
+                manifest_path=args.responses_manifest,
+            )
+            generation_provenance = response_manifest["provenance"].get("generation")
+            if not isinstance(generation_provenance, dict):
+                raise TypeError("completion export manifest has no generation provenance")
+            validate_completion_export_generation_provenance(
+                response_rows,
+                generation_provenance,
+                prompt_artifact_identities=prompt_manifests,
+                generator_identity=generator_identity,
+                decoding_parameters={
+                    "max_tokens": args.max_tokens,
+                    "temperature": args.temperature,
+                },
+                source_messages_field=args.source_messages_field,
+                id_field=args.response_id_field,
+                response_field=args.response_field,
+            )
+            completions = completions_from_rows(
+                prompts,
+                response_rows,
+                id_field=args.response_id_field,
+                response_field=args.response_field,
+            )
+            main_rows, control_rows = build_bct_rows_from_completions(prompts, completions)
+            manifest = write_bct_target_artifacts(
+                main_rows=main_rows,
+                control_rows=control_rows,
+                main_output=args.main_output,
+                control_output=args.control_output,
+                manifest_output=args.manifest_output,
+                source_files=[*args.data, args.responses],
+                model=args.model,
+                backend_name="offline-completion-export",
+                source_messages_field=args.source_messages_field,
+                main_messages_field=args.main_messages_field,
+                control_messages_field=args.control_messages_field,
+                generation_config={
+                    **generation_config,
+                    "response_id_field": args.response_id_field,
+                    "response_field": args.response_field,
+                    "completion_export": artifact_identity(args.responses, response_manifest),
+                },
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            parser.error(str(exc))
+        print(f"\nPrepared {manifest['row_count']} shared targets from offline responses.")
+        return
+
     progress_identity = build_bct_progress_identity(
         prompts,
         source_files=args.data,

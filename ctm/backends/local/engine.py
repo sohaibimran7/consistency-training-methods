@@ -25,19 +25,19 @@ import asyncio
 import copy
 import fnmatch
 import json
+from collections.abc import Sequence
 from contextlib import nullcontext as _nullcontext
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import torch
-
 from tinker_cookbook.rl.metrics import discounted_future_sum_vectorized
 
 from ctm.backends.base import ForwardBackwardOutput, SampledSequence
 from ctm.backends.local import losses
-from ctm.training import consistency_losses
 from ctm.backends.local.mlp_hooks import MLPHookManager
 from ctm.core.config import AdamConfig, LoRAConfig
+from ctm.training import consistency_losses
 
 # Internal-consistency loss_fns (ACT / AttCT / MLPCT) — LocalBackend only: they
 # need paired forward passes with attentions / hidden states / MLP hooks, which
@@ -46,7 +46,8 @@ CONSISTENCY_LOSS_CLASSES = consistency_losses.CONSISTENCY_LOSS_CLASSES
 
 try:  # optional: LoRA support
     import peft
-    from peft import LoraConfig as PeftLoraConfig, get_peft_model
+    from peft import LoraConfig as PeftLoraConfig
+    from peft import get_peft_model
 
     HAS_PEFT = True
 except ImportError:
@@ -54,7 +55,7 @@ except ImportError:
 
 
 def _strip_file_scheme(path: str) -> Path:
-    return Path(path[len("file://") :] if path.startswith("file://") else path)
+    return Path(path.removeprefix("file://"))
 
 
 class _ResolvedPending:
@@ -94,11 +95,11 @@ def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> lis
     if config.target_modules is not None:
         names = [name for component_names in components.values() for name in component_names]
         selected = [name for name in names if any(_name_matches(name, target) for target in config.target_modules)]
-        unmatched = [target for target in config.target_modules if not any(_name_matches(name, target) for name in names)]
+        unmatched = [
+            target for target in config.target_modules if not any(_name_matches(name, target) for name in names)
+        ]
         if unmatched:
-            raise ValueError(
-                f"model {type(model).__name__} has no linear modules matching target_modules={unmatched}"
-            )
+            raise ValueError(f"model {type(model).__name__} has no linear modules matching target_modules={unmatched}")
         return selected
 
     enabled = {
@@ -133,7 +134,7 @@ def _lora_target_parameter_names(model: torch.nn.Module, config: LoRAConfig) -> 
     return [name for name, _ in model.named_parameters() if name.endswith(suffixes)]
 
 
-def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Optional[Sequence[str]]) -> list[str]:
+def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Sequence[str] | None) -> list[str]:
     """Enable either every parameter or the explicitly selected parameter groups."""
 
     if selectors is None:
@@ -151,9 +152,7 @@ def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Optio
             selected.append(name)
     unmatched = [selector for selector in selectors if not any(_name_matches(name, selector) for name in selected)]
     if unmatched:
-        raise ValueError(
-            f"model {type(model).__name__} has no parameters matching full_finetune_modules={unmatched}"
-        )
+        raise ValueError(f"model {type(model).__name__} has no parameters matching full_finetune_modules={unmatched}")
     if not selected:
         raise ValueError("full_finetune_modules selected no parameters")
     return selected
@@ -194,6 +193,20 @@ class LocalSamplerHandle:
             self._flush_task = loop.create_task(self._flush_pending())
         return await future
 
+    async def score_completions(
+        self,
+        prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+    ) -> list[list[float]]:
+        """Score supplied tokens with this handle's raw policy distribution."""
+
+        return await asyncio.to_thread(
+            self._backend._score_completions,
+            prompts,
+            completion_tokens,
+            use_base=self._use_base,
+        )
+
     async def _flush_pending(self) -> None:
         # Give sibling tasks created by gather() one event-loop turn to enqueue.
         await asyncio.sleep(0)
@@ -226,7 +239,7 @@ class LocalSamplerHandle:
                         raise RuntimeError(
                             f"local sampler returned {len(results)} prompt results for {len(group)} requests"
                         )
-                except BaseException as exc:
+                except BaseException as exc:  # noqa: BLE001 -- propagate cancellation/failure to every queued future
                     for _, future in group:
                         if not future.done():
                             future.set_exception(exc)
@@ -251,15 +264,15 @@ class LocalBackend:
     def __init__(
         self,
         *,
-        device: Optional[str] = None,
+        device: str | None = None,
         dtype: torch.dtype = torch.float32,
         use_lora: bool = True,
-        model_instance: Optional[torch.nn.Module] = None,
+        model_instance: torch.nn.Module | None = None,
         ppo_clip_epsilon: float = losses.PPO_CLIP_EPSILON,
         sampler: str = "hf",
-        vllm_options: Optional[dict] = None,
-        consistency_loss_options: Optional[dict] = None,
-        full_finetune_modules: Optional[Sequence[str]] = None,
+        vllm_options: dict | None = None,
+        consistency_loss_options: dict | None = None,
+        full_finetune_modules: Sequence[str] | None = None,
         keep_frozen_base: bool = False,
     ):
         """
@@ -289,8 +302,8 @@ class LocalBackend:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = dtype
         self.use_lora = use_lora
-        self.model: Optional[torch.nn.Module] = model_instance
-        self.model_name: Optional[str] = None
+        self.model: torch.nn.Module | None = model_instance
+        self.model_name: str | None = None
         self.ppo_clip_epsilon = ppo_clip_epsilon
         self.sampler = sampler
         self.vllm_options = vllm_options or {}
@@ -298,20 +311,20 @@ class LocalBackend:
         self.full_finetune_modules = list(full_finetune_modules) if full_finetune_modules is not None else None
         self.keep_frozen_base = keep_frozen_base
         self._vllm = None  # VLLMSampler, booted lazily by _ensure_vllm() when sampler == "vllm"
-        self._adapter_scratch: Optional[Path] = None
-        self._optimizer: Optional[torch.optim.AdamW] = None
-        self._pending_optimizer_state: Optional[dict] = None
+        self._adapter_scratch: Path | None = None
+        self._optimizer: torch.optim.AdamW | None = None
+        self._pending_optimizer_state: dict | None = None
         self._consistency_loss_modules: dict[str, consistency_losses.ConsistencyLoss] = {}
-        self._mlp_hooks: Optional[MLPHookManager] = None
-        self._base_mlp_hooks: Optional[MLPHookManager] = None
-        self._frozen_base_model: Optional[torch.nn.Module] = None
+        self._mlp_hooks: MLPHookManager | None = None
+        self._base_mlp_hooks: MLPHookManager | None = None
+        self._frozen_base_model: torch.nn.Module | None = None
         self._gradient_accumulations = 0
         self._trainable_parameter_names: list[str] = []
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
     def setup(
-        self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False
+        self, *, model: str, lora: LoRAConfig, resume_from: str | None = None, resume_with_optimizer: bool = False
     ) -> None:
         self.model_name = model
         if self.model is None:
@@ -344,7 +357,9 @@ class LocalBackend:
                 task_type="CAUSAL_LM",
             )
             self.model = get_peft_model(self.model, peft_cfg)
-            self._trainable_parameter_names = [name for name, parameter in self.model.named_parameters() if parameter.requires_grad]
+            self._trainable_parameter_names = [
+                name for name, parameter in self.model.named_parameters() if parameter.requires_grad
+            ]
         else:
             if self.keep_frozen_base:
                 self._frozen_base_model = copy.deepcopy(self.model)
@@ -689,9 +704,7 @@ class LocalBackend:
                 base_hooks = hooks
             else:
                 if self._base_mlp_hooks is None:
-                    self._base_mlp_hooks = MLPHookManager(
-                        base_model, variant=getattr(loss_module, "variant", "hidden")
-                    )
+                    self._base_mlp_hooks = MLPHookManager(base_model, variant=getattr(loss_module, "variant", "hidden"))
                 base_hooks = self._base_mlp_hooks.install()
 
         def forward(tokens: list[int], use_base: bool):
@@ -794,6 +807,68 @@ class LocalBackend:
                 datum.loss_fn_inputs["advantages"].to_torch() + kl_advantages
             )
         return {"kl_policy_base": float(avg_diff)}
+
+    def _score_completions(
+        self,
+        prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+        *,
+        use_base: bool,
+    ) -> list[list[float]]:
+        """Score continuations under the selected raw policy on supplied prompts.
+
+        Logits at prompt position ``R - 1 + t`` predict completion token ``t``.
+        This is intentionally independent of the generation temperature used to
+        obtain the tokens.
+        """
+
+        if len(prompts) != len(completion_tokens):
+            raise ValueError(
+                "prompts and completion_tokens must have the same length, got "
+                f"{len(prompts)} and {len(completion_tokens)}"
+            )
+        if use_base:
+            self._require_base()
+        else:
+            self._require_model()
+        if not prompts:
+            return []
+
+        prompt_tokens = [list(prompt.to_ints()) for prompt in prompts]
+        continuations = [list(tokens) for tokens in completion_tokens]
+        for index, (prompt, completion) in enumerate(zip(prompt_tokens, continuations)):
+            if not prompt:
+                raise ValueError(f"prompt {index} is empty")
+            if not completion:
+                raise ValueError(f"completion {index} is empty")
+
+        sequences = [prompt + completion for prompt, completion in zip(prompt_tokens, continuations)]
+        max_len = max(len(sequence) for sequence in sequences)
+        input_ids = torch.zeros((len(sequences), max_len), dtype=torch.long, device=self.device)
+        attention_mask = torch.zeros_like(input_ids)
+        for index, sequence in enumerate(sequences):
+            input_ids[index, : len(sequence)] = torch.tensor(sequence, dtype=torch.long, device=self.device)
+            attention_mask[index, : len(sequence)] = 1
+
+        model = self._model_for(use_base=use_base)
+        was_training = model.training
+        model.eval()
+        try:
+            ctx = self._base_ctx() if use_base else _nullcontext()
+            with ctx, torch.no_grad():
+                logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
+                logprobs = torch.log_softmax(logits.float(), dim=-1)
+        finally:
+            model.train(was_training)
+
+        output: list[list[float]] = []
+        for index, (prompt, completion) in enumerate(zip(prompt_tokens, continuations)):
+            start = len(prompt) - 1
+            positions = logprobs[index, start : start + len(completion)]
+            targets = torch.tensor(completion, dtype=torch.long, device=self.device)
+            values = positions.gather(1, targets.unsqueeze(1)).squeeze(1)
+            output.append(values.detach().cpu().tolist())
+        return output
 
     # ── checkpoints ──────────────────────────────────────────────────────
 

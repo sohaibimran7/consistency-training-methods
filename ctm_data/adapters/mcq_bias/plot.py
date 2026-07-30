@@ -57,6 +57,7 @@ _RCPARAMS = {
     "savefig.dpi": 300,
     "savefig.bbox": "tight",
     "savefig.pad_inches": 0.03,
+    "svg.fonttype": "none",
     "font.family": ["DejaVu Sans", "sans-serif"],
     "font.size": 9,
     "axes.spines.top": False,
@@ -148,10 +149,7 @@ def _hashable(value: Any) -> Any:
 
 
 def _field_key(row: Mapping[str, Any], fields: Sequence[str]) -> tuple[Any, ...]:
-    return tuple(
-        str(row.get(field, "") or "") if field == "model" else _hashable(row.get(field))
-        for field in fields
-    )
+    return tuple(str(row.get(field, "") or "") if field == "model" else _hashable(row.get(field)) for field in fields)
 
 
 def _field_list(value: Any, label: str) -> list[str]:
@@ -159,7 +157,11 @@ def _field_list(value: Any, label: str) -> list[str]:
         return []
     if isinstance(value, str):
         return [value]
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)) and all(isinstance(item, str) for item in value):
+    if (
+        isinstance(value, Sequence)
+        and not isinstance(value, (str, bytes))
+        and all(isinstance(item, str) for item in value)
+    ):
         return list(value)
     raise ValueError(f"facet.{label} must be a string or array of strings")
 
@@ -173,7 +175,9 @@ def _facet_value_label(
     bias_labels: Mapping[str, str],
     spec: Mapping[str, Any],
 ) -> str:
-    custom = spec.get("facet_labels", {}).get(field_name, {}) if isinstance(spec.get("facet_labels", {}), Mapping) else {}
+    custom = (
+        spec.get("facet_labels", {}).get(field_name, {}) if isinstance(spec.get("facet_labels", {}), Mapping) else {}
+    )
     lookup_key = "|".join(str(item) for item in value) if isinstance(value, tuple) else str(value)
     if isinstance(custom, Mapping) and lookup_key in custom:
         return str(custom[lookup_key])
@@ -371,14 +375,10 @@ def render_publication_plot(
         if isinstance(row.get("condition_label"), str)
     }
     row_bias_labels = {
-        str(row["bias_type"]): str(row["bias_label"])
-        for row in data
-        if isinstance(row.get("bias_label"), str)
+        str(row["bias_type"]): str(row["bias_label"]) for row in data if isinstance(row.get("bias_label"), str)
     }
     row_model_labels = {
-        str(row.get("model", "")): str(row["model_label"])
-        for row in data
-        if isinstance(row.get("model_label"), str)
+        str(row.get("model", "")): str(row["model_label"]) for row in data if isinstance(row.get("model_label"), str)
     }
     condition_labels = {
         **_DEFAULT_CONDITION_LABELS,
@@ -397,9 +397,7 @@ def render_publication_plot(
         **{str(key): str(value) for key, value in spec.get("model_labels", {}).items()},
     }
     registry_method_colors = {
-        str(key): str(value["color"])
-        for key, value in registry.methods.items()
-        if isinstance(value.get("color"), str)
+        str(key): str(value["color"]) for key, value in registry.methods.items() if isinstance(value.get("color"), str)
     }
     method_colors = {**_DEFAULT_COLORS, **registry_method_colors, **spec.get("method_colors", {})}
     ci_multiplier = float(spec.get("ci_multiplier", 2.0))
@@ -494,9 +492,7 @@ def render_publication_plot(
                     f"multiple rows occupy the same (condition, bias_type) cell in facet {facet.title!r}; "
                     "include the differing field in facet.rows or facet.columns"
                 )
-            training_biases = {
-                str(bias) for row in panel_data for bias in (row.get("training_biases", []) or [])
-            }
+            training_biases = {str(bias) for row in panel_data for bias in (row.get("training_biases", []) or [])}
 
             for bias_index, bias in enumerate(biases):
                 if bias in training_biases:

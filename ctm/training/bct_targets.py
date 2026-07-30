@@ -11,19 +11,27 @@ import asyncio
 import hashlib
 import json
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from ctm.artifacts import plain_file_identity, write_atomic_bytes
 from ctm.backends.base import SamplerHandle
 from ctm.backends.renderers import decode_response
 from ctm.cli_safety import redact_secrets
+from ctm.generation_provenance import (
+    build_fresh_target_provenance,
+    make_response_manifest_entry,
+    require_fresh_self_generated,
+)
+from ctm.identity import sha256_json
 
 BCT_TARGET_SCHEMA_VERSION = 1
 BCT_PROGRESS_SCHEMA_VERSION = 1
+COMPLETION_EXPORT_SCHEMA = "ctm.completion_export"
+COMPLETION_EXPORT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -50,7 +58,7 @@ def _validate_generated_pair(
         ("control", control, prompt.control_messages),
     ):
         if not isinstance(value, dict):
-            raise ValueError(f"{location} {name} output must be an object")
+            raise TypeError(f"{location} {name} output must be an object")
         if value.get("source_id") != prompt.source_id:
             raise ValueError(f"{location} {name} output source_id does not match input row {index + 1}")
         messages = value.get("messages")
@@ -156,7 +164,7 @@ class BCTProgressStore:
     @staticmethod
     def _validate_record(value: Any, prompts: Sequence[PairedPrompt], *, path: Path) -> tuple[int, dict, dict]:
         if not isinstance(value, Mapping):
-            raise ValueError(f"BCT progress row must be an object: {path}")
+            raise TypeError(f"BCT progress row must be an object: {path}")
         index = value.get("index")
         if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(prompts):
             raise ValueError(f"BCT progress row has invalid index: {path}")
@@ -222,7 +230,7 @@ class BCTProgressStore:
             return None
         archive_dir = self.directory.parent / "_archive"
         archive_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         destination = archive_dir / f"{self.directory.name}.{timestamp}.complete"
         try:
             self.directory.replace(destination)
@@ -238,7 +246,7 @@ def _validate_messages(value: Any, *, location: str) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
     for index, message in enumerate(value):
         if not isinstance(message, Mapping):
-            raise ValueError(f"{location}[{index}] must be an object")
+            raise TypeError(f"{location}[{index}] must be an object")
         role = message.get("role")
         content = message.get("content")
         if not isinstance(role, str) or not role.strip() or not isinstance(content, str) or not content.strip():
@@ -268,10 +276,10 @@ def prepare_paired_prompts(
     source_ids: set[str] = set()
     for index, row in enumerate(rows):
         if not isinstance(row, Mapping):
-            raise ValueError(f"row {index + 1} must be a JSON object")
+            raise TypeError(f"row {index + 1} must be a JSON object")
         source_id_value = row.get("source_id", row.get("question_id", row.get("id", f"row-{index + 1}")))
         if not isinstance(source_id_value, (str, int)) or isinstance(source_id_value, bool):
-            raise ValueError(f"row {index + 1} source_id/question_id/id must be a string or integer")
+            raise TypeError(f"row {index + 1} source_id/question_id/id must be a string or integer")
         source_id = str(source_id_value)
         if source_id in source_ids:
             raise ValueError(f"duplicate source id {source_id!r} at row {index + 1}")
@@ -295,6 +303,204 @@ def prepare_paired_prompts(
             )
         )
     return prepared
+
+
+def completions_from_rows(
+    prompts: Sequence[PairedPrompt],
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    id_field: str = "source_id",
+    response_field: str = "response",
+) -> dict[str, str]:
+    """Validate an offline completion export against an exact prompt set."""
+
+    if not id_field or not response_field:
+        raise ValueError("offline completion field names must be non-empty")
+    completions: dict[str, str] = {}
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, Mapping):
+            raise TypeError(f"offline completion row {index} must be an object")
+        source_id = row.get(id_field)
+        response = row.get(response_field)
+        if not isinstance(source_id, (str, int)) or isinstance(source_id, bool):
+            raise TypeError(f"offline completion row {index}.{id_field} must be a string or integer")
+        key = str(source_id)
+        if key in completions:
+            raise ValueError(f"offline completion export repeats source id {key!r}")
+        if not isinstance(response, str) or not response.strip():
+            raise ValueError(f"offline completion row {index}.{response_field} must be non-empty text")
+        completions[key] = response
+    expected = {prompt.source_id for prompt in prompts}
+    actual = set(completions)
+    if actual != expected:
+        raise ValueError(
+            "offline completion identities do not match prompt pairs: "
+            f"missing={sorted(expected - actual)}, extra={sorted(actual - expected)}"
+        )
+    return completions
+
+
+def build_completion_export_generation_provenance(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    prompt_artifact_identities: Sequence[Mapping[str, Any]],
+    generator_identity: Mapping[str, Any],
+    decoding_parameters: Mapping[str, Any],
+    source_messages_field: str,
+    generated_at_utc: str | datetime,
+    id_field: str = "source_id",
+    response_field: str = "response",
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build fresh-generation provenance for an offline completion export."""
+
+    input_identity = _prompt_artifact_set_identity(prompt_artifact_identities)
+    example_ids, response_manifest = _completion_response_manifest(
+        rows,
+        id_field=id_field,
+        response_field=response_field,
+    )
+    return build_fresh_target_provenance(
+        input_artifact_sha256=input_identity["input_artifact_sha256"],
+        input_manifest_sha256=input_identity["input_manifest_sha256"],
+        example_ids=example_ids,
+        generator_identity=generator_identity,
+        prompt_template_sha256=sha256_json({"source_messages_field": source_messages_field}),
+        decoding_parameters=decoding_parameters,
+        ordered_response_manifest=response_manifest,
+        parent_artifact_sha256=input_identity["parent_artifact_sha256"],
+        generated_at_utc=generated_at_utc,
+        metadata={
+            "id_field": id_field,
+            "response_field": response_field,
+            **dict(metadata or {}),
+        },
+    )
+
+
+def validate_completion_export_generation_provenance(
+    rows: Sequence[Mapping[str, Any]],
+    provenance: Mapping[str, Any],
+    *,
+    prompt_artifact_identities: Sequence[Mapping[str, Any]],
+    generator_identity: Mapping[str, Any],
+    decoding_parameters: Mapping[str, Any],
+    source_messages_field: str,
+    id_field: str = "source_id",
+    response_field: str = "response",
+) -> dict[str, Any]:
+    """Verify that offline responses were freshly generated for these prompts."""
+
+    input_identity = _prompt_artifact_set_identity(prompt_artifact_identities)
+    example_ids, response_manifest = _completion_response_manifest(
+        rows,
+        id_field=id_field,
+        response_field=response_field,
+    )
+    return require_fresh_self_generated(
+        provenance,
+        expected={
+            **input_identity,
+            "example_manifest": sorted(example_ids),
+            "generator_identity": dict(generator_identity),
+            "reference_generator_identity": dict(generator_identity),
+            "prompt_template_sha256": sha256_json({"source_messages_field": source_messages_field}),
+            "decoding_parameters": dict(decoding_parameters),
+            "ordered_response_manifest": response_manifest,
+            "response_count": len(response_manifest),
+            "metadata": {
+                "id_field": id_field,
+                "response_field": response_field,
+            },
+        },
+    )
+
+
+def _prompt_artifact_set_identity(
+    identities: Sequence[Mapping[str, Any]],
+) -> dict[str, str]:
+    if not identities:
+        raise ValueError("completion provenance requires prompt artifact identities")
+    normalized: list[dict[str, Any]] = []
+    for index, identity in enumerate(identities, start=1):
+        if not isinstance(identity, Mapping):
+            raise TypeError(f"prompt artifact identity {index} must be an object")
+        required = {
+            "artifact_schema",
+            "schema_version",
+            "row_count",
+            "content_sha256",
+            "manifest_sha256",
+        }
+        missing = sorted(required - set(identity))
+        if missing:
+            raise ValueError(f"prompt artifact identity {index} is missing fields {missing}")
+        normalized.append({field: identity[field] for field in sorted(required)})
+    return {
+        "input_artifact_sha256": sha256_json([identity["content_sha256"] for identity in normalized]),
+        "input_manifest_sha256": sha256_json([identity["manifest_sha256"] for identity in normalized]),
+        "parent_artifact_sha256": sha256_json(normalized),
+    }
+
+
+def _completion_response_manifest(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    id_field: str,
+    response_field: str,
+) -> tuple[list[str], list[dict[str, str]]]:
+    if not id_field or not response_field:
+        raise ValueError("completion provenance field names must be non-empty")
+    example_ids: list[str] = []
+    entries: list[dict[str, str]] = []
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, Mapping):
+            raise TypeError(f"completion export row {index} must be an object")
+        source_id = row.get(id_field)
+        response = row.get(response_field)
+        if not isinstance(source_id, (str, int)) or isinstance(source_id, bool):
+            raise TypeError(f"completion export row {index}.{id_field} must be a string or integer")
+        if not isinstance(response, str) or not response.strip():
+            raise ValueError(f"completion export row {index}.{response_field} must be non-empty text")
+        example_id = str(source_id)
+        example_ids.append(example_id)
+        entries.append(make_response_manifest_entry(example_id=example_id, response=response))
+    return example_ids, entries
+
+
+def build_bct_rows_from_completions(
+    prompts: Sequence[PairedPrompt],
+    completions: Mapping[str, str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Attach one exact completion to both sides of every paired prompt."""
+
+    if not prompts:
+        raise ValueError("BCT row construction needs at least one paired prompt")
+    expected = {prompt.source_id for prompt in prompts}
+    actual = set(completions)
+    if actual != expected:
+        raise ValueError(
+            "completion identities do not match prompt pairs: "
+            f"missing={sorted(expected - actual)}, extra={sorted(actual - expected)}"
+        )
+    main_rows: list[dict[str, Any]] = []
+    control_rows: list[dict[str, Any]] = []
+    for index, prompt in enumerate(prompts):
+        completion = completions[prompt.source_id]
+        if not isinstance(completion, str) or not completion.strip():
+            raise ValueError(f"completion for {prompt.source_id!r} must be non-empty text")
+        assistant = {"role": "assistant", "content": completion}
+        metadata = {"source_id": prompt.source_id}
+        main, control = _validate_generated_pair(
+            index,
+            prompt,
+            {"messages": [*prompt.main_messages, assistant], **metadata},
+            {"messages": [*prompt.control_messages, assistant], **metadata},
+            location=f"offline BCT row {index + 1}",
+        )
+        main_rows.append(main)
+        control_rows.append(control)
+    return main_rows, control_rows
 
 
 async def generate_bct_rows(
@@ -364,17 +570,8 @@ async def generate_bct_rows(
         completion = decode_response(renderer, tokenizer, sequences[0].tokens)
         if not completion.strip():
             raise RuntimeError(f"base sampler returned an empty completion for row {index + 1} ({item.source_id!r})")
-        assistant = {"role": "assistant", "content": completion}
-        metadata = {"source_id": item.source_id}
-        main = {"messages": [*item.main_messages, assistant], **metadata}
-        control = {"messages": [*item.control_messages, assistant], **metadata}
-        main, control = _validate_generated_pair(
-            index,
-            item,
-            main,
-            control,
-            location=f"generated BCT row {index + 1}",
-        )
+        main_rows, control_rows = build_bct_rows_from_completions([item], {item.source_id: completion})
+        main, control = main_rows[0], control_rows[0]
         if on_completed is not None:
             on_completed(index, item, main, control)
         return index, main, control
@@ -431,7 +628,7 @@ def write_bct_target_artifacts(
         {
             "schema_version": BCT_TARGET_SCHEMA_VERSION,
             "kind": "ctm_bct_targets",
-            "written_at": datetime.now(timezone.utc).isoformat(),
+            "written_at": datetime.now(UTC).isoformat(),
             "model": model,
             "backend": backend_name,
             "source_files": [plain_file_identity(path) for path in source_files],
@@ -473,12 +670,18 @@ def write_bct_target_artifacts(
 
 
 __all__ = [
-    "BCTProgressStore",
     "BCT_PROGRESS_SCHEMA_VERSION",
     "BCT_TARGET_SCHEMA_VERSION",
+    "COMPLETION_EXPORT_SCHEMA",
+    "COMPLETION_EXPORT_SCHEMA_VERSION",
+    "BCTProgressStore",
     "PairedPrompt",
     "build_bct_progress_identity",
+    "build_bct_rows_from_completions",
+    "build_completion_export_generation_provenance",
+    "completions_from_rows",
     "generate_bct_rows",
     "prepare_paired_prompts",
+    "validate_completion_export_generation_provenance",
     "write_bct_target_artifacts",
 ]
