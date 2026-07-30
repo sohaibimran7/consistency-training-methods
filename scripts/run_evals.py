@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Source-sample cap per task; epochs, solvers, and graders can still make multiple model calls",
     )
     parser.add_argument("--epochs", type=int)
+    parser.add_argument("--dry-run", action="store_true", help="Validate and print the run without constructing tasks or models")
     parser.add_argument("-y", "--yes", action="store_true", help="Run after printing the exact command")
     args = parser.parse_args(argv)
 
@@ -123,6 +124,10 @@ def main(argv: list[str] | None = None) -> None:
         "  preflight_samples=deferred (upstream task construction can materialize datasets; "
         "use --limit to bound source samples per task)"
     )
+
+    if args.dry_run:
+        print("Dry run complete; no task or model was constructed.")
+        return
 
     if not args.yes and input("\nProceed with eval? [y/N] ").strip().lower() != "y":
         print("Aborted.")

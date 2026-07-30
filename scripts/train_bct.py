@@ -261,6 +261,7 @@ def main():
     add_backend_args(parser)
 
     # Execution
+    parser.add_argument("--dry-run", action="store_true", help="Validate data/config and exit before backend setup")
     parser.add_argument("-y", "--yes", action="store_true")
 
     args = parser.parse_args()
@@ -393,6 +394,10 @@ def main():
         print("Final checkpoint: sampler weights only (pass --save-state for a resumable full-state checkpoint)")
     if args.resume_from:
         print(f"Resuming from: {args.resume_from}")
+
+    if args.dry_run:
+        print("Dry run complete; no backend was initialized.")
+        return
 
     if not args.yes:
         if input("\nProceed? (y/n): ").lower() != "y":

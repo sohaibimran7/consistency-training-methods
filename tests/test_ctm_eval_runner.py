@@ -288,3 +288,24 @@ def test_eval_cli_defers_task_construction_until_after_confirmation(monkeypatch,
     output = capsys.readouterr().out
     assert "preflight_samples=deferred" in output
     assert "bound source samples per task" in output
+
+
+def test_eval_cli_dry_run_constructs_neither_tasks_nor_models(monkeypatch, capsys):
+    from scripts import run_evals
+
+    monkeypatch.setattr(
+        run_evals,
+        "run_task_evals",
+        lambda *_args, **_kwargs: pytest.fail("dry run started evaluation"),
+    )
+    run_evals.main(
+        [
+            "--task-factory",
+            "mcq_bias.tasks:suite_tasks",
+            "--model",
+            "mockllm/unit",
+            "--dry-run",
+        ]
+    )
+
+    assert "Dry run complete; no task or model was constructed." in capsys.readouterr().out

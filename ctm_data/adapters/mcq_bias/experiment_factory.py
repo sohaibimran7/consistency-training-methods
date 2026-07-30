@@ -60,6 +60,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
             "local",
             "conditions",
             "supervised_consistency",
+            "opct",
             "rate_matching",
             "evaluation",
             "tracking",
@@ -67,12 +68,12 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         },
     )
     if spec["backend"] != "local":
-        raise ValueError("the five-method comparison requires backend: local")
+        raise ValueError("the six-method comparison requires backend: local")
     rates = _named_items(spec["learning_rates"], "learning_rates", {"name", "value"})
     conditions = _named_items(spec["conditions"], "conditions", {"name", "method"}, {"control"})
     if sum(condition["method"] == "none" for condition in conditions) != 1:
         raise ValueError("conditions must contain exactly one method: none")
-    methods = {"none", "rate_matching", "bias_augmented_consistency", "act", "attct", "mlpct"}
+    methods = {"none", "rate_matching", "bias_augmented_consistency", "opct", "act", "attct", "mlpct"}
     if any(condition["method"] not in methods for condition in conditions):
         raise ValueError(f"condition methods must be one of {sorted(methods)}")
     if any(not isinstance(condition.get("control", False), bool) for condition in conditions):
@@ -130,6 +131,25 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         {"max_tokens", "temperature", "max_concurrency"},
     )
     method_configs = _section(sft["method_config"], "supervised_consistency.method_config", {"act", "attct", "mlpct"})
+    opct = _section(
+        spec["opct"],
+        "opct",
+        {
+            "learning_rates",
+            "batch_size",
+            "gradient_accumulation_steps",
+            "epochs",
+            "rollouts_per_prompt",
+            "temperature",
+            "max_new_tokens",
+            "learning_rate_schedule",
+            "kl_coefficient",
+            "kl_discount_factor",
+            "loss",
+            "checkpoint_every",
+        },
+    )
+    opct_rates = _named_items(opct["learning_rates"], "opct.learning_rates", {"name", "value"})
     rm = _section(
         spec["rate_matching"],
         "rate_matching",
@@ -337,7 +357,8 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
             analysis_runs.append(f"{condition_name}={log_dir}")
             continue
 
-        for rate_index, rate in enumerate(rates, start=1):
+        condition_rates = opct_rates if method == "opct" else rates
+        for rate_index, rate in enumerate(condition_rates, start=1):
             command_name = f"{_slug(condition_name)}_lr{rate_index}"
             if method in {"bias_augmented_consistency", "act", "attct", "mlpct"}:
                 bct_path = paths["bct_control"] if control else paths["bct"]
@@ -379,6 +400,33 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
                         }
                     )
                 command = ["${python}", "scripts/train_bct.py"]
+            elif method == "opct":
+                args = {
+                    **local_args,
+                    "model": model,
+                    "data": [f"{paths['pairs']}:{train_data['examples']}"],
+                    "data_manifest": [paths["pairs_manifest"]],
+                    "reference_messages_field": "unbiased_messages",
+                    "variant_messages_field": "unbiased_messages" if control else "biased_messages",
+                    "experiment_name": "${experiment}",
+                    "seed": seed,
+                    "lora_config": lora_config,
+                    "lr": rate["value"],
+                    "lr_schedule": opct["learning_rate_schedule"],
+                    "kl_coef": opct["kl_coefficient"],
+                    "kl_discount_factor": opct["kl_discount_factor"],
+                    "loss_fn": opct["loss"],
+                    "rollouts_per_prompt": opct["rollouts_per_prompt"],
+                    "temperature": opct["temperature"],
+                    "max_new_tokens": opct["max_new_tokens"],
+                    "batch_size": opct["batch_size"],
+                    "gradient_accumulation_steps": opct["gradient_accumulation_steps"],
+                    "epochs": opct["epochs"],
+                    "checkpoint_every": opct["checkpoint_every"],
+                    "wandb_project": tracking["wandb_project"],
+                    **yes,
+                }
+                command = ["${python}", "scripts/train_opct.py"]
             else:
                 setting_config = {"data_paths": [paths["pairs"]], **({"control": True} if control else {})}
                 args = {

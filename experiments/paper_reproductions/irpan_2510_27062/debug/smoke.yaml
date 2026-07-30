@@ -1,0 +1,77 @@
+name: irpan-2510-27062-smoke
+experiment_factory: ctm_data.adapters.irpan_2510_27062.experiment_factory:compile_experiment
+
+# All generated training and evaluation commands are themselves dry-runs.
+spec:
+  mode: smoke
+  model: mock-model/irpan-smoke
+  backend: local
+  seed: 42
+  artifact_root: artifacts/irpan-2510-27062/smoke
+
+  data:
+    sycophancy:
+      training_artifact: artifacts/irpan-2510-27062/smoke/fixtures/sycophancy-training.jsonl
+      bct_result_export: artifacts/irpan-2510-27062/smoke/fixtures/sycophancy-bct-results.jsonl
+      final:
+        mmlu: artifacts/irpan-2510-27062/smoke/fixtures/mmlu-final.jsonl
+    jailbreak:
+      training_artifact: artifacts/irpan-2510-27062/smoke/fixtures/jailbreak-training.jsonl
+      bct_result_export: artifacts/irpan-2510-27062/smoke/fixtures/jailbreak-bct-results.jsonl
+      validation:
+        harmbench: artifacts/irpan-2510-27062/smoke/fixtures/harmbench-validation.jsonl
+        or_bench: artifacts/irpan-2510-27062/smoke/fixtures/or-bench-validation.jsonl
+      final:
+        clearharm: artifacts/irpan-2510-27062/smoke/fixtures/clearharm-final.jsonl
+        wildguardtest: artifacts/irpan-2510-27062/smoke/fixtures/wildguardtest-final.jsonl
+        xstest: artifacts/irpan-2510-27062/smoke/fixtures/xstest-final.jsonl
+        wildjailbreak: artifacts/irpan-2510-27062/smoke/fixtures/wildjailbreak-final.jsonl
+
+  selected_final_models:
+    sycophancy:
+      base: {kind: model, value: mockllm/irpan-smoke}
+      bct: {kind: local_checkpoint, value: file:///smoke/sycophancy-bct}
+      rmct: {kind: local_checkpoint, value: file:///smoke/sycophancy-rmct}
+      act: {kind: local_checkpoint, value: file:///smoke/sycophancy-act}
+      attct: {kind: local_checkpoint, value: file:///smoke/sycophancy-attct}
+      mlpct: {kind: local_checkpoint, value: file:///smoke/sycophancy-mlpct}
+      opct: {kind: local_checkpoint, value: file:///smoke/sycophancy-opct}
+    jailbreak:
+      base: {kind: model, value: mockllm/irpan-smoke}
+      bct: {kind: local_checkpoint, value: file:///smoke/jailbreak-bct}
+      rmct: {kind: local_checkpoint, value: file:///smoke/jailbreak-rmct}
+      act: {kind: local_checkpoint, value: file:///smoke/jailbreak-act}
+      attct: {kind: local_checkpoint, value: file:///smoke/jailbreak-attct}
+      mlpct: {kind: local_checkpoint, value: file:///smoke/jailbreak-mlpct}
+      opct: {kind: local_checkpoint, value: file:///smoke/jailbreak-opct}
+
+  training:
+    examples: {sycophancy: 1, jailbreak: 1}
+    batch_size: 1
+    gradient_accumulation_steps: 1
+    epochs: 1
+    learning_rate: 0.0001
+    learning_rate_schedule: constant
+    checkpoint_every: 1
+    local: {dtype: float32, sampler: hf, gpu_memory_utilization: 0.1}
+    lora: {rank: 2, alpha: 4, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+    method_config:
+      act: {weight: 0.0001, layer_selection: all, normalize: false}
+      attct: {weight: 1.0, layer_selection: all, layer_weights: uniform}
+      mlpct: {weight: 1.0, variant: hidden, layer_selection: all, layer_weights: uniform,
+              distance_metric: cosine, normalize: false}
+    target_generation:
+      generator_identity:
+        {generator_id: smoke-fixture, provider: fixture, model: smoke-model,
+         model_revision: fixture-v1, model_immutable_date: null}
+      decoding_parameters: {temperature: 0.0, max_tokens: 16}
+    rmct:
+      {reference_rollouts: 1, training_rollouts: 1, consistency_rollouts: 1,
+       anchor_rollouts: 0, temperature: 0.0, max_new_tokens: 16,
+       kl_coefficient: 0.0, anchor_weight: 0.0}
+    opct:
+      {rollouts_per_prompt: 1, temperature: 0.0, max_new_tokens: 16,
+       kl_coefficient: 1.0, kl_discount_factor: 0.0, loss: importance_sampling}
+
+  evaluation: {max_tokens: 16, temperature: 0.0, judge_model: mockllm/judge}
+  tracking: {}

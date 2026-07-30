@@ -1,9 +1,11 @@
 """Tests for the shared --backend CLI plumbing (ctm.backends.cli)."""
 
 import argparse
+import asyncio
 
 import pytest
 import torch
+from tinker import types
 
 from ctm.backends.cli import add_backend_args, build_backend, describe_backend
 from ctm.backends.local.engine import LocalBackend
@@ -103,3 +105,21 @@ def test_tinker_training_run_records_renderer_metadata(monkeypatch):
         "train_unembed": False,
         "seed": 9,
     }
+
+
+def test_tinker_scores_only_completion_tokens_under_reference_prompt():
+    class SamplingClient:
+        async def compute_logprobs_async(self, model_input):
+            assert model_input.to_ints() == [1, 2, 3, 4]
+            return [None, -0.1, -0.2, -0.3]
+
+    backend = TinkerBackend()
+    backend.model = "unit/model"
+    backend._base_sampling_client = SamplingClient()
+    scored = asyncio.run(
+        backend.score_reference_completions(
+            [types.ModelInput.from_ints(tokens=[1, 2])],
+            [[3, 4]],
+        )
+    )
+    assert scored == [[-0.2, -0.3]]
