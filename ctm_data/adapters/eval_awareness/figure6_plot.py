@@ -7,11 +7,14 @@ import argparse
 import csv
 import json
 import math
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from ctm_data.adapters.eval_awareness.figure6_analysis import (
+    CURRENT_QWEN_MODEL_KEY_ORDER,
+    DIAGNOSTIC_PARTIAL_RESULT_LABEL,
     EXPECTED_CELL_COUNT,
     EXPECTED_MODEL_JUDGMENT_COUNT,
     MODEL_KEY_ORDER,
@@ -29,6 +32,7 @@ from ctm_data.adapters.eval_awareness.figure6_analysis import (
     QWEN_MODEL_KEY_ORDER,
     STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
     STRICT_SUBSET_RESULT_LABEL,
+    diagnostic_partial_plot_label,
     should_annotate_delta,
 )
 from ctm_data.adapters.eval_awareness.figure6_judge import DEFAULT_JUDGE_MODEL
@@ -66,6 +70,7 @@ ALTERNATIVE_RESULT_LABELS = frozenset(
         STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
     }
 )
+DIAGNOSTIC_EXPECTED_JUDGMENT_COUNT = len(CURRENT_QWEN_MODEL_KEY_ORDER) * EXPECTED_MODEL_JUDGMENT_COUNT
 
 
 def _bool(value: Any, *, name: str) -> bool:
@@ -107,6 +112,40 @@ def _summary_value(summary: Mapping[str, Any] | None) -> Mapping[str, Any] | Non
     return value if isinstance(value, Mapping) else None
 
 
+def _diagnostics_value(summary: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    if summary is None:
+        return None
+    value = summary.get("diagnostics")
+    return value if isinstance(value, Mapping) else None
+
+
+def _is_diagnostic_summary(summary: Mapping[str, Any] | None) -> bool:
+    value = _summary_value(summary)
+    diagnostics = _diagnostics_value(summary)
+    return (
+        value is not None
+        and value.get("publication_complete") is False
+        and value.get("result_label") == DIAGNOSTIC_PARTIAL_RESULT_LABEL
+        and diagnostics is not None
+        and diagnostics.get("mode") == "allow_partial_diagnostics"
+    )
+
+
+def _diagnostic_plot_label(summary: Mapping[str, Any] | None) -> str | None:
+    if not _is_diagnostic_summary(summary):
+        return None
+    value = _summary_value(summary)
+    assert value is not None
+    expected = value.get("expected")
+    observed = value.get("observed")
+    if not isinstance(expected, Mapping) or not isinstance(observed, Mapping):
+        raise ValueError("diagnostic analysis summary must include expected and observed objects")
+    return diagnostic_partial_plot_label(
+        _integer(observed.get("valid_unique_records"), name="summary.observed.valid_unique_records"),
+        _integer(expected.get("judgment_count"), name="summary.expected.judgment_count"),
+    )
+
+
 def _expected_model_keys(
     summary: Mapping[str, Any] | None,
     *,
@@ -146,7 +185,8 @@ def _expected_model_keys(
 
 def _alternative_plot_label(summary: Mapping[str, Any] | None) -> str | None:
     value = _summary_value(summary)
-    if value is None or value.get("result_label") not in ALTERNATIVE_RESULT_LABELS:
+    diagnostic = _is_diagnostic_summary(summary)
+    if value is None or (value.get("result_label") not in ALTERNATIVE_RESULT_LABELS and not diagnostic):
         return None
     label = value.get("plot_label")
     if not isinstance(label, str) or not label:
@@ -154,6 +194,8 @@ def _alternative_plot_label(summary: Mapping[str, Any] | None) -> str | None:
     provenance = value.get("provenance")
     if not isinstance(provenance, Mapping):
         raise ValueError("alternative-judge analysis summary must include provenance")
+    if diagnostic and provenance.get("expected_judge_model") != OPENROUTER_GPT_56_LUNA_JUDGE_MODEL:
+        raise ValueError("diagnostic partial plotting requires the pinned OpenRouter GPT-5.6 Luna judge")
     if provenance.get("expected_judge_model") == OPENROUTER_MUSE_JUDGE_MODEL:
         if provenance.get("judge_provider") != "OpenRouter" or label != OPENROUTER_MUSE_ALTERNATIVE_LABEL:
             raise ValueError("OpenRouter Muse alternative summary has an invalid provider or plot label")
@@ -186,7 +228,7 @@ def _alternative_plot_label(summary: Mapping[str, Any] | None) -> str | None:
 
 def _subset_plot_label(summary: Mapping[str, Any] | None) -> str | None:
     value = _summary_value(summary)
-    if value is None or value.get("result_label") not in SUBSET_RESULT_LABELS:
+    if value is None or (value.get("result_label") not in SUBSET_RESULT_LABELS and not _is_diagnostic_summary(summary)):
         return None
     if value.get("scope_kind") != "registered_model_subset":
         raise ValueError("strict subset analysis summary must identify a registered-model subset scope")
@@ -207,16 +249,156 @@ def _subset_plot_label(summary: Mapping[str, Any] | None) -> str | None:
     return label
 
 
+def _validate_diagnostic_summary(
+    summary: Mapping[str, Any] | None,
+    *,
+    model_keys: tuple[str, ...],
+    rows: Sequence[Mapping[str, Any]],
+    records_by_model: Mapping[str, int],
+) -> None:
+    value = _summary_value(summary)
+    diagnostics = _diagnostics_value(summary)
+    if value is None or diagnostics is None:
+        raise ValueError("diagnostic partial plotting requires a summary and diagnostics payload")
+    if model_keys != CURRENT_QWEN_MODEL_KEY_ORDER:
+        raise ValueError("diagnostic partial plotting requires exactly qwen32, qwen_mo_mid, and qwen_mo_post")
+    if value.get("publication_complete") is not False or value.get("scope_complete") is not False:
+        raise ValueError("diagnostic partial summary must explicitly mark publication and scope incomplete")
+    if value.get("result_label") != DIAGNOSTIC_PARTIAL_RESULT_LABEL:
+        raise ValueError("diagnostic partial summary has an invalid result label")
+    if value.get("scope_kind") != "registered_model_subset":
+        raise ValueError("diagnostic partial summary must identify a registered-model subset")
+
+    expected = value.get("expected")
+    if not isinstance(expected, Mapping):
+        raise ValueError("diagnostic partial summary expected scope must be an object")
+    exact_expected_values = {
+        "model_keys": list(CURRENT_QWEN_MODEL_KEY_ORDER),
+        "model_displays": [MODEL_SPECS[key].display_name for key in CURRENT_QWEN_MODEL_KEY_ORDER],
+        "valences": list(FIGURE6_VALENCES),
+        "configs": list(FIGURE6_CONDITIONS),
+        "task_count": FIGURE6_TASK_COUNT,
+        "replicates": [1, 2, 3],
+        "judgment_count": DIAGNOSTIC_EXPECTED_JUDGMENT_COUNT,
+        "judgments_per_model": EXPECTED_MODEL_JUDGMENT_COUNT,
+        "cell_denominator": EXPECTED_DENOMINATOR,
+    }
+    mismatched_expected = {
+        name: {"expected": expected_value, "observed": expected.get(name)}
+        for name, expected_value in exact_expected_values.items()
+        if expected.get(name) != expected_value
+    }
+    if mismatched_expected:
+        raise ValueError(f"diagnostic partial summary has an incompatible matrix scope: {mismatched_expected}")
+
+    expected_aggregate_rows = len(CURRENT_QWEN_MODEL_KEY_ORDER) * len(FIGURE6_VALENCES) * len(FIGURE6_CONDITIONS)
+    if len(rows) != expected_aggregate_rows:
+        raise ValueError(f"diagnostic partial plot must contain exactly {expected_aggregate_rows} aggregate rows")
+    observed = value.get("observed")
+    if not isinstance(observed, Mapping):
+        raise ValueError("diagnostic partial summary observed counts must be an object")
+    row_total = sum(row["n"] for row in rows)
+    observed_total = _integer(
+        observed.get("valid_unique_records"),
+        name="summary.observed.valid_unique_records",
+    )
+    if observed_total != row_total:
+        raise ValueError(
+            "diagnostic partial row total does not match summary.observed.valid_unique_records: "
+            f"rows={row_total}, summary={observed_total}"
+        )
+    if _integer(observed.get("aggregate_rows"), name="summary.observed.aggregate_rows") != len(rows):
+        raise ValueError("diagnostic partial aggregate row count does not match the summary")
+    raw_observed_by_model = observed.get("valid_unique_records_by_model")
+    if not isinstance(raw_observed_by_model, Mapping) or set(raw_observed_by_model) != set(model_keys):
+        raise ValueError("diagnostic partial summary must report exactly one valid-record count per plotted model")
+    observed_by_model = {
+        model_key: _integer(
+            raw_observed_by_model[model_key],
+            name=f"summary.observed.valid_unique_records_by_model.{model_key}",
+        )
+        for model_key in model_keys
+    }
+    if observed_by_model != dict(records_by_model):
+        raise ValueError(
+            "diagnostic partial per-model row totals do not match "
+            f"summary.observed.valid_unique_records_by_model: rows={dict(records_by_model)}, "
+            f"summary={observed_by_model}"
+        )
+
+    if diagnostics.get("mode") != "allow_partial_diagnostics":
+        raise ValueError("diagnostic partial payload has an invalid diagnostics mode")
+    if diagnostics.get("publication_complete") is not False:
+        raise ValueError("diagnostic partial diagnostics must mark publication incomplete")
+    diagnostic_input = _integer(diagnostics.get("input_records"), name="diagnostics.input_records")
+    diagnostic_valid = _integer(
+        diagnostics.get("valid_unique_records"),
+        name="diagnostics.valid_unique_records",
+    )
+    diagnostic_rejected = _integer(
+        diagnostics.get("rejected_records"),
+        name="diagnostics.rejected_records",
+    )
+    if diagnostic_valid != observed_total:
+        raise ValueError("diagnostics.valid_unique_records does not match the analysis summary")
+    if diagnostic_input < 1 or diagnostic_rejected < 0 or diagnostic_input != diagnostic_valid + diagnostic_rejected:
+        raise ValueError("diagnostic input, valid, and rejected record counts are inconsistent")
+    observed_input = _integer(observed.get("input_records"), name="summary.observed.input_records")
+    if observed_input != diagnostic_input:
+        raise ValueError("diagnostics.input_records does not match summary.observed.input_records")
+
+    issue_counts = diagnostics.get("issue_counts")
+    issues = diagnostics.get("issues")
+    if not isinstance(issue_counts, Mapping):
+        raise ValueError("diagnostics.issue_counts must be an object")
+    if not isinstance(issues, Sequence) or isinstance(issues, (str, bytes)):
+        raise ValueError("diagnostics.issues must be a list")
+    normalized_issue_counts: dict[str, int] = {}
+    issue_codes: list[str] = []
+    for code, count in issue_counts.items():
+        if not isinstance(code, str) or not code:
+            raise ValueError("diagnostics.issue_counts keys must be non-empty strings")
+        normalized_count = _integer(count, name=f"diagnostics.issue_counts.{code}")
+        if normalized_count < 1:
+            raise ValueError("diagnostics.issue_counts values must be positive integers")
+        normalized_issue_counts[code] = normalized_count
+    for index, issue in enumerate(issues, start=1):
+        if (
+            not isinstance(issue, Mapping)
+            or not isinstance(issue.get("code"), str)
+            or not issue["code"]
+            or not isinstance(issue.get("message"), str)
+            or not issue["message"]
+        ):
+            raise ValueError(f"diagnostics issue {index} must contain non-empty code and message strings")
+        issue_codes.append(issue["code"])
+    if dict(Counter(issue_codes)) != normalized_issue_counts:
+        raise ValueError("diagnostics.issue_counts does not match diagnostics.issues")
+
+    partial_label = diagnostic_partial_plot_label(observed_total, DIAGNOSTIC_EXPECTED_JUDGMENT_COUNT)
+    source_note = value.get("source_note")
+    if (
+        not isinstance(source_note, str)
+        or partial_label not in source_note
+        or "not the full seven-model paper reproduction or paper result data" not in source_note
+        or "complete only for" in source_note.casefold()
+    ):
+        raise ValueError("diagnostic partial source note does not carry the exact incomplete-result disclosure")
+    _subset_plot_label(summary)
+    _alternative_plot_label(summary)
+
+
 def validate_plot_rows(
     rows: Sequence[Mapping[str, Any]],
     *,
     summary: Mapping[str, Any] | None = None,
     fixture_mode: bool = False,
 ) -> list[dict[str, Any]]:
-    """Require the summary-scoped complete strict aggregation matrix."""
+    """Require a complete strict matrix or an explicitly gated diagnostic matrix."""
 
     if not rows:
         raise ValueError("plot rows must not be empty")
+    diagnostic_mode = not fixture_mode and _is_diagnostic_summary(summary)
     model_keys = _expected_model_keys(summary, fixture_mode=fixture_mode)
     required = {
         "model_key",
@@ -258,17 +440,30 @@ def validate_plot_rows(
         if key in seen:
             raise ValueError(f"duplicate plot cell {key}")
         seen.add(key)
-        if _integer(row["n"], name=f"row {index}.n") != EXPECTED_DENOMINATOR:
-            raise ValueError(f"plot row {index} must have the exact denominator {EXPECTED_DENOMINATOR}")
-        if _integer(row["n_tasks"], name=f"row {index}.n_tasks") != FIGURE6_TASK_COUNT:
-            raise ValueError(f"plot row {index} must contain {FIGURE6_TASK_COUNT} tasks")
-        if _integer(row["n_replicates"], name=f"row {index}.n_replicates") != 3:
-            raise ValueError(f"plot row {index} must contain three replicates")
+        n = _integer(row["n"], name=f"row {index}.n")
+        n_tasks = _integer(row["n_tasks"], name=f"row {index}.n_tasks")
+        n_replicates = _integer(row["n_replicates"], name=f"row {index}.n_replicates")
+        if diagnostic_mode:
+            if not 1 <= n <= EXPECTED_DENOMINATOR:
+                raise ValueError(f"diagnostic plot row {index}.n must be in [1, {EXPECTED_DENOMINATOR}]")
+            if not 1 <= n_tasks <= FIGURE6_TASK_COUNT:
+                raise ValueError(f"diagnostic plot row {index}.n_tasks must be in [1, {FIGURE6_TASK_COUNT}]")
+            if not 1 <= n_replicates <= 3:
+                raise ValueError(f"diagnostic plot row {index}.n_replicates must be in [1, 3]")
+        else:
+            if n != EXPECTED_DENOMINATOR:
+                raise ValueError(f"plot row {index} must have the exact denominator {EXPECTED_DENOMINATOR}")
+            if n_tasks != FIGURE6_TASK_COUNT:
+                raise ValueError(f"plot row {index} must contain {FIGURE6_TASK_COUNT} tasks")
+            if n_replicates != 3:
+                raise ValueError(f"plot row {index} must contain three replicates")
         publication_complete = _bool(row["publication_complete"], name=f"row {index}.publication_complete")
         is_fixture = _bool(row.get("fixture_mode", False), name=f"row {index}.fixture_mode")
         if fixture_mode and not is_fixture:
             raise ValueError("fixture mode requires every row to be explicitly marked as a fixture")
-        if not fixture_mode and not publication_complete:
+        if diagnostic_mode and publication_complete:
+            raise ValueError("diagnostic partial plotting requires every row to mark publication incomplete")
+        if not fixture_mode and not diagnostic_mode and not publication_complete:
             raise ValueError("incomplete diagnostic rows cannot be rendered as the publication reproduction")
         if not fixture_mode and is_fixture:
             raise ValueError("fixture rows require explicit fixture mode")
@@ -287,9 +482,9 @@ def validate_plot_rows(
             raise ValueError(f"plot row {index} baseline performance delta must be zero")
         row.update(
             {
-                "n": EXPECTED_DENOMINATOR,
-                "n_tasks": FIGURE6_TASK_COUNT,
-                "n_replicates": 3,
+                "n": n,
+                "n_tasks": n_tasks,
+                "n_replicates": n_replicates,
                 "matched_awareness_percent": awareness,
                 "performance_delta_pp": delta,
                 "annotate_performance_delta": annotation,
@@ -312,12 +507,19 @@ def validate_plot_rows(
     records_by_model = {
         model_key: sum(row["n"] for row in normalized if row["model_key"] == model_key) for model_key in model_keys
     }
-    if any(count != EXPECTED_MODEL_JUDGMENT_COUNT for count in records_by_model.values()):
+    if diagnostic_mode:
+        _validate_diagnostic_summary(
+            summary,
+            model_keys=model_keys,
+            rows=normalized,
+            records_by_model=records_by_model,
+        )
+    elif any(count != EXPECTED_MODEL_JUDGMENT_COUNT for count in records_by_model.values()):
         raise ValueError(
             f"every plotted model must represent exactly {EXPECTED_MODEL_JUDGMENT_COUNT:,} strict judgments; "
             f"observed={records_by_model}"
         )
-    if summary is not None and not fixture_mode:
+    if summary is not None and not fixture_mode and not diagnostic_mode:
         summary_value = _summary_value(summary)
         if not isinstance(summary_value, Mapping) or summary_value.get("publication_complete") is not True:
             raise ValueError("analysis summary does not mark this reproduction complete")
@@ -411,9 +613,11 @@ def render_figure6(
     source_note: str = DEFAULT_SOURCE_NOTE,
     fixture_mode: bool = False,
 ) -> tuple[Path, Path]:
-    """Render complete strict rows to both PNG and PDF."""
+    """Render complete strict rows or a summary-gated diagnostic to PNG and PDF."""
 
     normalized = validate_plot_rows(rows, summary=summary, fixture_mode=fixture_mode)
+    diagnostic_label = _diagnostic_plot_label(summary) if not fixture_mode else None
+    diagnostic_mode = diagnostic_label is not None
     model_keys = _expected_model_keys(summary, fixture_mode=fixture_mode)
     model_displays = tuple(MODEL_SPECS[key].display_name for key in model_keys)
     subset_label = _subset_plot_label(summary) if not fixture_mode else None
@@ -422,10 +626,14 @@ def render_figure6(
         title = FIXTURE_TITLE
     if fixture_mode and source_note == DEFAULT_SOURCE_NOTE:
         source_note = FIXTURE_SOURCE_NOTE
-    required_labels = [label for label in (subset_label, alternative_label) if label is not None]
+    required_labels = [label for label in (diagnostic_label, subset_label, alternative_label) if label is not None]
     if required_labels:
         if title == DEFAULT_TITLE:
-            title = f"{DEFAULT_TITLE} — {' — '.join(required_labels)}"
+            title = (
+                f"{DEFAULT_TITLE}\n" + "\n".join(required_labels)
+                if diagnostic_mode
+                else f"{DEFAULT_TITLE} — {' — '.join(required_labels)}"
+            )
         if source_note == DEFAULT_SOURCE_NOTE:
             summary_value = _summary_value(summary)
             summary_source_note = summary_value.get("source_note") if summary_value is not None else None
@@ -437,8 +645,8 @@ def render_figure6(
         missing_labels = [label for label in required_labels if label not in title or label not in source_note]
         if missing_labels:
             raise ValueError(
-                "strict subset and alternative-judge plots must render every exact label in both the title "
-                f"and source note; missing={missing_labels}"
+                "strict subset, diagnostic, and alternative-judge plots must render every exact label in both "
+                f"the title and source note; missing={missing_labels}"
             )
     if not isinstance(title, str) or not title.strip():
         raise ValueError("title must be a non-empty string")
@@ -508,6 +716,17 @@ def render_figure6(
                         fontsize=8.2,
                         fontweight="medium",
                     )
+                    if diagnostic_mode and row["n"] < EXPECTED_DENOMINATOR:
+                        axis.text(
+                            column_index,
+                            row_index + 0.34,
+                            f"n={row['n']}",
+                            ha="center",
+                            va="bottom",
+                            color="white" if awareness >= shared_vmax * 0.52 else "#14243a",
+                            fontsize=5.4,
+                            fontweight="medium",
+                        )
                     annotation = performance_delta_annotation(
                         row["performance_delta_pp"],
                         config_name=config,
@@ -537,10 +756,13 @@ def render_figure6(
             bbox_inches="tight",
             pad_inches=0.08,
         )
+        pdf_metadata = {"Title": title, "Subject": metadata_text, "Creator": "consistency-training-methods"}
+        if diagnostic_mode:
+            pdf_metadata["Keywords"] = "; ".join(required_labels)
         figure.savefig(
             pdf_target,
             format="pdf",
-            metadata={"Title": title, "Subject": metadata_text, "Creator": "consistency-training-methods"},
+            metadata=pdf_metadata,
             bbox_inches="tight",
             pad_inches=0.08,
         )

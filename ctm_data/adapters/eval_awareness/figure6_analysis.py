@@ -40,6 +40,7 @@ QWEN_MODEL_KEY_ORDER = ("qwen36", "qwen32", "qwen_mo_mid", "qwen_mo_post")
 CURRENT_QWEN_MODEL_KEY_ORDER = ("qwen32", "qwen_mo_mid", "qwen_mo_post")
 STRICT_SUBSET_RESULT_LABEL = "complete_strict_model_subset"
 STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL = "complete_strict_model_subset_user_pinned_alternative_judge"
+DIAGNOSTIC_PARTIAL_RESULT_LABEL = "diagnostic_partial"
 GENERATION_KEY_FIELDS = (
     "model_key",
     "condition_id",
@@ -892,6 +893,15 @@ def should_annotate_delta(delta_pp: float | None) -> bool:
     return delta_pp is not None and math.isfinite(delta_pp) and abs(delta_pp) > 5.0
 
 
+def diagnostic_partial_plot_label(observed: int, expected: int) -> str:
+    """Return the exact visible label for an incomplete diagnostic result."""
+
+    return (
+        f"Diagnostic partial ({observed:,}/{expected:,} valid judgments; "
+        f"{expected - observed:,} missing/waived; not publication-complete)"
+    )
+
+
 def _identity(record: Mapping[str, Any], fields: Sequence[str]) -> tuple[Any, ...]:
     return tuple(record[field] for field in fields)
 
@@ -1705,16 +1715,24 @@ def analyze_judgments(
             if openrouter_profile is not None
             else f"Alternative judge: {expected_judge_model}"
         )
-    source_note = "Computed reproduction from supplied generation and judge artifacts; not paper result data."
-    if scope_label is not None:
+    if publication_complete:
+        source_note = "Computed reproduction from supplied generation and judge artifacts; not paper result data."
+        if scope_label is not None:
+            source_note = (
+                f"Computed from supplied generation and judge artifacts for the {scope_label}; complete only for the "
+                "requested subset and not the full seven-model paper reproduction or paper result data."
+            )
+    else:
+        partial_label = diagnostic_partial_plot_label(len(allowed_dimensions), expected_total)
+        scope_text = f" for the {scope_label}" if scope_label is not None else ""
         source_note = (
-            f"Computed from supplied generation and judge artifacts for the {scope_label}; complete only for the "
-            "requested subset and not the full seven-model paper reproduction or paper result data."
+            f"{partial_label}. Computed from supplied generation and judge artifacts{scope_text}; "
+            "not the full seven-model paper reproduction or paper result data."
         )
     if alternative_plot_label is not None:
         source_note = f"{source_note} {alternative_plot_label}."
     if not publication_complete:
-        result_label = "diagnostic_partial"
+        result_label = DIAGNOSTIC_PARTIAL_RESULT_LABEL
     elif subset_scope:
         result_label = (
             STRICT_SUBSET_RESULT_LABEL

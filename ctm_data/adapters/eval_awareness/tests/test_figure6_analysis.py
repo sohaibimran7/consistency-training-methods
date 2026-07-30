@@ -13,13 +13,18 @@ from ctm_data.adapters.eval_awareness import figure6_judge as judge
 from ctm_data.adapters.eval_awareness import figure6_openrouter as openrouter
 from ctm_data.adapters.eval_awareness.figure6_analysis import (
     CURRENT_QWEN_MODEL_KEY_ORDER,
+    DIAGNOSTIC_PARTIAL_RESULT_LABEL,
     EXPECTED_CELL_COUNT,
     EXPECTED_JUDGMENT_COUNT,
     EXPECTED_MODEL_JUDGMENT_COUNT,
+    OPENROUTER_GPT_56_LUNA_ALTERNATIVE_LABEL,
+    OPENROUTER_GPT_56_LUNA_JUDGE_MODEL,
+    OPENROUTER_GPT_56_LUNA_PROFILE,
     OPENROUTER_MUSE_ALTERNATIVE_LABEL,
     PublicationValidationError,
     STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
     analyze_judgments,
+    diagnostic_partial_plot_label,
     should_annotate_delta,
 )
 from ctm_data.adapters.eval_awareness.figure6_plot import (
@@ -473,9 +478,14 @@ def test_allow_partial_is_explicitly_diagnostic_and_never_complete():
     result = _small_analysis(rows, allow_partial=True)
 
     assert result.summary["publication_complete"] is False
-    assert result.summary["result_label"] == "diagnostic_partial"
+    assert result.summary["result_label"] == DIAGNOSTIC_PARTIAL_RESULT_LABEL
     assert result.diagnostics["issue_counts"]["cell_denominator"] == 1
     assert all(row["publication_complete"] is False for row in result.rows)
+    observed = result.summary["observed"]["valid_unique_records"]
+    expected = result.summary["expected"]["judgment_count"]
+    assert diagnostic_partial_plot_label(observed, expected) in result.summary["source_note"]
+    assert "complete only for the requested subset" not in result.summary["source_note"]
+    assert "not the full seven-model paper reproduction or paper result data" in result.summary["source_note"]
 
 
 def test_annotation_threshold_is_strictly_greater_than_five():
@@ -933,6 +943,144 @@ def test_qwen_subset_plot_rejects_full_result_label_and_bad_per_model_count():
     }
     with pytest.raises(ValueError, match="5,400 valid unique judgments for every model"):
         validate_plot_rows(rows, summary={**summary, "observed": bad_observed})
+
+
+def _diagnostic_partial_plot_inputs() -> tuple[list[dict], dict]:
+    missing_by_model = {"qwen32": 1, "qwen_mo_mid": 5, "qwen_mo_post": 12}
+    rows = []
+    for fixture_row in fixture_rows():
+        model_key = fixture_row["model_key"]
+        if model_key not in CURRENT_QWEN_MODEL_KEY_ORDER:
+            continue
+        missing = missing_by_model[model_key] > 0
+        missing_by_model[model_key] -= int(missing)
+        rows.append(
+            {
+                **fixture_row,
+                "n": 299 if missing else 300,
+                "publication_complete": False,
+                "fixture_mode": False,
+            }
+        )
+    assert missing_by_model == {model_key: 0 for model_key in CURRENT_QWEN_MODEL_KEY_ORDER}
+
+    observed_by_model = {
+        model_key: sum(row["n"] for row in rows if row["model_key"] == model_key)
+        for model_key in CURRENT_QWEN_MODEL_KEY_ORDER
+    }
+    observed_total = sum(observed_by_model.values())
+    scope_label = "Qwen-only subset (3 of 7 models; 16,200 strict judgments)"
+    partial_label = diagnostic_partial_plot_label(observed_total, 16_200)
+    source_note = (
+        f"{partial_label}. Computed from supplied generation and judge artifacts for the {scope_label}; "
+        "not the full seven-model paper reproduction or paper result data. "
+        f"{OPENROUTER_GPT_56_LUNA_ALTERNATIVE_LABEL}."
+    )
+    summary = {
+        "publication_complete": False,
+        "scope_complete": False,
+        "scope_kind": "registered_model_subset",
+        "scope_label": scope_label,
+        "result_label": DIAGNOSTIC_PARTIAL_RESULT_LABEL,
+        "source_note": source_note,
+        "plot_label": OPENROUTER_GPT_56_LUNA_ALTERNATIVE_LABEL,
+        "expected": {
+            "model_keys": list(CURRENT_QWEN_MODEL_KEY_ORDER),
+            "model_displays": [MODEL_SPECS[key].display_name for key in CURRENT_QWEN_MODEL_KEY_ORDER],
+            "valences": list(FIGURE6_VALENCES),
+            "configs": list(FIGURE6_CONDITIONS),
+            "task_count": 100,
+            "replicates": [1, 2, 3],
+            "judgment_count": 16_200,
+            "judgments_per_model": 5_400,
+            "cell_denominator": 300,
+        },
+        "observed": {
+            "input_records": observed_total,
+            "valid_unique_records": observed_total,
+            "valid_unique_records_by_model": observed_by_model,
+            "aggregate_rows": 54,
+        },
+        "provenance": {
+            "expected_judge_model": OPENROUTER_GPT_56_LUNA_JUDGE_MODEL,
+            "judge_provider": "OpenRouter",
+            "judge_profile": OPENROUTER_GPT_56_LUNA_PROFILE,
+        },
+    }
+    diagnostics = {
+        "mode": "allow_partial_diagnostics",
+        "publication_complete": False,
+        "input_records": observed_total,
+        "valid_unique_records": observed_total,
+        "rejected_records": 0,
+        "issue_counts": {"cell_denominator": 1, "replicate_matrix": 1},
+        "issues": [
+            {"code": "cell_denominator", "message": "sparse waived judgments"},
+            {"code": "replicate_matrix", "message": "sparse waived judgments"},
+        ],
+    }
+    return rows, {"summary": summary, "diagnostics": diagnostics}
+
+
+def test_diagnostic_partial_qwen_plot_preserves_counts_and_renders_required_labels(tmp_path: Path):
+    pytest.importorskip("matplotlib")
+    rows, payload = _diagnostic_partial_plot_inputs()
+
+    normalized = validate_plot_rows(rows, summary=payload)
+
+    assert len(normalized) == 54
+    assert [row["n"] for row in normalized] == [row["n"] for row in rows]
+    assert {
+        model_key: sum(row["n"] for row in normalized if row["model_key"] == model_key)
+        for model_key in CURRENT_QWEN_MODEL_KEY_ORDER
+    } == {"qwen32": 5_399, "qwen_mo_mid": 5_395, "qwen_mo_post": 5_388}
+    assert sum(row["n"] for row in normalized) == 16_182
+    assert sum(row["n"] < 300 for row in normalized) == 18
+
+    png = tmp_path / "qwen-diagnostic-partial.png"
+    pdf = tmp_path / "qwen-diagnostic-partial.pdf"
+    render_figure6(rows, summary=payload, png_path=png, pdf_path=pdf)
+
+    partial_label = diagnostic_partial_plot_label(16_182, 16_200)
+    required_labels = (
+        partial_label,
+        payload["summary"]["scope_label"],
+        OPENROUTER_GPT_56_LUNA_ALTERNATIVE_LABEL,
+    )
+    png_bytes = png.read_bytes()
+    pdf_bytes = pdf.read_bytes()
+    assert all(label.encode() in png_bytes for label in required_labels)
+    assert b"Diagnostic partial" in pdf_bytes
+    assert b"16,182/16,200" in pdf_bytes
+    assert OPENROUTER_GPT_56_LUNA_ALTERNATIVE_LABEL.encode() in pdf_bytes
+
+
+def test_diagnostic_partial_plot_fails_closed_without_exact_summary_diagnostics_and_counts():
+    rows, payload = _diagnostic_partial_plot_inputs()
+
+    with pytest.raises(ValueError, match="exact denominator"):
+        validate_plot_rows(rows)
+    with pytest.raises(ValueError, match="exact denominator"):
+        validate_plot_rows(rows, summary=payload["summary"])
+
+    bad_mode = json.loads(json.dumps(payload))
+    bad_mode["diagnostics"]["mode"] = "strict_publication"
+    with pytest.raises(ValueError, match="exact denominator"):
+        validate_plot_rows(rows, summary=bad_mode)
+
+    malformed_diagnostics = json.loads(json.dumps(payload))
+    malformed_diagnostics["diagnostics"].pop("issues")
+    with pytest.raises(ValueError, match="diagnostics.issues"):
+        validate_plot_rows(rows, summary=malformed_diagnostics)
+
+    bad_total = json.loads(json.dumps(payload))
+    bad_total["summary"]["observed"]["valid_unique_records"] += 1
+    with pytest.raises(ValueError, match="row total does not match"):
+        validate_plot_rows(rows, summary=bad_total)
+
+    complete_row = [{**rows[0], "publication_complete": True}, *rows[1:]]
+    with pytest.raises(ValueError, match="every row to mark publication incomplete"):
+        validate_plot_rows(complete_row, summary=payload)
 
 
 def test_analysis_cli_forwards_repeatable_expected_model_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
