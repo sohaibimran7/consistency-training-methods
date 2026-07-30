@@ -81,7 +81,7 @@ judge:
   proxy_policy: prohibited; httpx trust_env disabled
   route_attestation_required: false
   temperature: null
-  max_tokens: 32768
+  max_tokens: 65536
   concurrency: 500
   max_attempts_per_generation: 5
   max_retry_after: 300

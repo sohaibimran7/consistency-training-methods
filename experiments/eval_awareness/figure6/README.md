@@ -304,7 +304,7 @@ without one.
 
 The current reproduction uses `openai/gpt-5.6-luna` from the operator laptop through
 ordinary OpenRouter Chat Completions requests. It does not use the Batch API.
-The exact hash-pinned paper judge prompt is paired with a 32,768-token output
+The exact hash-pinned paper judge prompt is paired with a 65,536-token output
 ceiling and strict JSON Schema output. This is a user-pinned alternative judge,
 not the paper's GPT-5 judge. The registered `openrouter-gpt-5.6-luna-direct` profile
 prohibits proxies and route attestations, sets the model's `medium` reasoning effort,
@@ -770,7 +770,7 @@ python -m ctm_data.adapters.eval_awareness.figure6_analysis \
   --expected-model-key qwen_mo_mid \
   --expected-model-key qwen_mo_post \
   --expected-judge-profile openrouter-gpt-5.6-luna-direct \
-  --expected-judge-max-completion-tokens 32768 \
+  --expected-judge-max-completion-tokens 65536 \
   --output-csv "$FIGURE6_JUDGE_ROOT/figure6-aggregation.csv" \
   --summary-json "$FIGURE6_JUDGE_ROOT/figure6-summary.json"
 

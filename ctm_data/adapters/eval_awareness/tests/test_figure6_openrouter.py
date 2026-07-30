@@ -910,7 +910,7 @@ def test_openrouter_luna_public_dry_plan_pins_500_way_profile(tmp_path: Path) ->
         "openai/gpt-5.6-luna-20260709",
     ]
     assert summary["temperature"] is None
-    assert summary["max_tokens"] == 32_768
+    assert summary["max_tokens"] == 65_536
     assert summary["concurrency"] == 500
     assert summary["reasoning"] == {"effort": "medium"}
     assert summary["provider_routing"] == {"allow_fallbacks": True, "require_parameters": True}
@@ -983,7 +983,7 @@ def test_openrouter_luna_uses_chat_request_shape_and_normalizes_success(tmp_path
     assert len(seen) == 1
     body = seen[0]
     assert body["model"] == "openai/gpt-5.6-luna"
-    assert body["max_tokens"] == 32_768
+    assert body["max_tokens"] == 65_536
     assert body["reasoning"] == {"effort": "medium"}
     assert body["provider"] == {"allow_fallbacks": True, "require_parameters": True}
     assert body["response_format"]["type"] == "json_schema"

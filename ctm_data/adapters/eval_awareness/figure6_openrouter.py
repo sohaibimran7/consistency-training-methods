@@ -83,7 +83,7 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "route_mode": "direct",
         "temperature": None,
-        "max_tokens": 32_768,
+        "max_tokens": 65_536,
         "concurrency": 500,
         "max_retry_after": 300.0,
         "provider_routing": {
