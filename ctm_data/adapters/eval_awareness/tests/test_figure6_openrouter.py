@@ -475,7 +475,7 @@ def test_cli_omitted_profile_defaults_to_direct_luna() -> None:
             "--dry-run",
         ]
     )
-    assert args.judge_profile == scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE
+    assert args.judge_profile == scorer.OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE
 
 
 def test_paid_malformed_response_is_preserved_and_requires_explicit_rescore(tmp_path: Path) -> None:
@@ -887,7 +887,7 @@ def test_public_dry_plan_binds_exact_scope_concurrency_retry_cap_and_route(tmp_p
     assert not Path(summary["manifest"]).exists()
 
 
-def test_openai_luna_public_dry_plan_pins_direct_500_way_profile(tmp_path: Path) -> None:
+def test_openrouter_luna_public_dry_plan_pins_500_way_profile(tmp_path: Path) -> None:
     summary = asyncio.run(
         scorer.judge_generations(
             _qwen_matrix(("qwen32",)),
@@ -896,28 +896,31 @@ def test_openai_luna_public_dry_plan_pins_direct_500_way_profile(tmp_path: Path)
             output_path=tmp_path / "judgments.jsonl",
             api_key=None,
             judge_template_sha256=TEMPLATE_SHA256,
-            judge_profile=scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+            judge_profile=scorer.OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE,
             expected_model_keys=("qwen32",),
             dry_run=True,
         )
     )
-    assert summary["provider"] == "OpenAI"
-    assert summary["endpoint"] == "https://api.openai.com/v1/chat/completions"
-    assert summary["api_style"] == "openai_chat_completions"
-    assert summary["judge_model"] == "gpt-5.6-luna"
-    assert summary["allowed_response_models"] == ["gpt-5.6-luna"]
+    assert summary["provider"] == "OpenRouter"
+    assert summary["endpoint"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert summary["api_style"] == "openrouter_chat_completions"
+    assert summary["judge_model"] == "openai/gpt-5.6-luna"
+    assert summary["allowed_response_models"] == [
+        "openai/gpt-5.6-luna",
+        "openai/gpt-5.6-luna-20260709",
+    ]
     assert summary["temperature"] is None
     assert summary["max_tokens"] == 32_768
     assert summary["concurrency"] == 500
     assert summary["reasoning"] == {"effort": "medium"}
-    assert summary["provider_routing"] == {}
-    assert summary["store"] is False
+    assert summary["provider_routing"] == {"allow_fallbacks": True, "require_parameters": True}
+    assert summary["store"] is None
     assert summary["response_format"]["type"] == "json_schema"
     assert summary["response_format"]["json_schema"]["strict"] is True
     assert summary["pending"] == 5_400
 
 
-def test_openai_luna_uses_direct_chat_request_shape_and_normalizes_success(tmp_path: Path) -> None:
+def test_openrouter_luna_uses_chat_request_shape_and_normalizes_success(tmp_path: Path) -> None:
     seen: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -929,7 +932,8 @@ def test_openai_luna_uses_direct_chat_request_shape_and_normalizes_success(tmp_p
             headers={"x-request-id": "request-luna-unit"},
             json={
                 "id": "chatcmpl-luna-unit",
-                "model": scorer.OPENAI_GPT_56_LUNA_JUDGE_MODEL,
+                "model": scorer.OPENROUTER_GPT_56_LUNA_RESPONSE_MODEL,
+                "provider": "OpenAI",
                 "choices": [
                     {
                         "index": 0,
@@ -972,25 +976,26 @@ def test_openai_luna_uses_direct_chat_request_shape_and_normalizes_success(tmp_p
     summary = _run(
         tmp_path,
         client,
-        judge_profile=scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+        judge_profile=scorer.OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE,
     )
     asyncio.run(client.aclose())
     assert summary["completed"] == 1
     assert len(seen) == 1
     body = seen[0]
-    assert body["model"] == "gpt-5.6-luna"
-    assert body["max_completion_tokens"] == 32_768
-    assert body["reasoning_effort"] == "medium"
-    assert body["store"] is False
+    assert body["model"] == "openai/gpt-5.6-luna"
+    assert body["max_tokens"] == 32_768
+    assert body["reasoning"] == {"effort": "medium"}
+    assert body["provider"] == {"allow_fallbacks": True, "require_parameters": True}
     assert body["response_format"]["type"] == "json_schema"
     assert body["messages"][0]["role"] == "system"
     assert "temperature" not in body
-    assert "provider" not in body
-    assert "max_tokens" not in body
+    assert "reasoning_effort" not in body
+    assert "max_completion_tokens" not in body
+    assert "store" not in body
     attempt = json.loads((tmp_path / "attempts.jsonl").read_text())
     assert attempt["response"]["provider"] == "OpenAI"
-    assert attempt["judgment"]["judge_provider"] == "OpenAI"
-    assert attempt["judgment"]["judge_response_model"] == "gpt-5.6-luna"
+    assert attempt["judgment"]["judge_provider"] == "OpenRouter"
+    assert attempt["judgment"]["judge_response_model"] == "openai/gpt-5.6-luna-20260709"
     assert attempt["judgment"]["judge_finish_reason"] == "stop"
 
 
@@ -1036,7 +1041,7 @@ def test_openai_luna_uses_direct_chat_request_shape_and_normalizes_success(tmp_p
         ),
     ],
 )
-def test_openai_luna_rejects_incomplete_schema_or_nonstop_finish(
+def test_openrouter_luna_rejects_incomplete_schema_or_nonstop_finish(
     tmp_path: Path, content: dict[str, Any], finish_reason: str
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1045,7 +1050,8 @@ def test_openai_luna_rejects_incomplete_schema_or_nonstop_finish(
             request=request,
             json={
                 "id": "chatcmpl-invalid-luna",
-                "model": scorer.OPENAI_GPT_56_LUNA_JUDGE_MODEL,
+                "model": scorer.OPENROUTER_GPT_56_LUNA_RESPONSE_MODEL,
+                "provider": "OpenAI",
                 "choices": [
                     {
                         "index": 0,
@@ -1061,7 +1067,7 @@ def test_openai_luna_rejects_incomplete_schema_or_nonstop_finish(
         _run(
             tmp_path,
             client,
-            judge_profile=scorer.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+            judge_profile=scorer.OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE,
             max_attempts=1,
         )
     asyncio.run(client.aclose())

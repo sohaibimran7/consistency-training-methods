@@ -774,7 +774,7 @@ def test_default_publication_matrix_is_37800_with_300_per_cell():
     "profile_id",
     [
         openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE,
-        openrouter.OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+        openrouter.OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE,
     ],
 )
 def test_current_three_qwen_direct_profile_scope_is_strict_complete_at_16200(

@@ -55,7 +55,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_CHAT_ENDPOINT = "/chat/completions"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 OPENAI_CHAT_ENDPOINT = "/chat/completions"
-OPENAI_GPT_56_LUNA_DIRECT_PROFILE = "openai-gpt-5.6-luna-direct"
+OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE = "openrouter-gpt-5.6-luna-direct"
 GPT_OSS_120B_NITRO_DIRECT_PROFILE = "gpt-oss-120b-nitro-direct"
 DEEPSEEK_V32_DIRECT_PROFILE = "deepseek-v3.2-direct"
 CLAUDE_SONNET_46_DIRECT_PROFILE = "claude-sonnet-4.6-direct"
@@ -63,26 +63,33 @@ MUSE_US_PROXY_PROFILE = "muse-spark-1.1-us-proxy"
 DEFAULT_JUDGE_PROFILE = GPT_OSS_120B_NITRO_DIRECT_PROFILE
 GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL = "openai/gpt-oss-120b:nitro"
 GPT_OSS_120B_OPENROUTER_RESPONSE_MODEL = "openai/gpt-oss-120b"
-OPENAI_GPT_56_LUNA_JUDGE_MODEL = "gpt-5.6-luna"
+OPENROUTER_GPT_56_LUNA_JUDGE_MODEL = "openai/gpt-5.6-luna"
+OPENROUTER_GPT_56_LUNA_RESPONSE_MODEL = "openai/gpt-5.6-luna-20260709"
 DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL = "deepseek/deepseek-v3.2"
 DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL = "deepseek/deepseek-v3.2-20251201"
 MUSE_OPENROUTER_JUDGE_MODEL = "meta/muse-spark-1.1"
 MUSE_OPENROUTER_RESPONSE_MODEL = "meta/muse-spark-1.1-20260709"
 JUDGE_PROFILES: dict[str, dict[str, Any]] = {
-    OPENAI_GPT_56_LUNA_DIRECT_PROFILE: {
-        "label": "OpenAI GPT-5.6 Luna direct alternative judge",
-        "provider": "OpenAI",
-        "base_url": OPENAI_BASE_URL,
-        "endpoint_path": OPENAI_CHAT_ENDPOINT,
-        "api_style": "openai_chat_completions",
-        "model": OPENAI_GPT_56_LUNA_JUDGE_MODEL,
-        "allowed_response_models": (OPENAI_GPT_56_LUNA_JUDGE_MODEL,),
+    OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE: {
+        "label": "OpenRouter GPT-5.6 Luna alternative judge",
+        "provider": "OpenRouter",
+        "base_url": OPENROUTER_BASE_URL,
+        "endpoint_path": OPENROUTER_CHAT_ENDPOINT,
+        "api_style": "openrouter_chat_completions",
+        "model": OPENROUTER_GPT_56_LUNA_JUDGE_MODEL,
+        "allowed_response_models": (
+            OPENROUTER_GPT_56_LUNA_JUDGE_MODEL,
+            OPENROUTER_GPT_56_LUNA_RESPONSE_MODEL,
+        ),
         "route_mode": "direct",
         "temperature": None,
         "max_tokens": 32_768,
         "concurrency": 500,
         "max_retry_after": 300.0,
-        "provider_routing": {},
+        "provider_routing": {
+            "allow_fallbacks": True,
+            "require_parameters": True,
+        },
         "reasoning": {"effort": "medium"},
         "response_format": {
             "type": "json_schema",
@@ -132,7 +139,7 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
                 },
             },
         },
-        "store": False,
+        "store": None,
     },
     GPT_OSS_120B_NITRO_DIRECT_PROFILE: {
         "label": "OpenRouter GPT-OSS 120B Nitro alternative judge",
@@ -1627,13 +1634,14 @@ async def _judge_generations(
             if api_style == "openrouter_chat_completions":
                 request_body = {
                     "model": judge_model,
-                    "temperature": temperature,
                     "max_tokens": max_tokens,
                     "provider": dict(profile["provider_routing"]),
                     "reasoning": dict(profile["reasoning"]),
                     "response_format": dict(profile["response_format"]),
                     "messages": [{"role": "system", "content": judge_prompt}],
                 }
+                if temperature is not None:
+                    request_body["temperature"] = temperature
             elif api_style == "openai_chat_completions":
                 request_body = {
                     "model": judge_model,

@@ -156,12 +156,15 @@ def test_protocol_has_exact_workload_and_prompt_pins():
     assert judge["execution_stage"] == "manual_paid_external"
     assert judge["submitted_by_gpu_jobs"] is False
     assert judge["approval_required_before_submission"] is True
-    assert judge["provider"] == "OpenAI"
-    assert judge["profile"] == "openai-gpt-5.6-luna-direct"
-    assert judge["model"] == "gpt-5.6-luna"
-    assert judge["allowed_response_models"] == ["gpt-5.6-luna"]
-    assert judge["api_shape"] == "ordinary direct /v1/chat/completions requests; never Batch API"
-    assert judge["api_style"] == "openai_chat_completions"
+    assert judge["provider"] == "OpenRouter"
+    assert judge["profile"] == "openrouter-gpt-5.6-luna-direct"
+    assert judge["model"] == "openai/gpt-5.6-luna"
+    assert judge["allowed_response_models"] == [
+        "openai/gpt-5.6-luna",
+        "openai/gpt-5.6-luna-20260709",
+    ]
+    assert judge["api_shape"] == "ordinary OpenRouter /v1/chat/completions requests; never Batch API"
+    assert judge["api_style"] == "openrouter_chat_completions"
     assert judge["max_tokens"] == 32_768
     assert judge["prompt_sha256"] == "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870"
     assert judge["result_label"] == "user_pinned_alternative_judge"
@@ -173,7 +176,7 @@ def test_protocol_has_exact_workload_and_prompt_pins():
         "name": "evalaware_figure6_judgment",
         "strict": True,
     }
-    assert judge["store"] is False
+    assert judge["store"] is None
     assert judge["concurrency"] == 500
     assert judge["paid_confirmation_flag"] == "--yes"
     assert judge["deterministic_plan_sha256_required"] is True
@@ -181,7 +184,7 @@ def test_protocol_has_exact_workload_and_prompt_pins():
     assert judge["proxy_policy"] == "prohibited; httpx trust_env disabled"
     assert workload["approved_current_scope"]["model_keys"] == ["qwen32", "qwen_mo_mid", "qwen_mo_post"]
     assert workload["approved_current_scope"]["total_generations"] == 16_200
-    assert judge["plot_label"] == "OpenAI GPT-5.6 Luna direct alternative judge"
+    assert judge["plot_label"] == "OpenRouter GPT-5.6 Luna alternative judge"
 
 
 def test_openrouter_operator_protocol_uses_shell_variables_and_paid_gates():
@@ -194,10 +197,10 @@ def test_openrouter_operator_protocol_uses_shell_variables_and_paid_gates():
     assert "--expected-plan-sha256" in readme
     assert "--rescore-paid-errors" in readme
     assert "--yes" in readme
-    assert "--judge-profile openai-gpt-5.6-luna-direct" in readme
-    assert "--expected-judge-profile openai-gpt-5.6-luna-direct" in readme
+    assert "--judge-profile openrouter-gpt-5.6-luna-direct" in readme
+    assert "--expected-judge-profile openrouter-gpt-5.6-luna-direct" in readme
     assert "--expected-judge-max-completion-tokens 32768" in readme
-    assert "OpenAI GPT-5.6 Luna direct alternative judge" in readme
+    assert "OpenRouter GPT-5.6 Luna alternative judge" in readme
     assert "does not use the Batch API" in readme
     assert "PASTE_INDEPENDENTLY_REVIEWED_64_HEX_HASH" in readme
 

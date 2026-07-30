@@ -68,14 +68,15 @@ judge:
   execution_stage: manual_paid_external
   submitted_by_gpu_jobs: false
   approval_required_before_submission: true
-  provider: OpenAI
-  profile: openai-gpt-5.6-luna-direct
-  model: gpt-5.6-luna
+  provider: OpenRouter
+  profile: openrouter-gpt-5.6-luna-direct
+  model: openai/gpt-5.6-luna
   allowed_response_models:
-    - gpt-5.6-luna
-  endpoint: https://api.openai.com/v1/chat/completions
-  api_shape: ordinary direct /v1/chat/completions requests; never Batch API
-  api_style: openai_chat_completions
+    - openai/gpt-5.6-luna
+    - openai/gpt-5.6-luna-20260709
+  endpoint: https://openrouter.ai/api/v1/chat/completions
+  api_shape: ordinary OpenRouter /v1/chat/completions requests; never Batch API
+  api_style: openrouter_chat_completions
   route_mode: direct
   proxy_policy: prohibited; httpx trust_env disabled
   route_attestation_required: false
@@ -84,17 +85,19 @@ judge:
   concurrency: 500
   max_attempts_per_generation: 5
   max_retry_after: 300
-  provider_routing: {}
+  provider_routing:
+    allow_fallbacks: true
+    require_parameters: true
   reasoning:
     effort: medium
   response_format:
     type: json_schema
     name: evalaware_figure6_judgment
     strict: true
-  store: false
+  store: null
   prompt_sha256: e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
   result_label: user_pinned_alternative_judge
-  access_region: no region attestation required for direct mode
+  access_region: no region attestation required for direct OpenRouter mode
   paid_confirmation_flag: --yes
   deterministic_plan_sha256_required: true
   plan_hash_fields:
@@ -139,5 +142,5 @@ judge:
       sanitized_evidence_sha256_in_plan: true
   single_writer_policy: OS flock held across history, requests, attempts, and final output
   strict_analysis_policy: exactly three per-model judgment files and manifests must match reviewed run_completed events for the selected profile; direct mode rejects route evidence
-  plot_label: OpenAI GPT-5.6 Luna direct alternative judge
-  note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge. Requests use the ordinary direct OpenAI Chat Completions API with up to 500 concurrent in-flight judgments, never the Batch API.
+  plot_label: OpenRouter GPT-5.6 Luna alternative judge
+  note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge. Requests use ordinary OpenRouter Chat Completions with up to 500 concurrent in-flight judgments, never the Batch API.

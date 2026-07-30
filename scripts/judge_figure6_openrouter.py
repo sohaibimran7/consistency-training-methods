@@ -20,7 +20,7 @@ from ctm_data.adapters.eval_awareness.figure6_openrouter import (
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_MAX_RETRY_AFTER,
     JUDGE_PROFILES,
-    OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+    OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE,
     judge_generations,
 )
 
@@ -40,7 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--judge-profile",
         choices=sorted(JUDGE_PROFILES),
-        default=OPENAI_GPT_56_LUNA_DIRECT_PROFILE,
+        default=OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE,
         help=(
             "Exact registered paid judge profile; provider, model, endpoint, concurrency, and request settings "
             "cannot be overridden independently."
