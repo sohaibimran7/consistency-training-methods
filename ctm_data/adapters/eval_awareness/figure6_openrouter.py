@@ -1836,7 +1836,6 @@ async def _judge_generations(
             in_flight: dict[asyncio.Task[tuple[str, dict[str, Any]]], int] = {}
             failures: list[tuple[int, BaseException]] = []
             permanent_failures: list[tuple[int, PermanentOpenRouterError]] = []
-            fatal_failures: list[tuple[int, BaseException]] = []
 
             def launch_available() -> None:
                 nonlocal next_pending_index
@@ -1845,7 +1844,6 @@ async def _judge_generations(
                     and len(in_flight) < concurrency
                     and not permanent_failure.is_set()
                     and not permanent_failures
-                    and not fatal_failures
                 ):
                     task = asyncio.create_task(score(pending_ids[next_pending_index]))
                     in_flight[task] = next_pending_index
@@ -1862,13 +1860,26 @@ async def _judge_generations(
                             completed.append((pending_index, task.result()))
                         except BaseException as exc:
                             completed.append((pending_index, exc))
-                    for pending_index, outcome in sorted(completed, key=lambda item: item[0]):
+                    ordered_completed = sorted(completed, key=lambda item: item[0])
+                    control_flow_failures = [
+                        item
+                        for item in ordered_completed
+                        if isinstance(item[1], (asyncio.CancelledError, KeyboardInterrupt, SystemExit))
+                    ]
+                    if control_flow_failures:
+                        raise control_flow_failures[0][1]
+                    fatal_failures = [
+                        item
+                        for item in ordered_completed
+                        if isinstance(item[1], BaseException) and not isinstance(item[1], OpenRouterJudgeError)
+                    ]
+                    if fatal_failures:
+                        raise fatal_failures[0][1]
+                    for pending_index, outcome in ordered_completed:
                         if isinstance(outcome, PermanentOpenRouterError):
                             permanent_failures.append((pending_index, outcome))
                         elif isinstance(outcome, OpenRouterJudgeError):
                             failures.append((pending_index, outcome))
-                        elif isinstance(outcome, BaseException):
-                            fatal_failures.append((pending_index, outcome))
                         else:
                             custom_id, judgment = outcome
                             successes[custom_id] = judgment
@@ -1882,8 +1893,6 @@ async def _judge_generations(
                     in_flight.clear()
             if permanent_failures:
                 raise min(permanent_failures, key=lambda item: item[0])[1]
-            if fatal_failures:
-                raise min(fatal_failures, key=lambda item: item[0])[1]
             if failures:
                 raise min(failures, key=lambda item: item[0])[1]
             if set(successes) != set(by_id):

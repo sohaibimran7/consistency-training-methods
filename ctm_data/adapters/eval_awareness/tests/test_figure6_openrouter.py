@@ -238,6 +238,7 @@ async def _run_many(
     *,
     concurrency: int,
     max_attempts: int = 1,
+    amend_attempt_ceiling: bool = False,
 ) -> dict[str, Any]:
     common = {
         "template": TEMPLATE,
@@ -256,6 +257,7 @@ async def _run_many(
         api_key="test-key",
         confirm_paid=True,
         expected_plan_sha256=plan["plan_sha256"],
+        amend_attempt_ceiling=amend_attempt_ceiling,
         client=client,
         **common,
     )
@@ -456,6 +458,57 @@ def test_ordinary_failure_is_quarantined_until_other_ids_finish_and_run_fails_cl
     assert manifest["events"][-1]["event"] == "run_failed"
 
 
+def test_partial_ordinary_failure_resumes_only_failed_id_and_finalizes_sorted_output(tmp_path: Path) -> None:
+    generations = _generations(5)
+    ordered = sorted(generations, key=scorer.custom_id_for_generation)
+    failing_index = int(ordered[0]["prompt"].removeprefix("Do task "))
+    first_seen: list[int] = []
+    resumed_seen: list[int] = []
+
+    async def scenario() -> dict[str, Any]:
+        async def first_handler(request: httpx.Request) -> httpx.Response:
+            index = _request_task_index(request)
+            first_seen.append(index)
+            if index == failing_index:
+                return httpx.Response(400, request=request, json={"error": "bad request"})
+            return _success_response(request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(first_handler)) as first_client:
+            with pytest.raises(scorer.OpenRouterJudgeError, match="non-retryable judge failure"):
+                await _run_many(tmp_path, generations, first_client, concurrency=2)
+
+        async def resumed_handler(request: httpx.Request) -> httpx.Response:
+            resumed_seen.append(_request_task_index(request))
+            return _success_response(request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(resumed_handler)) as resumed_client:
+            return await _run_many(
+                tmp_path,
+                generations,
+                resumed_client,
+                concurrency=2,
+                max_attempts=2,
+                amend_attempt_ceiling=True,
+            )
+
+    summary = asyncio.run(scenario())
+    assert set(first_seen) == set(range(len(generations)))
+    assert resumed_seen == [failing_index]
+    assert summary["completed"] == len(generations)
+    attempts = [json.loads(line) for line in (tmp_path / "attempts.jsonl").read_text().splitlines()]
+    failing_custom_id = scorer.custom_id_for_generation(ordered[0])
+    failing_attempts = [attempt for attempt in attempts if attempt["custom_id"] == failing_custom_id]
+    assert [(attempt["attempt"], attempt["status"]) for attempt in failing_attempts] == [
+        (1, "error"),
+        (2, "success"),
+    ]
+    judgments = [json.loads(line) for line in (tmp_path / "judgments.jsonl").read_text().splitlines()]
+    assert [judgment["custom_id"] for judgment in judgments] == sorted(judgment["custom_id"] for judgment in judgments)
+    manifest = json.loads((tmp_path / "attempts.jsonl.manifest.json").read_text())
+    assert any(event["event"] == "run_failed" for event in manifest["events"])
+    assert manifest["events"][-1]["event"] == "run_completed"
+
+
 def test_permanent_failure_stops_refill_but_preserves_in_flight_success(tmp_path: Path) -> None:
     generations = _generations(6)
     ordered = sorted(generations, key=scorer.custom_id_for_generation)
@@ -489,6 +542,54 @@ def test_permanent_failure_stops_refill_but_preserves_in_flight_success(tmp_path
     assert set(seen) == {permanent_index, companion_index}
     assert sorted(attempt["status"] for attempt in attempts) == ["error", "success"]
     assert not (tmp_path / "judgments.jsonl").exists()
+
+
+def test_parent_cancellation_stops_refill_drains_owned_tasks_and_fails_manifest(tmp_path: Path) -> None:
+    generations = _generations(6)
+    ordered = sorted(generations, key=scorer.custom_id_for_generation)
+    initial_indexes = {int(generation["prompt"].removeprefix("Do task ")) for generation in ordered[:2]}
+    seen: list[int] = []
+    cancelled: list[int] = []
+    active: set[int] = set()
+
+    async def scenario() -> None:
+        initial_started = asyncio.Event()
+        block_requests = asyncio.Event()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            index = _request_task_index(request)
+            seen.append(index)
+            active.add(index)
+            if len(seen) == 2:
+                initial_started.set()
+            try:
+                await block_requests.wait()
+            except asyncio.CancelledError:
+                cancelled.append(index)
+                raise
+            finally:
+                active.remove(index)
+            raise AssertionError("blocked request unexpectedly resumed")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            run = asyncio.create_task(_run_many(tmp_path, generations, client, concurrency=2))
+            await asyncio.wait_for(initial_started.wait(), timeout=1.0)
+            run.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await run
+            assert not [
+                task for task in asyncio.all_tasks() if task.get_coro().__qualname__.endswith(".<locals>.score")
+            ]
+
+    asyncio.run(scenario())
+    assert set(seen) == initial_indexes
+    assert set(cancelled) == initial_indexes
+    assert active == set()
+    assert not (tmp_path / "judgments.jsonl").exists()
+    manifest = json.loads((tmp_path / "attempts.jsonl.manifest.json").read_text())
+    assert manifest["events"][-1]["event"] == "run_failed"
+    assert manifest["events"][-1]["error_type"] == "CancelledError"
+    assert not any(event["event"] == "run_completed" for event in manifest["events"])
 
 
 def test_rolling_scheduler_normalized_output_is_deterministic(tmp_path: Path) -> None:
