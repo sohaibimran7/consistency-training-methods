@@ -11,7 +11,21 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from ctm_data.adapters.eval_awareness.figure6_analysis import should_annotate_delta
+from ctm_data.adapters.eval_awareness.figure6_analysis import (
+    EXPECTED_CELL_COUNT,
+    EXPECTED_MODEL_JUDGMENT_COUNT,
+    MODEL_KEY_ORDER,
+    OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL,
+    OPENROUTER_DEEPSEEK_V32_JUDGE_MODEL,
+    OPENROUTER_DEEPSEEK_V32_PROFILE,
+    OPENROUTER_MUSE_ALTERNATIVE_LABEL,
+    OPENROUTER_MUSE_JUDGE_MODEL,
+    QWEN_MODEL_KEY_ORDER,
+    STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
+    STRICT_SUBSET_RESULT_LABEL,
+    should_annotate_delta,
+)
+from ctm_data.adapters.eval_awareness.figure6_judge import DEFAULT_JUDGE_MODEL
 from ctm_data.adapters.eval_awareness.figure6_spec import (
     FIGURE6_CONDITIONS,
     FIGURE6_TASK_COUNT,
@@ -20,15 +34,32 @@ from ctm_data.adapters.eval_awareness.figure6_spec import (
 )
 
 MODEL_DISPLAY_ORDER = tuple(model.display_name for model in MODEL_SPECS.values())
-MODEL_KEY_ORDER = tuple(MODEL_SPECS)
 CONFIG_LABELS = {"baseline": "BL", **{f"F{index}": f"F{index}" for index in range(1, 9)}}
-EXPECTED_DENOMINATOR = FIGURE6_TASK_COUNT * 3
+EXPECTED_DENOMINATOR = EXPECTED_CELL_COUNT
 POSITIVE_DELTA_COLOR = "#c62828"
 NEGATIVE_DELTA_COLOR = "#217a3c"
 DEFAULT_TITLE = "EvalAwareBench factor reproduction"
 DEFAULT_SOURCE_NOTE = "Computed from supplied generation and judge artifacts; not paper result data."
 FIXTURE_TITLE = "EvalAwareBench rendering fixture"
 FIXTURE_SOURCE_NOTE = "Synthetic offline fixture for renderer verification; not experimental result data."
+FULL_RESULT_LABELS = frozenset(
+    {
+        "complete_reproduction",
+        "complete_reproduction_user_pinned_alternative_judge",
+    }
+)
+SUBSET_RESULT_LABELS = frozenset(
+    {
+        STRICT_SUBSET_RESULT_LABEL,
+        STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
+    }
+)
+ALTERNATIVE_RESULT_LABELS = frozenset(
+    {
+        "complete_reproduction_user_pinned_alternative_judge",
+        STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
+    }
+)
 
 
 def _bool(value: Any, *, name: str) -> bool:
@@ -63,16 +94,110 @@ def _finite(value: Any, *, name: str) -> float:
     return result
 
 
+def _summary_value(summary: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    if summary is None:
+        return None
+    value = summary.get("summary", summary)
+    return value if isinstance(value, Mapping) else None
+
+
+def _expected_model_keys(
+    summary: Mapping[str, Any] | None,
+    *,
+    fixture_mode: bool,
+) -> tuple[str, ...]:
+    if fixture_mode or summary is None:
+        return MODEL_KEY_ORDER
+    value = _summary_value(summary)
+    if value is None:
+        raise ValueError("analysis summary must contain an object")
+    expected = value.get("expected")
+    if expected is None:
+        # Compatibility for strict seven-model summaries written before the
+        # ordered model scope was added to the schema.
+        return MODEL_KEY_ORDER
+    if not isinstance(expected, Mapping):
+        raise ValueError("analysis summary expected scope must be an object")
+    raw_model_keys = expected.get("model_keys")
+    if (
+        not isinstance(raw_model_keys, Sequence)
+        or isinstance(raw_model_keys, (str, bytes))
+        or not raw_model_keys
+        or any(not isinstance(key, str) or not key for key in raw_model_keys)
+    ):
+        raise ValueError("analysis summary must contain a non-empty ordered model_keys list")
+    model_keys = tuple(raw_model_keys)
+    if len(set(model_keys)) != len(model_keys):
+        raise ValueError("analysis summary model_keys must be unique")
+    unregistered = [key for key in model_keys if key not in MODEL_SPECS]
+    if unregistered:
+        raise ValueError(f"analysis summary contains unregistered model_keys: {unregistered}")
+    expected_displays = [MODEL_SPECS[key].display_name for key in model_keys]
+    if expected.get("model_displays") != expected_displays:
+        raise ValueError("analysis summary model_displays do not match its ordered pinned model_keys")
+    return model_keys
+
+
+def _alternative_plot_label(summary: Mapping[str, Any] | None) -> str | None:
+    value = _summary_value(summary)
+    if value is None or value.get("result_label") not in ALTERNATIVE_RESULT_LABELS:
+        return None
+    label = value.get("plot_label")
+    if not isinstance(label, str) or not label:
+        raise ValueError("alternative-judge analysis summary must include a non-empty plot_label")
+    provenance = value.get("provenance")
+    if not isinstance(provenance, Mapping):
+        raise ValueError("alternative-judge analysis summary must include provenance")
+    if provenance.get("expected_judge_model") == OPENROUTER_MUSE_JUDGE_MODEL:
+        if provenance.get("judge_provider") != "OpenRouter" or label != OPENROUTER_MUSE_ALTERNATIVE_LABEL:
+            raise ValueError("OpenRouter Muse alternative summary has an invalid provider or plot label")
+    if provenance.get("expected_judge_model") == OPENROUTER_DEEPSEEK_V32_JUDGE_MODEL:
+        if (
+            provenance.get("judge_provider") != "OpenRouter"
+            or provenance.get("judge_profile") != OPENROUTER_DEEPSEEK_V32_PROFILE
+            or label != OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL
+        ):
+            raise ValueError("OpenRouter DeepSeek alternative summary has an invalid profile, provider, or label")
+    source_note = value.get("source_note")
+    if not isinstance(source_note, str) or label not in source_note:
+        raise ValueError("alternative-judge analysis source note must include its plot label")
+    return label
+
+
+def _subset_plot_label(summary: Mapping[str, Any] | None) -> str | None:
+    value = _summary_value(summary)
+    if value is None or value.get("result_label") not in SUBSET_RESULT_LABELS:
+        return None
+    if value.get("scope_kind") != "registered_model_subset":
+        raise ValueError("strict subset analysis summary must identify a registered-model subset scope")
+    label = value.get("scope_label")
+    if not isinstance(label, str) or not label:
+        raise ValueError("strict subset analysis summary must include a non-empty scope_label")
+    model_keys = _expected_model_keys(summary, fixture_mode=False)
+    subset_name = "Qwen-only subset" if set(model_keys).issubset(QWEN_MODEL_KEY_ORDER) else "Registered-model subset"
+    expected_label = (
+        f"{subset_name} ({len(model_keys)} of {len(MODEL_KEY_ORDER)} models; "
+        f"{len(model_keys) * EXPECTED_MODEL_JUDGMENT_COUNT:,} strict judgments)"
+    )
+    if label != expected_label:
+        raise ValueError(f"strict subset analysis scope_label must be exactly {expected_label!r}")
+    source_note = value.get("source_note")
+    if not isinstance(source_note, str) or label not in source_note:
+        raise ValueError("strict subset analysis source note must include its scope label")
+    return label
+
+
 def validate_plot_rows(
     rows: Sequence[Mapping[str, Any]],
     *,
     summary: Mapping[str, Any] | None = None,
     fixture_mode: bool = False,
 ) -> list[dict[str, Any]]:
-    """Require the complete 7 x 2 x 9 strict aggregation matrix."""
+    """Require the summary-scoped complete strict aggregation matrix."""
 
     if not rows:
         raise ValueError("plot rows must not be empty")
+    model_keys = _expected_model_keys(summary, fixture_mode=fixture_mode)
     required = {
         "model_key",
         "model_display",
@@ -156,7 +281,7 @@ def validate_plot_rows(
 
     expected = {
         (model_key, valence, config)
-        for model_key in MODEL_KEY_ORDER
+        for model_key in model_keys
         for valence in FIGURE6_VALENCES
         for config in FIGURE6_CONDITIONS
     }
@@ -164,13 +289,75 @@ def validate_plot_rows(
         missing = sorted(expected - seen)[:8]
         extra = sorted(seen - expected)[:8]
         raise ValueError(f"plot matrix is incomplete or has extra cells; missing={missing}, extra={extra}")
+    records_by_model = {
+        model_key: sum(row["n"] for row in normalized if row["model_key"] == model_key) for model_key in model_keys
+    }
+    if any(count != EXPECTED_MODEL_JUDGMENT_COUNT for count in records_by_model.values()):
+        raise ValueError(
+            f"every plotted model must represent exactly {EXPECTED_MODEL_JUDGMENT_COUNT:,} strict judgments; "
+            f"observed={records_by_model}"
+        )
     if summary is not None and not fixture_mode:
-        summary_value = summary.get("summary", summary)
+        summary_value = _summary_value(summary)
         if not isinstance(summary_value, Mapping) or summary_value.get("publication_complete") is not True:
             raise ValueError("analysis summary does not mark this reproduction complete")
+        expected_total = len(model_keys) * EXPECTED_MODEL_JUDGMENT_COUNT
         observed = summary_value.get("observed")
-        if not isinstance(observed, Mapping) or observed.get("valid_unique_records") != 37_800:
-            raise ValueError("analysis summary does not report 37,800 valid unique judgments")
+        if not isinstance(observed, Mapping) or observed.get("valid_unique_records") != expected_total:
+            raise ValueError(
+                f"analysis summary does not report exactly {expected_total:,} valid unique judgments "
+                f"for its {len(model_keys)}-model scope"
+            )
+        result_label = summary_value.get("result_label")
+        is_subset = set(model_keys) != set(MODEL_KEY_ORDER)
+        supported_labels = SUBSET_RESULT_LABELS if is_subset else FULL_RESULT_LABELS
+        if result_label not in supported_labels:
+            raise ValueError("analysis summary has an unsupported complete-result label")
+        expected_scope = summary_value.get("expected")
+        if expected_scope is not None:
+            if not isinstance(expected_scope, Mapping):
+                raise ValueError("analysis summary expected scope must be an object")
+            exact_expected_values = {
+                "valences": list(FIGURE6_VALENCES),
+                "configs": list(FIGURE6_CONDITIONS),
+                "task_count": FIGURE6_TASK_COUNT,
+                "replicates": [1, 2, 3],
+                "judgment_count": expected_total,
+                "cell_denominator": EXPECTED_DENOMINATOR,
+            }
+            mismatched_expected = {
+                name: {"expected": expected_value, "observed": expected_scope.get(name)}
+                for name, expected_value in exact_expected_values.items()
+                if expected_scope.get(name) != expected_value
+            }
+            if mismatched_expected:
+                raise ValueError(f"analysis summary has an incompatible strict matrix scope: {mismatched_expected}")
+            if (
+                "judgments_per_model" in expected_scope
+                and expected_scope.get("judgments_per_model") != EXPECTED_MODEL_JUDGMENT_COUNT
+            ):
+                raise ValueError("analysis summary must require exactly 5,400 judgments per model")
+            expected_observed_by_model = {model_key: EXPECTED_MODEL_JUDGMENT_COUNT for model_key in model_keys}
+            observed_by_model = observed.get("valid_unique_records_by_model")
+            if observed_by_model is not None and observed_by_model != expected_observed_by_model:
+                raise ValueError(
+                    "analysis summary does not report exactly 5,400 valid unique judgments for every model"
+                )
+            if is_subset and observed_by_model is None:
+                raise ValueError("strict subset summaries must report valid unique judgments for every model")
+            expected_aggregate_rows = len(model_keys) * len(FIGURE6_VALENCES) * len(FIGURE6_CONDITIONS)
+            if observed.get("aggregate_rows") != expected_aggregate_rows:
+                raise ValueError(f"analysis summary does not report exactly {expected_aggregate_rows} aggregate rows")
+            if (is_subset or "scope_complete" in summary_value) and summary_value.get("scope_complete") is not True:
+                raise ValueError("analysis summary does not mark its strict model scope complete")
+        provenance = summary_value.get("provenance")
+        if result_label in {"complete_reproduction", STRICT_SUBSET_RESULT_LABEL} and (
+            not isinstance(provenance, Mapping)
+            or provenance.get("expected_judge_model", provenance.get("judge_model")) != DEFAULT_JUDGE_MODEL
+        ):
+            raise ValueError("paper-judge plot summary does not identify the default GPT-5 judge")
+        _alternative_plot_label(summary)
+        _subset_plot_label(summary)
     return normalized
 
 
@@ -207,10 +394,32 @@ def render_figure6(
     """Render complete strict rows to both PNG and PDF."""
 
     normalized = validate_plot_rows(rows, summary=summary, fixture_mode=fixture_mode)
+    model_keys = _expected_model_keys(summary, fixture_mode=fixture_mode)
+    model_displays = tuple(MODEL_SPECS[key].display_name for key in model_keys)
+    subset_label = _subset_plot_label(summary) if not fixture_mode else None
+    alternative_label = _alternative_plot_label(summary) if not fixture_mode else None
     if fixture_mode and title == DEFAULT_TITLE:
         title = FIXTURE_TITLE
     if fixture_mode and source_note == DEFAULT_SOURCE_NOTE:
         source_note = FIXTURE_SOURCE_NOTE
+    required_labels = [label for label in (subset_label, alternative_label) if label is not None]
+    if required_labels:
+        if title == DEFAULT_TITLE:
+            title = f"{DEFAULT_TITLE} — {' — '.join(required_labels)}"
+        if source_note == DEFAULT_SOURCE_NOTE:
+            summary_value = _summary_value(summary)
+            summary_source_note = summary_value.get("source_note") if summary_value is not None else None
+            source_note = (
+                summary_source_note
+                if subset_label is not None and isinstance(summary_source_note, str) and summary_source_note
+                else f"{DEFAULT_SOURCE_NOTE} {'; '.join(required_labels)}."
+            )
+        missing_labels = [label for label in required_labels if label not in title or label not in source_note]
+        if missing_labels:
+            raise ValueError(
+                "strict subset and alternative-judge plots must render every exact label in both the title "
+                f"and source note; missing={missing_labels}"
+            )
     if not isinstance(title, str) or not title.strip():
         raise ValueError("title must be a non-empty string")
     if not isinstance(source_note, str) or not source_note.strip():
@@ -236,6 +445,7 @@ def render_figure6(
     }
     with plt.rc_context(rcparams):
         figure, axes = plt.subplots(1, 2, figsize=(14.4, 5.0), sharey=True, constrained_layout=True)
+        figure.suptitle(title, fontsize=12, fontweight="semibold")
         all_awareness_values = [row["matched_awareness_percent"] for row in normalized]
         shared_vmax = max(all_awareness_values)
         if shared_vmax <= 0:
@@ -243,7 +453,7 @@ def render_figure6(
         for panel_index, (axis, valence) in enumerate(zip(axes, FIGURE6_VALENCES, strict=True)):
             matrix = [
                 [lookup[(model_key, valence, config)]["matched_awareness_percent"] for config in FIGURE6_CONDITIONS]
-                for model_key in MODEL_KEY_ORDER
+                for model_key in model_keys
             ]
             axis.imshow(
                 matrix,
@@ -255,16 +465,16 @@ def render_figure6(
             )
             axis.set_title(f"{valence.title()} Tasks", pad=10)
             axis.set_xticks(range(len(FIGURE6_CONDITIONS)), [CONFIG_LABELS[name] for name in FIGURE6_CONDITIONS])
-            axis.set_yticks(range(len(MODEL_KEY_ORDER)), MODEL_DISPLAY_ORDER)
+            axis.set_yticks(range(len(model_keys)), model_displays)
             axis.tick_params(axis="x", top=False, labeltop=False, bottom=True, labelbottom=True, length=0, pad=5)
             axis.tick_params(axis="y", length=0, pad=6)
             if panel_index:
                 axis.tick_params(axis="y", labelleft=False)
             axis.set_xticks([value - 0.5 for value in range(1, len(FIGURE6_CONDITIONS))], minor=True)
-            axis.set_yticks([value - 0.5 for value in range(1, len(MODEL_KEY_ORDER))], minor=True)
+            axis.set_yticks([value - 0.5 for value in range(1, len(model_keys))], minor=True)
             axis.grid(which="minor", color="white", linewidth=1.2)
             axis.tick_params(which="minor", bottom=False, left=False)
-            for row_index, model_key in enumerate(MODEL_KEY_ORDER):
+            for row_index, model_key in enumerate(model_keys):
                 for column_index, config in enumerate(FIGURE6_CONDITIONS):
                     row = lookup[(model_key, valence, config)]
                     awareness = row["matched_awareness_percent"]

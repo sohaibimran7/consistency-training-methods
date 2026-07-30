@@ -8,11 +8,18 @@ from pathlib import Path
 
 import pytest
 
+from ctm_data.adapters.eval_awareness import figure6_analysis as analysis
 from ctm_data.adapters.eval_awareness import figure6_judge as judge
+from ctm_data.adapters.eval_awareness import figure6_openrouter as openrouter
 from ctm_data.adapters.eval_awareness.figure6_analysis import (
+    CURRENT_QWEN_MODEL_KEY_ORDER,
     EXPECTED_CELL_COUNT,
     EXPECTED_JUDGMENT_COUNT,
+    EXPECTED_MODEL_JUDGMENT_COUNT,
+    OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL,
+    OPENROUTER_MUSE_ALTERNATIVE_LABEL,
     PublicationValidationError,
+    STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
     analyze_judgments,
     should_annotate_delta,
 )
@@ -329,6 +336,37 @@ def test_strict_aggregation_counts_matched_and_mismatched_with_exact_denominator
     assert result.summary["publication_complete"] is True
 
 
+def test_explicit_registered_scope_still_requires_the_pinned_model_identity():
+    model = MODEL_SPECS["qwen36"]
+    rows = []
+    for replicate in (1, 2, 3):
+        row = _judgment(model_key="qwen36", replicate=replicate)
+        row.update(
+            {
+                "model_display": "Imposter Qwen",
+                "model_id": model.model_id,
+                "model_revision": model.revision,
+                "system_prompt_provenance": {
+                    "prompt_key": model.prompt.key,
+                    "prompt_revision": "446be5c605b56a60d4efe2526f0cbf55522c523a",
+                    "prompt_sha256": model.prompt.sha256,
+                },
+            }
+        )
+        rows.append(row)
+
+    with pytest.raises(PublicationValidationError, match="pinned Figure 6 registry"):
+        analyze_judgments(
+            rows,
+            expected_model_keys=("qwen36",),
+            expected_task_ids=("task-000",),
+            expected_pair_ids=("pair-000",),
+            expected_task_count=1,
+            expected_valences=("safety",),
+            expected_configs=("baseline",),
+        )
+
+
 def test_strict_aggregation_rejects_trace_duplicate_and_mixed_provenance():
     missing_trace = _small_matrix()
     missing_trace[0] = {**missing_trace[0], "trace_present": False}
@@ -366,6 +404,65 @@ def test_strict_aggregation_rejects_uniform_nonpaper_judge_model():
         _small_analysis(rows)
 
 
+def test_strict_muse_rejects_custom_non_qwen_scope_before_publication():
+    allowed_models = ["meta/muse-spark-1.1", "meta/muse-spark-1.1-20260709"]
+    rows = [
+        {
+            **row,
+            "judge_profile": openrouter.MUSE_US_PROXY_PROFILE,
+            "judge_model": "meta/muse-spark-1.1",
+            "judge_provider": "OpenRouter",
+            "judge_response_model": "meta/muse-spark-1.1-20260709",
+            "judge_allowed_response_models": allowed_models,
+        }
+        for row in _small_matrix()
+    ]
+    with pytest.raises(PublicationValidationError, match="exactly qwen32"):
+        _small_analysis(
+            rows,
+            expected_judge_profile=openrouter.MUSE_US_PROXY_PROFILE,
+            expected_judge_model="meta/muse-spark-1.1",
+            expected_judge_provider="OpenRouter",
+            expected_judge_response_models=allowed_models,
+        )
+
+
+@pytest.mark.parametrize("response_model", [None, "meta/unexpected-model"])
+def test_strict_alternative_analysis_rejects_missing_or_unapproved_response_identity(response_model: str | None):
+    allowed_models = ["meta/muse-spark-1.1", "meta/muse-spark-1.1-20260709"]
+    rows = [
+        {
+            **row,
+            "judge_profile": openrouter.MUSE_US_PROXY_PROFILE,
+            "judge_model": "meta/muse-spark-1.1",
+            "judge_provider": "OpenRouter",
+            "judge_response_model": response_model,
+            "judge_allowed_response_models": allowed_models,
+        }
+        for row in _small_matrix()
+    ]
+    result = _small_analysis(
+        rows,
+        allow_partial=True,
+        expected_judge_profile=openrouter.MUSE_US_PROXY_PROFILE,
+        expected_judge_model="meta/muse-spark-1.1",
+        expected_judge_provider="OpenRouter",
+        expected_judge_response_models=(allowed_models if response_model is not None else None),
+    )
+    assert result.diagnostics["issue_counts"]["judge_response_model_mismatch"] == 1
+
+
+def test_strict_muse_analysis_does_not_allow_the_identity_set_to_be_widened():
+    with pytest.raises(ValueError, match="response identities differ"):
+        _small_analysis(
+            _small_matrix(),
+            allow_partial=True,
+            expected_judge_profile=openrouter.MUSE_US_PROXY_PROFILE,
+            expected_judge_model="meta/muse-spark-1.1",
+            expected_judge_response_models=["meta/muse-spark-1.1", "meta/unexpected-model"],
+        )
+
+
 def test_strict_aggregation_rejects_uniform_nonpaper_judge_token_limit():
     rows = [{**row, "judge_max_completion_tokens": 2_048} for row in _small_matrix()]
     with pytest.raises(PublicationValidationError, match="completion-token provenance"):
@@ -392,9 +489,10 @@ def test_annotation_threshold_is_strictly_greater_than_five():
     assert performance_delta_annotation(-5.01, config_name="F1")[1] == NEGATIVE_DELTA_COLOR
 
 
-def test_default_publication_matrix_is_37800_with_300_per_cell():
+def _registered_publication_matrix(model_keys: tuple[str, ...]) -> list[dict]:
     judgments = []
-    for model_key, model in MODEL_SPECS.items():
+    for model_key in model_keys:
+        model = MODEL_SPECS[model_key]
         for valence in FIGURE6_VALENCES:
             for config_name in FIGURE6_CONDITIONS:
                 for task_index in range(100):
@@ -426,6 +524,203 @@ def test_default_publication_matrix_is_37800_with_300_per_cell():
                             }
                         )
                         judgments.append(row)
+    return judgments
+
+
+def _attach_paid_manifest(
+    judgments: list[dict],
+    *,
+    model_keys: tuple[str, ...],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    profile = openrouter._judge_profile(openrouter.DEEPSEEK_V32_DIRECT_PROFILE)
+    proxy = {"enabled": False}
+    route = None
+    allowed_models = sorted(profile["allowed_response_models"])
+    request_protocols = {}
+    for index, row in enumerate(judgments):
+        custom_id = f"figure6-analysis-{index:05d}"
+        generation_sha256 = hashlib.sha256(f"generation-{index}".encode()).hexdigest()
+        request_protocols[custom_id] = {
+            "provider": "OpenRouter",
+            "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+            "judge_profile": profile["id"],
+            "model": profile["model"],
+            "allowed_response_models": allowed_models,
+            "temperature": profile["temperature"],
+            "max_tokens": judge.MAX_JUDGE_TOKENS,
+            "provider_routing": profile["provider_routing"],
+            "reasoning": profile["reasoning"],
+            "response_format": profile["response_format"],
+            "route_mode": profile["route_mode"],
+            "prompt_sha256": hashlib.sha256(f"prompt-{index}".encode()).hexdigest(),
+            "generation_record_sha256": generation_sha256,
+            "proxy": proxy,
+            "route": route,
+        }
+        row.update(
+            {
+                "custom_id": custom_id,
+                "generation_record_sha256": generation_sha256,
+                "judge_profile": profile["id"],
+                "judge_profile_label": profile["label"],
+                "judge_model": profile["model"],
+                "judge_provider": "OpenRouter",
+                "judge_requested_model": profile["model"],
+                "judge_response_model": profile["model"],
+                "judge_allowed_response_models": allowed_models,
+                "judge_response_id": f"response-{index:05d}",
+                "judge_request_id": f"request-{index:05d}",
+                "judge_endpoint": "https://openrouter.ai/api/v1/chat/completions",
+                "judge_temperature": profile["temperature"],
+                "judge_provider_routing": profile["provider_routing"],
+                "judge_reasoning": profile["reasoning"],
+                "judge_response_format": profile["response_format"],
+                "judge_route_mode": profile["route_mode"],
+                "judge_proxy": proxy,
+                "judge_route": route,
+            }
+        )
+    matrix = {
+        "model_keys": list(model_keys),
+        "generation_count": 5_400 * len(model_keys),
+        "generations_per_model": 5_400,
+        "task_pair_count": 100,
+        "valences": list(FIGURE6_VALENCES),
+        "configurations": list(FIGURE6_CONDITIONS),
+        "replicates": [1, 2, 3],
+        "pair_ids_sha256": "e" * 64,
+        "generation_protocol_sha256": "f" * 64,
+    }
+    plan_document = {
+        "schema": openrouter.PLAN_SCHEMA,
+        "provider": "OpenRouter",
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "judge_profile": profile["id"],
+        "judge_model": profile["model"],
+        "allowed_response_models": allowed_models,
+        "judge_template_sha256": judge.PAPER_JUDGE_TEMPLATE_SHA256,
+        "temperature": profile["temperature"],
+        "max_tokens": judge.MAX_JUDGE_TOKENS,
+        "max_attempts_per_generation": 5,
+        "concurrency": 24,
+        "max_retry_after": profile["max_retry_after"],
+        "proxy": proxy,
+        "route": route,
+        "route_mode": profile["route_mode"],
+        "provider_routing": profile["provider_routing"],
+        "reasoning": profile["reasoning"],
+        "response_format": profile["response_format"],
+        "matrix": matrix,
+        "requests": [
+            {"custom_id": custom_id, "request": request_protocols[custom_id]} for custom_id in sorted(request_protocols)
+        ],
+    }
+    plan_sha256 = openrouter._sha256_json(plan_document)
+    core_plan_sha256 = openrouter._sha256_json(
+        {key: value for key, value in plan_document.items() if key != "max_attempts_per_generation"}
+    )
+    manifest_plan = openrouter._manifest_plan(
+        plan_sha256=plan_sha256,
+        request_protocols=request_protocols,
+        judge_profile=profile["id"],
+        judge_model=profile["model"],
+        allowed_response_models=allowed_models,
+        judge_template_sha256=judge.PAPER_JUDGE_TEMPLATE_SHA256,
+        temperature=profile["temperature"],
+        max_tokens=judge.MAX_JUDGE_TOKENS,
+        max_attempts=5,
+        concurrency=24,
+        max_retry_after=profile["max_retry_after"],
+        endpoint="https://openrouter.ai/api/v1/chat/completions",
+        proxy=proxy,
+        route=route,
+        route_mode=profile["route_mode"],
+        provider_routing=profile["provider_routing"],
+        reasoning=profile["reasoning"],
+        response_format=profile["response_format"],
+        matrix=matrix,
+        plan_document=plan_document,
+        core_plan_sha256=core_plan_sha256,
+    )
+    for row in judgments:
+        row["judge_plan_sha256"] = plan_sha256
+    artifact_digest = analysis._canonical_jsonl_digest(judgments)
+    manifest = openrouter._new_manifest(manifest_plan)
+    manifest["approvals"].append(
+        {
+            "approved_at": "2026-07-30T10:00:00Z",
+            "confirmation": "--yes",
+            "plan_sha256": plan_sha256,
+            "reviewed_plan_sha256": plan_sha256,
+            "reviewed_plan_hash_verified": True,
+            "core_plan_sha256": core_plan_sha256,
+            "expected_model_keys": list(model_keys),
+            "pending_before_run": len(judgments),
+            "resumed_successes": 0,
+            "rescore_paid_errors": False,
+            "authorized_paid_error_attempts": {},
+            "authorized_attempt_ceiling": {},
+            "amendment_index": None,
+        }
+    )
+    manifest["events"].extend(
+        [
+            {
+                "at": "2026-07-30T10:00:00Z",
+                "event": "paid_run_approved",
+                "approval_index": 1,
+                "plan_sha256": plan_sha256,
+            },
+            {
+                "at": "2026-07-30T11:00:00Z",
+                "event": "run_completed",
+                "approval_index": 1,
+                "plan_sha256": plan_sha256,
+                "core_plan_sha256": core_plan_sha256,
+                "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+                "judge_profile": profile["id"],
+                "proxy": proxy,
+                "route": route,
+                "route_mode": profile["route_mode"],
+                "temperature": profile["temperature"],
+                "provider_routing": profile["provider_routing"],
+                "reasoning": profile["reasoning"],
+                "response_format": profile["response_format"],
+                "judge_model": profile["model"],
+                "allowed_response_models": allowed_models,
+                "observed_response_models": [profile["model"]],
+                "response_request_ids_sha256": openrouter._sha256_json(
+                    sorted(row["judge_request_id"] for row in judgments)
+                ),
+                "judgment_count": len(judgments),
+                "normalized_output": "/archive/judgments.jsonl",
+                "normalized_output_sha256": artifact_digest,
+            },
+        ]
+    )
+    manifest["updated_at"] = "2026-07-30T11:00:00Z"
+    manifest_payload = (json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
+    artifacts = [
+        {
+            "path": "/archive/judgments.jsonl",
+            "content_sha256": artifact_digest,
+            "row_count": len(judgments),
+            "record_start": 0,
+            "record_end": len(judgments),
+        }
+    ]
+    manifests = [
+        {
+            "path": "/archive/openrouter-manifest.json",
+            "content_sha256": hashlib.sha256(manifest_payload).hexdigest(),
+            "manifest": manifest,
+        }
+    ]
+    return artifacts, manifests, []
+
+
+def test_default_publication_matrix_is_37800_with_300_per_cell():
+    judgments = _registered_publication_matrix(tuple(MODEL_SPECS))
 
     result = analyze_judgments(judgments)
 
@@ -437,6 +732,219 @@ def test_default_publication_matrix_is_37800_with_300_per_cell():
     assert result.summary["publication_complete"] is True
     assert all(len(task_ids) == 100 for task_ids in result.summary["expected"]["task_ids_by_valence"].values())
     assert len(result.summary["expected"]["pair_ids"]) == 100
+
+
+def test_current_three_qwen_deepseek_scope_is_strict_complete_at_16200(tmp_path: Path):
+    pytest.importorskip("matplotlib")
+    judgments = _registered_publication_matrix(CURRENT_QWEN_MODEL_KEY_ORDER)
+    profile = openrouter._judge_profile(openrouter.DEEPSEEK_V32_DIRECT_PROFILE)
+    allowed_response_models = list(profile["allowed_response_models"])
+    for row in judgments:
+        row.update(
+            {
+                "judge_profile": profile["id"],
+                "judge_profile_label": profile["label"],
+                "judge_model": profile["model"],
+                "judge_provider": "OpenRouter",
+                "judge_response_model": profile["model"],
+                "judge_allowed_response_models": allowed_response_models,
+            }
+        )
+    with pytest.raises(PublicationValidationError, match="matching paid judge manifests"):
+        analyze_judgments(
+            judgments,
+            expected_model_keys=CURRENT_QWEN_MODEL_KEY_ORDER,
+            expected_judge_profile=profile["id"],
+        )
+    artifacts = []
+    manifests = []
+    route_attestations = []
+    for model_index, model_key in enumerate(CURRENT_QWEN_MODEL_KEY_ORDER):
+        start = model_index * EXPECTED_MODEL_JUDGMENT_COUNT
+        end = start + EXPECTED_MODEL_JUDGMENT_COUNT
+        model_artifacts, model_manifests, model_route_attestations = _attach_paid_manifest(
+            judgments[start:end],
+            model_keys=(model_key,),
+        )
+        model_artifacts[0].update(
+            {
+                "path": f"/archive/{model_key}-judgments.jsonl",
+                "record_start": start,
+                "record_end": end,
+            }
+        )
+        model_manifests[0]["path"] = f"/archive/{model_key}-manifest.json"
+        artifacts.extend(model_artifacts)
+        manifests.extend(model_manifests)
+        route_attestations.extend(model_route_attestations)
+
+    result = analyze_judgments(
+        judgments,
+        judgment_artifacts=artifacts,
+        judge_manifests=manifests,
+        route_attestations=route_attestations,
+        expected_model_keys=CURRENT_QWEN_MODEL_KEY_ORDER,
+        expected_judge_profile=profile["id"],
+    )
+
+    assert len(judgments) == 16_200
+    assert EXPECTED_MODEL_JUDGMENT_COUNT == 5_400
+    assert len(result.rows) == 54
+    assert result.summary["publication_complete"] is True
+    assert result.summary["scope_complete"] is True
+    assert result.summary["scope_kind"] == "registered_model_subset"
+    assert result.summary["result_label"] == STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL
+    assert result.summary["expected"]["model_keys"] == list(CURRENT_QWEN_MODEL_KEY_ORDER)
+    assert result.summary["expected"]["judgment_count"] == 16_200
+    assert result.summary["expected"]["judgments_per_model"] == 5_400
+    assert result.summary["observed"]["valid_unique_records_by_model"] == {
+        model_key: 5_400 for model_key in CURRENT_QWEN_MODEL_KEY_ORDER
+    }
+    assert result.summary["provenance"]["paid_manifest_verification"]["status"] == "verified"
+    assert result.summary["provenance"]["paid_manifest_verification"]["artifact_count"] == 3
+    assert result.summary["provenance"]["paid_manifest_verification"]["manifest_count"] == 3
+    assert "Qwen-only subset" in result.summary["scope_label"]
+    assert "not the full seven-model paper reproduction" in result.summary["source_note"]
+    assert len(validate_plot_rows(result.rows, summary=result.summary)) == 54
+
+    png = tmp_path / "qwen-only-deepseek.png"
+    pdf = tmp_path / "qwen-only-deepseek.pdf"
+    render_figure6(result.rows, summary=result.summary, png_path=png, pdf_path=pdf)
+    assert result.summary["scope_label"].encode() in png.read_bytes()
+    assert OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL.encode() in png.read_bytes()
+    assert pdf.read_bytes().startswith(b"%PDF")
+
+
+def test_strict_openrouter_analysis_rejects_qwen36_scope() -> None:
+    judgments = _registered_publication_matrix(("qwen36",))
+    profile = openrouter._judge_profile(openrouter.DEEPSEEK_V32_DIRECT_PROFILE)
+    for row in judgments:
+        row.update(
+            {
+                "judge_profile": profile["id"],
+                "judge_model": profile["model"],
+                "judge_provider": "OpenRouter",
+                "judge_response_model": profile["model"],
+                "judge_allowed_response_models": list(profile["allowed_response_models"]),
+            }
+        )
+    with pytest.raises(PublicationValidationError, match="exactly qwen32"):
+        analyze_judgments(
+            judgments,
+            expected_model_keys=("qwen36",),
+            expected_judge_profile=profile["id"],
+        )
+
+
+def test_qwen_subset_plot_rejects_full_result_label_and_bad_per_model_count():
+    rows = [
+        {**row, "publication_complete": True, "fixture_mode": False}
+        for row in fixture_rows()
+        if row["model_key"] in CURRENT_QWEN_MODEL_KEY_ORDER
+    ]
+    scope_label = "Qwen-only subset (3 of 7 models; 16,200 strict judgments)"
+    summary = {
+        "publication_complete": True,
+        "scope_complete": True,
+        "scope_kind": "registered_model_subset",
+        "scope_label": scope_label,
+        "result_label": STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
+        "source_note": f"Computed fixture for the {scope_label}; not the full reproduction. OpenRouter Muse alternative judge.",
+        "plot_label": OPENROUTER_MUSE_ALTERNATIVE_LABEL,
+        "expected": {
+            "model_keys": list(CURRENT_QWEN_MODEL_KEY_ORDER),
+            "model_displays": [MODEL_SPECS[key].display_name for key in CURRENT_QWEN_MODEL_KEY_ORDER],
+            "valences": list(FIGURE6_VALENCES),
+            "configs": list(FIGURE6_CONDITIONS),
+            "task_count": 100,
+            "replicates": [1, 2, 3],
+            "judgment_count": 16_200,
+            "judgments_per_model": 5_400,
+            "cell_denominator": 300,
+        },
+        "observed": {
+            "valid_unique_records": 16_200,
+            "valid_unique_records_by_model": {model_key: 5_400 for model_key in CURRENT_QWEN_MODEL_KEY_ORDER},
+            "aggregate_rows": 54,
+        },
+        "provenance": {
+            "expected_judge_model": "meta/muse-spark-1.1",
+            "judge_provider": "OpenRouter",
+        },
+    }
+
+    with pytest.raises(ValueError, match="unsupported complete-result label"):
+        validate_plot_rows(rows, summary={**summary, "result_label": "complete_reproduction"})
+
+    bad_observed = {
+        **summary["observed"],
+        "valid_unique_records_by_model": {
+            **summary["observed"]["valid_unique_records_by_model"],
+            "qwen32": 5_399,
+        },
+    }
+    with pytest.raises(ValueError, match="5,400 valid unique judgments for every model"):
+        validate_plot_rows(rows, summary={**summary, "observed": bad_observed})
+
+
+def test_analysis_cli_forwards_repeatable_expected_model_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        analysis,
+        "_read_judgment_artifacts",
+        lambda _: ([{"fixture": True}], [{"artifact": True}]),
+    )
+    monkeypatch.setattr(
+        analysis,
+        "_read_judge_manifests",
+        lambda _: [{"manifest": True}],
+    )
+    monkeypatch.setattr(
+        analysis,
+        "_read_route_attestations",
+        lambda _: [],
+    )
+
+    def fake_analyze(judgments, **kwargs):
+        captured["judgments"] = judgments
+        captured["kwargs"] = kwargs
+        return analysis.AnalysisResult(
+            rows=(),
+            summary={"publication_complete": True, "result_label": STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL},
+            diagnostics={},
+        )
+
+    monkeypatch.setattr(analysis, "analyze_judgments", fake_analyze)
+    monkeypatch.setattr(analysis, "write_analysis_outputs", lambda *args, **kwargs: None)
+    exit_code = analysis.main(
+        [
+            "--judgments",
+            str(tmp_path / "judgments.jsonl"),
+            "--output-csv",
+            str(tmp_path / "aggregation.csv"),
+            "--summary-json",
+            str(tmp_path / "summary.json"),
+            "--judge-manifest",
+            str(tmp_path / "manifest.json"),
+            "--expected-model-key",
+            "qwen32",
+            "--expected-model-key",
+            "qwen_mo_mid",
+            "--expected-model-key",
+            "qwen_mo_post",
+            "--expected-judge-profile",
+            openrouter.DEEPSEEK_V32_DIRECT_PROFILE,
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["judgments"] == [{"fixture": True}]
+    assert captured["kwargs"]["expected_model_keys"] == list(CURRENT_QWEN_MODEL_KEY_ORDER)
+    assert captured["kwargs"]["judgment_artifacts"] == [{"artifact": True}]
+    assert captured["kwargs"]["judge_manifests"] == [{"manifest": True}]
+    assert captured["kwargs"]["route_attestations"] == []
+    assert captured["kwargs"]["expected_judge_profile"] == openrouter.DEEPSEEK_V32_DIRECT_PROFILE
 
 
 def test_plot_order_labels_completeness_and_forbidden_label():
@@ -472,6 +980,17 @@ def test_plot_order_labels_completeness_and_forbidden_label():
         validate_plot_rows(rows)
 
 
+def test_default_gpt5_plot_accepts_pre_response_identity_summary_shape():
+    rows = [{**row, "publication_complete": True, "fixture_mode": False} for row in fixture_rows()]
+    legacy_summary = {
+        "publication_complete": True,
+        "result_label": "complete_reproduction",
+        "observed": {"valid_unique_records": 37_800},
+        "provenance": {"judge_model": "gpt-5"},
+    }
+    assert len(validate_plot_rows(rows, summary=legacy_summary)) == 126
+
+
 def test_png_and_pdf_fixture_smoke(tmp_path: Path):
     pytest.importorskip("matplotlib")
     png = tmp_path / "figure6.png"
@@ -483,3 +1002,51 @@ def test_png_and_pdf_fixture_smoke(tmp_path: Path):
     assert pdf.read_bytes().startswith(b"%PDF")
     assert png.stat().st_size > 20_000
     assert pdf.stat().st_size > 10_000
+
+
+def _complete_alternative_plot_inputs() -> tuple[list[dict], dict]:
+    rows = [{**row, "publication_complete": True, "fixture_mode": False} for row in fixture_rows()]
+    summary = {
+        "publication_complete": True,
+        "result_label": "complete_reproduction_user_pinned_alternative_judge",
+        "source_note": f"Computed reproduction; {OPENROUTER_MUSE_ALTERNATIVE_LABEL}.",
+        "plot_label": OPENROUTER_MUSE_ALTERNATIVE_LABEL,
+        "observed": {"valid_unique_records": 37_800},
+        "provenance": {
+            "expected_judge_model": "meta/muse-spark-1.1",
+            "judge_provider": "OpenRouter",
+        },
+    }
+    return rows, summary
+
+
+def test_alternative_plot_summary_requires_exact_rendered_label(tmp_path: Path):
+    rows, summary = _complete_alternative_plot_inputs()
+    assert len(validate_plot_rows(rows, summary=summary)) == 126
+
+    missing_label = {**summary, "plot_label": None}
+    with pytest.raises(ValueError, match="plot_label"):
+        validate_plot_rows(rows, summary=missing_label)
+
+    with pytest.raises(ValueError, match="both the title and source note"):
+        render_figure6(
+            rows,
+            summary=summary,
+            title="Generic Figure 6 title",
+            source_note=f"Computed reproduction; {OPENROUTER_MUSE_ALTERNATIVE_LABEL}.",
+            png_path=tmp_path / "rejected.png",
+            pdf_path=tmp_path / "rejected.pdf",
+        )
+    assert not (tmp_path / "rejected.png").exists()
+
+
+def test_openrouter_muse_alternative_label_is_rendered_and_embedded(tmp_path: Path):
+    pytest.importorskip("matplotlib")
+    rows, summary = _complete_alternative_plot_inputs()
+    png = tmp_path / "muse.png"
+    pdf = tmp_path / "muse.pdf"
+    render_figure6(rows, summary=summary, png_path=png, pdf_path=pdf)
+    assert OPENROUTER_MUSE_ALTERNATIVE_LABEL.encode() in png.read_bytes()
+    assert pdf.read_bytes().startswith(b"%PDF")
+    plot_source = Path(__file__).parents[1] / "figure6_plot.py"
+    assert "figure.suptitle(title" in plot_source.read_text(encoding="utf-8")

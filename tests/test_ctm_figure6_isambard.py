@@ -124,7 +124,14 @@ def test_standard_models_are_not_mischaracterized():
         )
         if path.exists()
     )
-    assert re.search(r"\bcontrols?\b", text, flags=re.IGNORECASE) is None
+    assert (
+        re.search(
+            r"\bcontrols?\s+(?:model|checkpoint|condition)s?\b|\bas (?:a |the )?controls?\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        is None
+    )
 
 
 def test_protocol_has_exact_workload_and_prompt_pins():
@@ -145,11 +152,45 @@ def test_protocol_has_exact_workload_and_prompt_pins():
     assert protocol["prompts"]["explicit_scratchpad"]["sha256"] == (
         "c7c16141e424217e334f4166fb34a5302ea880bddb67598297e7ed38dc103b33"
     )
-    assert protocol["judge"] == {
-        "execution_stage": "manual_paid_external",
-        "submitted_by_gpu_jobs": False,
-        "approval_required_before_submission": True,
-    }
+    judge = protocol["judge"]
+    assert judge["execution_stage"] == "manual_paid_external"
+    assert judge["submitted_by_gpu_jobs"] is False
+    assert judge["approval_required_before_submission"] is True
+    assert judge["provider"] == "OpenRouter"
+    assert judge["profile"] == "deepseek-v3.2-direct"
+    assert judge["model"] == "deepseek/deepseek-v3.2"
+    assert judge["allowed_response_models"] == ["deepseek/deepseek-v3.2"]
+    assert judge["api_shape"] == "/api/v1/chat/completions"
+    assert judge["max_tokens"] == 4096
+    assert judge["prompt_sha256"] == "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870"
+    assert judge["result_label"] == "user_pinned_alternative_judge"
+    assert judge["route_mode"] == "direct"
+    assert judge["route_attestation_required"] is False
+    assert judge["reasoning"] == {"enabled": False}
+    assert judge["response_format"] == {"type": "json_object"}
+    assert judge["paid_confirmation_flag"] == "--yes"
+    assert judge["deterministic_plan_sha256_required"] is True
+    assert judge["malformed_paid_response_rescore_flag"] == "--rescore-paid-errors"
+    assert judge["proxy_policy"] == "prohibited; httpx trust_env disabled"
+    assert workload["approved_current_scope"]["model_keys"] == ["qwen32", "qwen_mo_mid", "qwen_mo_post"]
+    assert workload["approved_current_scope"]["total_generations"] == 16_200
+    assert judge["plot_label"] == "OpenRouter DeepSeek V3.2 alternative judge"
+
+
+def test_openrouter_operator_protocol_uses_shell_variables_and_paid_gates():
+    readme = (FIGURE6 / "README.md").read_text(encoding="utf-8")
+    assert "-p VAST_SSH_PORT root@VAST_SSH_HOST" not in readme
+    assert "export VAST_SSH_HOST=" in readme
+    assert "export VAST_SSH_PORT=" in readme
+    assert '"root@$VAST_SSH_HOST"' in readme
+    assert "FIGURE6_LOCAL_GENERATION_ROOT" in readme
+    assert "--expected-plan-sha256" in readme
+    assert "--rescore-paid-errors" in readme
+    assert "--yes" in readme
+    assert "--judge-profile deepseek-v3.2-direct" in readme
+    assert "--expected-judge-profile deepseek-v3.2-direct" in readme
+    assert "OpenRouter DeepSeek V3.2 alternative judge" in readme
+    assert "PASTE_INDEPENDENTLY_REVIEWED_64_HEX_HASH" in readme
 
 
 @pytest.mark.parametrize(
@@ -250,10 +291,12 @@ def test_gpu_runtime_loader_path_and_dependency_gate():
     assert ".venv/lib/python3.12" not in setup
 
     runbook = (FIGURE6 / "README.md").read_text(encoding="utf-8")
-    assert 'GPU_SMOKE_JOB_ID=$(sbatch --parsable' in runbook
+    assert "GPU_SMOKE_JOB_ID=$(sbatch --parsable" in runbook
     assert '--dependency="afterok:$GPU_SMOKE_JOB_ID"' in runbook
     combined_gate = '--dependency="afterok:$GPU_SMOKE_JOB_ID,afterany:$PREFETCH_JOB_ID"'
-    assert runbook.count(combined_gate) == 2
+    assert runbook.count(combined_gate) == 1
+    assert "--array=1-3%3" in runbook
+    assert "PILOT_LLAMA_JOB=$(sbatch" not in runbook
 
 
 def test_resource_math_and_storage_headroom():

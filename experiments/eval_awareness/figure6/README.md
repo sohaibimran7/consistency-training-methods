@@ -140,16 +140,11 @@ test "$(sha256sum "$EXPLICIT_SCRATCHPAD_PROMPT_PATH" | awk '{print $1}')" = \
 The generator independently repeats these hash checks. Do not copy the prompt
 bodies into this repository.
 
-## 3. Validate the GPU environment and optionally prefetch the seven snapshots
+## 3. Validate the GPU environment and prefetch the three selected snapshots
 
-The standard Llama repository is gated. Request access beforehand, then read a
-Hugging Face token without displaying it:
-
-```bash
-read -rsp "Hugging Face token: " HF_TOKEN
-printf '\n'
-export HF_TOKEN
-```
+The selected Qwen repositories are not the gated Llama checkpoint, so the
+current prefetch does not require an `HF_TOKEN`. Do not broaden the prefetch
+arguments to `qwen36` or any Llama key.
 
 First submit the one-GPU, 30-minute environment smoke gate. It installs the
 pinned AArch64 serving stack, exposes the CUDA 13 runtime bundled with vLLM,
@@ -173,7 +168,8 @@ PREFETCH_JOB_ID=$(sbatch --parsable \
   --account="$ISAMBARD_ACCOUNT" \
   --dependency="afterok:$GPU_SMOKE_JOB_ID" \
   --export=ALL \
-  infra/isambard/prefetch_figure6.sbatch)
+  infra/isambard/prefetch_figure6.sbatch \
+  qwen32 qwen_mo_mid qwen_mo_post)
 printf 'prefetch job: %s\n' "$PREFETCH_JOB_ID"
 ```
 
@@ -193,7 +189,7 @@ commands below; do not invent a placeholder job ID.
 
 The pilot selects the first 100 conditions in the verified artifact order and
 generates three samples each: 300 calls per model. It writes directly into the
-same seven append-only logs later extended by the full run. Row provenance is
+same three append-only logs later extended by the full run. Row provenance is
 invariant; a separate selection ledger records the deterministic prefix and
 its later extension.
 
@@ -204,21 +200,16 @@ PILOT_QWEN_JOB=$(sbatch --parsable \
   --account="$ISAMBARD_ACCOUNT" \
   --dependency="afterok:$GPU_SMOKE_JOB_ID,afterany:$PREFETCH_JOB_ID" \
   --time=12:00:00 \
+  --array=1-3%3 \
   --export=ALL \
   infra/isambard/figure6_qwen.sbatch)
 
-PILOT_LLAMA_JOB=$(sbatch --parsable \
-  --account="$ISAMBARD_ACCOUNT" \
-  --dependency="afterok:$GPU_SMOKE_JOB_ID,afterany:$PREFETCH_JOB_ID" \
-  --time=12:00:00 \
-  --export=ALL \
-  infra/isambard/figure6_llama.sbatch)
-
-printf 'pilot jobs: qwen=%s llama=%s\n' "$PILOT_QWEN_JOB" "$PILOT_LLAMA_JOB"
+printf 'selected-Qwen pilot job: %s\n' "$PILOT_QWEN_JOB"
 ```
 
-The Qwen array is `0-3%4`, one GPU/node, 72 CPU cores/task. The Llama array is
-`0-2%3`, two GPUs/node, 144 CPU cores/task. Every server uses the exact model
+The selected Qwen override is `1-3%3`: `qwen32`, `qwen_mo_mid`, and
+`qwen_mo_post`, one GPU/node and 72 CPU cores/task. Array index 0 (`qwen36`)
+and all Llama arrays are intentionally skipped. Every server uses the exact model
 revision, bfloat16, tensor-parallel size from `models.yaml`, and an 8,192-token
 model ceiling. The launcher waits for localhost health, checks endpoint model
 identity, and durably appends every terminal request attempt. A timeout leaves
@@ -229,20 +220,16 @@ timestamps/token usage:
 
 ```bash
 python scripts/estimate_figure6_resources.py \
-  --pilot qwen36="$FIGURE6_OUTPUT_ROOT/qwen36/generations.jsonl" \
   --pilot qwen32="$FIGURE6_OUTPUT_ROOT/qwen32/generations.jsonl" \
   --pilot qwen_mo_mid="$FIGURE6_OUTPUT_ROOT/qwen_mo_mid/generations.jsonl" \
   --pilot qwen_mo_post="$FIGURE6_OUTPUT_ROOT/qwen_mo_post/generations.jsonl" \
-  --pilot llama33="$FIGURE6_OUTPUT_ROOT/llama33/generations.jsonl" \
-  --pilot llama_mo_mid="$FIGURE6_OUTPUT_ROOT/llama_mo_mid/generations.jsonl" \
-  --pilot llama_mo_post="$FIGURE6_OUTPUT_ROOT/llama_mo_post/generations.jsonl" \
   --available-storage-gb "$FIGURE6_CACHE_CAPACITY_GB"
 ```
 
 Timestamp inference measures the span of the requests and excludes model
 startup. For a conservative job-level rate, obtain each array task's
 `ElapsedRaw` from `sacct` and add, for example,
-`--pilot-elapsed-seconds qwen36=SECONDS`. The estimator reports remaining ETA,
+`--pilot-elapsed-seconds qwen32=SECONDS`. The estimator reports remaining ETA,
 GPU-hours, and NHR per model, plus observed completion-token throughput and
 mean request latency. Queue wait is always external; any live scheduler start
 estimate is volatile.
@@ -262,22 +249,16 @@ unset FIGURE6_LIMIT_CONDITIONS
 FULL_QWEN_JOB=$(sbatch --parsable \
   --account="$ISAMBARD_ACCOUNT" \
   --dependency="afterok:$PILOT_QWEN_JOB" \
+  --array=1-3%3 \
   --export=ALL \
   infra/isambard/figure6_qwen.sbatch)
 
-FULL_LLAMA_JOB=$(sbatch --parsable \
-  --account="$ISAMBARD_ACCOUNT" \
-  --dependency="afterok:$PILOT_LLAMA_JOB" \
-  --export=ALL \
-  infra/isambard/figure6_llama.sbatch)
-
-printf 'full jobs: qwen=%s llama=%s\n' "$FULL_QWEN_JOB" "$FULL_LLAMA_JOB"
+printf 'selected-Qwen full job: %s\n' "$FULL_QWEN_JOB"
 ```
 
-Each 24-hour array pass has a 60 NHR ceiling: 96 GPU-hours for Qwen plus
-144 GPU-hours for Llama. The optional 12-hour prefetch adds at most 3 NHR, for
-a 63 NHR single-pass ceiling. Pilot usage is metered separately and should end
-after its prefix completes.
+Each selected 24-hour array pass has a 72 GPU-hour ceiling (18 NHR). The
+optional 12-hour prefetch adds at most 3 NHR, for a 21 NHR single-pass ceiling.
+Pilot usage is metered separately and should end after its prefix completes.
 
 If a target job is interrupted or has terminal request errors, submit the same
 array again against the same output root. Existing successes are verified and
@@ -288,13 +269,13 @@ attempt. For example:
 RESUME_QWEN_JOB=$(sbatch --parsable \
   --account="$ISAMBARD_ACCOUNT" \
   --dependency="afterany:$FULL_QWEN_JOB" \
+  --array=1-3%3 \
   --export=ALL \
   infra/isambard/figure6_qwen.sbatch)
 ```
 
-The Llama command is identical apart from the dependency job ID and
-`figure6_llama.sbatch`. Override `--array` at submission when only named array
-indices need another attempt. No launcher removes a partial output.
+Keep the `--array=1-3%3` override on every resume so neither `qwen36` nor a
+Llama job enters the current scope. No launcher removes a partial output.
 
 ## 6. Audit exactly 5,400 successful generations per model
 
@@ -303,21 +284,12 @@ history, and logical-key validation without starting a server or making an API
 request. Run it for every output with the full selection (no limiter):
 
 ```bash
-for MODEL_KEY in qwen36 qwen32 qwen_mo_mid qwen_mo_post; do
+for MODEL_KEY in qwen32 qwen_mo_mid qwen_mo_post; do
   python -m ctm_data.adapters.eval_awareness.figure6_generate \
     --artifact "$FIGURE6_ARTIFACT" \
     --output "$FIGURE6_OUTPUT_ROOT/$MODEL_KEY/generations.jsonl" \
     --model-key "$MODEL_KEY" \
     --prompt-path "$PAPER_NATURAL_PROMPT_PATH" \
-    --dry-run
-done
-
-for MODEL_KEY in llama33 llama_mo_mid llama_mo_post; do
-  python -m ctm_data.adapters.eval_awareness.figure6_generate \
-    --artifact "$FIGURE6_ARTIFACT" \
-    --output "$FIGURE6_OUTPUT_ROOT/$MODEL_KEY/generations.jsonl" \
-    --model-key "$MODEL_KEY" \
-    --prompt-path "$EXPLICIT_SCRATCHPAD_PROMPT_PATH" \
     --dry-run
 done
 ```
@@ -328,7 +300,333 @@ error rows; those remain part of the audit history. The judge adapter selects
 exactly one terminal success for each logical key and rejects any history
 without one.
 
-## 7. Create, approve, submit, and collect paid judge batches
+## 7. Run the approved DeepSeek V3.2 alternative judge through OpenRouter
+
+The current reproduction uses `deepseek/deepseek-v3.2` directly from the
+operator laptop through OpenRouter with
+the exact hash-pinned paper judge prompt and a 4,096-token output ceiling. This
+is a user-pinned alternative judge, not the paper's GPT-5 judge. The registered
+`deepseek-v3.2-direct` profile prohibits proxies and route attestations, disables
+reasoning, requests a JSON object, and hash-binds temperature 0, concurrency 24,
+the 300-second retry cap, and exact provider routing. The approved scope is exactly
+`qwen32`, `qwen_mo_mid`, and `qwen_mo_post`; do not add `qwen36` or a Llama key. Each model has its own complete
+5,400-request paid lifecycle, so it can be judged as soon as that model's
+generation log finishes. The three verified outputs are combined only during
+strict analysis.
+
+Use clean, detached local checkouts for both this repository and the upstream
+prompt source. Record the reviewed 40-hex commit supplied in the handoff; do
+not run the paid command from an uncommitted or moving checkout:
+
+```bash
+export FIGURE6_CODE_LOCAL=/absolute/local/path/consistency-training-methods-figure6
+export FIGURE6_REVIEWED_COMMIT=REVIEWED_40_HEX_COMMIT
+git clone https://github.com/sohaibimran7/consistency-training-methods.git \
+  "$FIGURE6_CODE_LOCAL"
+git -C "$FIGURE6_CODE_LOCAL" checkout --detach "$FIGURE6_REVIEWED_COMMIT"
+test "$(git -C "$FIGURE6_CODE_LOCAL" rev-parse HEAD)" = "$FIGURE6_REVIEWED_COMMIT"
+test -z "$(git -C "$FIGURE6_CODE_LOCAL" status --porcelain)"
+
+export FIGURE6_UPSTREAM_CODE_LOCAL=/absolute/local/path/decomposing-eval-awareness
+git clone https://github.com/aisa-group/decomposing-eval-awareness.git \
+  "$FIGURE6_UPSTREAM_CODE_LOCAL"
+git -C "$FIGURE6_UPSTREAM_CODE_LOCAL" checkout --detach \
+  446be5c605b56a60d4efe2526f0cbf55522c523a
+test "$(git -C "$FIGURE6_UPSTREAM_CODE_LOCAL" rev-parse HEAD)" = \
+  446be5c605b56a60d4efe2526f0cbf55522c523a
+
+cd "$FIGURE6_CODE_LOCAL"
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Retrieve each completed append-only generation log and both provenance
+sidecars from Isambard. All variables below are local shell variables; use
+absolute roots:
+
+```bash
+export ISAMBARD_LOGIN=user@login.isambard.example
+export ISAMBARD_OUTPUT_ROOT=/absolute/remote/path/evalawarebench-figure6
+export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
+mkdir -p "$FIGURE6_LOCAL_GENERATION_ROOT"
+
+for MODEL_KEY in qwen32 qwen_mo_mid qwen_mo_post; do
+  mkdir -p "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY"
+  for FILE_NAME in generations.jsonl \
+                   generations.jsonl.provenance.json \
+                   generations.jsonl.selections.jsonl; do
+    rsync -av --protect-args \
+      "$ISAMBARD_LOGIN:$ISAMBARD_OUTPUT_ROOT/$MODEL_KEY/$FILE_NAME" \
+      "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/$FILE_NAME"
+  done
+done
+
+find "$FIGURE6_UPSTREAM_CODE_LOCAL" -type f -exec sha256sum {} + | \
+  awk '$1 == "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870" {print}'
+export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/path/printed/by/the/command
+export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
+test "$(sha256sum "$FIGURE6_JUDGE_TEMPLATE_PATH" | awk '{print $1}')" = \
+  e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
+mkdir -p "$FIGURE6_JUDGE_ROOT"
+```
+
+Keep `OPENROUTER_API_KEY` only on that operator machine. Do not configure a
+proxy or U.S. route evidence for the current direct DeepSeek profile.
+
+### Optional Muse US-proxy profile
+
+The registered `muse-spark-1.1-us-proxy` alternate is not the current judge.
+If it is deliberately selected in a separately reviewed plan, its route is
+Vast instance `46276309`, `ssh3.vast.ai:36308`, country `US`, with SOCKS on
+`127.0.0.1:1080`. Use the dedicated control socket shown here. If a stale
+socket exists, move it into the judge archive; never delete it in place.
+`ExitOnForwardFailure` makes bind/forward setup fail closed, and `-O check`
+proves the exact master is live before any plan or paid request:
+
+```bash
+export VAST_INSTANCE_ID=46276309
+export VAST_SSH_HOST=ssh3.vast.ai
+export VAST_SSH_PORT=36308
+export VAST_COUNTRY_CODE=US
+export FIGURE6_SOCKS_PORT=1080
+export FIGURE6_CONTROL_SOCKET=/private/tmp/figure6-vast-a-socks-control
+export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
+mkdir -p "$FIGURE6_JUDGE_ROOT/_archive"
+
+if test -e "$FIGURE6_CONTROL_SOCKET"; then
+  mv "$FIGURE6_CONTROL_SOCKET" \
+    "$FIGURE6_JUDGE_ROOT/_archive/figure6-vast-a-socks-control.$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+
+ssh -M -S "$FIGURE6_CONTROL_SOCKET" -fN \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -D "127.0.0.1:$FIGURE6_SOCKS_PORT" \
+  -p "$VAST_SSH_PORT" "root@$VAST_SSH_HOST"
+
+ssh -S "$FIGURE6_CONTROL_SOCKET" -O check \
+  -p "$VAST_SSH_PORT" "root@$VAST_SSH_HOST"
+```
+
+Create and preserve a sanitized evidence JSON. Before doing so, verify the
+instance ID, SSH endpoint, and U.S. location in the Vast console, save a
+credential-free console export/screenshot, then verify the tunneled egress
+country is `US`. Set `ROUTE_EXIT_IP`, `ROUTE_EXIT_COUNTRY`, the
+`VAST_CONSOLE_EVIDENCE` path, and a real non-secret `ROUTE_ATTESTED_BY` from
+those checks. Never put an SSH key, API key, token, cookie, or authorization
+header in either evidence file:
+
+```bash
+export FIGURE6_PROXY_URL="socks5h://127.0.0.1:$FIGURE6_SOCKS_PORT"
+export ROUTE_ATTESTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+: "${ROUTE_ATTESTED_BY:?export a real non-secret reviewer identifier}"
+: "${ROUTE_EXIT_IP:?record the tunneled public egress IP}"
+: "${ROUTE_EXIT_COUNTRY:?record the independently checked egress country}"
+: "${VAST_CONSOLE_EVIDENCE:?export the sanitized Vast console evidence path}"
+test "$ROUTE_EXIT_COUNTRY" = US
+export VAST_CONSOLE_EVIDENCE_SHA256="$(shasum -a 256 "$VAST_CONSOLE_EVIDENCE" | awk '{print $1}')"
+
+export ROUTE_EVIDENCE="$FIGURE6_JUDGE_ROOT/vast-route-evidence.json"
+jq -n \
+  --arg instance "$VAST_INSTANCE_ID" \
+  --arg host "$VAST_SSH_HOST" \
+  --argjson port "$VAST_SSH_PORT" \
+  --arg country "$VAST_COUNTRY_CODE" \
+  --arg attested_at "$ROUTE_ATTESTED_AT" \
+  --arg attested_by "$ROUTE_ATTESTED_BY" \
+  --arg socks "$FIGURE6_PROXY_URL" \
+  --arg control "$FIGURE6_CONTROL_SOCKET" \
+  --arg exit_ip "$ROUTE_EXIT_IP" \
+  --arg exit_country "$ROUTE_EXIT_COUNTRY" \
+  --arg console_sha "$VAST_CONSOLE_EVIDENCE_SHA256" \
+  '{schema:"ctm.eval_awareness.figure6.vast_route_evidence.v1",
+    vast_instance_id:$instance, ssh_host:$host, ssh_port:$port,
+    country_code:$country, attested_at:$attested_at, attested_by:$attested_by,
+    socks_proxy:$socks, ssh_control_socket:$control, exit_ip:$exit_ip,
+    exit_country_code:$exit_country, vast_console_evidence_sha256:$console_sha}' \
+  > "$ROUTE_EVIDENCE"
+export ROUTE_EVIDENCE_SHA256="$(shasum -a 256 "$ROUTE_EVIDENCE" | awk '{print $1}')"
+test "${#ROUTE_EVIDENCE_SHA256}" -eq 64
+```
+
+For the optional Muse profile, the evidence bytes, concrete route fields, and
+exact `socks5h` proxy enter its deterministic plan. The current direct workflow
+below supplies none of them. Judge one complete model at a time. The CLI will
+reject a partial, extra, mixed, or unregistered matrix before opening the HTTP
+client:
+
+```bash
+export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
+export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
+export FIGURE6_MAX_ATTEMPTS=5
+mkdir -p "$FIGURE6_JUDGE_ROOT"
+
+build_judge_args() {
+  MODEL_KEY="$1"
+  MAX_ATTEMPTS="$2"
+  MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
+  mkdir -p "$MODEL_JUDGE_ROOT"
+
+  JUDGE_ARGS=(
+    --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
+    --expected-model-key "$MODEL_KEY"
+    --judge-profile deepseek-v3.2-direct
+    --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
+    --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
+    --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+    --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
+    --max-attempts "$MAX_ATTEMPTS"
+    --max-retry-after 300
+  )
+}
+
+for MODEL_KEY in qwen32 qwen_mo_mid qwen_mo_post; do
+  build_judge_args "$MODEL_KEY" "$FIGURE6_MAX_ATTEMPTS"
+  python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" --dry-run \
+    | tee "$MODEL_JUDGE_ROOT/plan.dry-run.json"
+done
+```
+
+Stop here. An independent reviewer must inspect each exact 5,400-request plan,
+cost, profile settings, retry policy, identities, and hash. Only in a later
+operator session, paste one reviewed hash explicitly; do not derive it in the
+same shell block that performs payment:
+
+```bash
+export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
+export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
+export FIGURE6_MAX_ATTEMPTS=5
+export MODEL_KEY=qwen32
+export REVIEWED_PLAN_SHA256=PASTE_INDEPENDENTLY_REVIEWED_64_HEX_HASH
+export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
+mkdir -p "$MODEL_JUDGE_ROOT"
+JUDGE_ARGS=(
+  --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
+  --expected-model-key "$MODEL_KEY"
+  --judge-profile deepseek-v3.2-direct
+  --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
+  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
+  --max-attempts "$FIGURE6_MAX_ATTEMPTS"
+  --max-retry-after 300
+)
+test "${#REVIEWED_PLAN_SHA256}" -eq 64
+test -n "${OPENROUTER_API_KEY:-}"
+python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" \
+  --expected-plan-sha256 "$REVIEWED_PLAN_SHA256" \
+  --yes
+test "$(wc -l < "$MODEL_JUDGE_ROOT/judgments.jsonl" | tr -d ' ')" = 5400
+```
+
+The paid entry point always requires both `--yes` and the separately reviewed
+`--expected-plan-sha256`; there is no one-record/debug paid mode. It holds an
+OS lock across history validation, all requests, durable attempt appends, and
+the final normalized output. Ambient proxy variables are ignored. Every HTTP
+200 raw body, provider response ID/model/usage/content, request identity,
+attempt plan, and approval index remains in the audit trail without recording
+credentials.
+
+Malformed paid HTTP-200 responses require `--rescore-paid-errors`. Exhausted
+transport/408/429/5xx retries—including an exhausted malformed-response
+rescore—cannot silently gain another attempt. Raise only `--max-attempts`, run
+a new dry plan, review its new hash, and explicitly record the ceiling-only
+amendment while preserving all old successes and attempts:
+
+```bash
+export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
+export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
+export MODEL_KEY=qwen32
+export NEW_MAX_ATTEMPTS=7
+export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
+JUDGE_ARGS=(
+  --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
+  --expected-model-key "$MODEL_KEY"
+  --judge-profile deepseek-v3.2-direct
+  --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
+  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
+  --max-attempts "$NEW_MAX_ATTEMPTS"
+  --max-retry-after 300
+)
+python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" --dry-run \
+  | tee "$MODEL_JUDGE_ROOT/plan.amendment.dry-run.json"
+```
+
+Stop again for independent review. In a later operator session, paste the
+reviewed amended hash and authorize only the ceiling increase:
+
+```bash
+export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
+export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
+export MODEL_KEY=qwen32
+export NEW_MAX_ATTEMPTS=7
+export AMENDED_PLAN_SHA256=PASTE_INDEPENDENTLY_REVIEWED_AMENDMENT_HASH
+export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
+JUDGE_ARGS=(
+  --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
+  --expected-model-key "$MODEL_KEY"
+  --judge-profile deepseek-v3.2-direct
+  --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
+  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
+  --max-attempts "$NEW_MAX_ATTEMPTS"
+  --max-retry-after 300
+)
+test "${#AMENDED_PLAN_SHA256}" -eq 64
+test -n "${OPENROUTER_API_KEY:-}"
+python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" \
+  --expected-plan-sha256 "$AMENDED_PLAN_SHA256" \
+  --amend-attempt-ceiling \
+  --yes
+```
+
+If the exhausted attempt is a malformed paid response, include both explicit
+authorizations on the amended paid command:
+
+```bash
+export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
+export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
+export MODEL_KEY=qwen32
+export NEW_MAX_ATTEMPTS=7
+export AMENDED_PLAN_SHA256=PASTE_INDEPENDENTLY_REVIEWED_AMENDMENT_HASH
+export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
+JUDGE_ARGS=(
+  --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
+  --expected-model-key "$MODEL_KEY"
+  --judge-profile deepseek-v3.2-direct
+  --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
+  --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
+  --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
+  --output "$MODEL_JUDGE_ROOT/judgments.jsonl"
+  --max-attempts "$NEW_MAX_ATTEMPTS"
+  --max-retry-after 300
+)
+test "${#AMENDED_PLAN_SHA256}" -eq 64
+test -n "${OPENROUTER_API_KEY:-}"
+python scripts/judge_figure6_openrouter.py "${JUDGE_ARGS[@]}" \
+  --expected-plan-sha256 "$AMENDED_PLAN_SHA256" \
+  --amend-attempt-ceiling \
+  --rescore-paid-errors \
+  --yes
+```
+
+`Retry-After` is honored exactly; the hashed 300-second cap fails instead of
+truncating a longer provider delay. Changing concurrency, route, proxy,
+endpoint, response identities, retry cap, template, or any request is a new
+core lifecycle, not a ceiling amendment. A transport timeout after provider
+acceptance remains a small unavoidable duplicate-charge risk.
+
+### Legacy paper-judge OpenAI Batch path
 
 This stage is deliberately outside Slurm. The generation jobs contain no paid
 judge submission and do not need `OPENAI_API_KEY`. Obtain the paper judge
@@ -352,7 +650,6 @@ mkdir -p "$FIGURE6_JUDGE_ROOT"
 
 python -m ctm_data.adapters.eval_awareness.figure6_judge create \
   --generations \
-    "$FIGURE6_OUTPUT_ROOT/qwen36/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/qwen32/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/qwen_mo_mid/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/qwen_mo_post/generations.jsonl" \
@@ -428,7 +725,6 @@ After every Batch is completed, collect the verified raw output JSONL files:
 ```bash
 python -m ctm_data.adapters.eval_awareness.figure6_judge collect \
   --generations \
-    "$FIGURE6_OUTPUT_ROOT/qwen36/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/qwen32/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/qwen_mo_mid/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/qwen_mo_post/generations.jsonl" \
@@ -448,28 +744,122 @@ It refuses to overwrite an existing output.
 
 ## 8. Strict aggregation and plotting
 
-Run strict aggregation first. It rejects incomplete/duplicate matrices,
+The approved current scope is exactly `qwen32`, `qwen_mo_mid`, and
+`qwen_mo_post`; `qwen36` and all Llama checkpoints are intentionally deferred.
+This is a strict, complete 16,200-row subset (5,400 judgments per selected
+model), not the full seven-model Figure 6 reproduction. Run strict aggregation
+first. It rejects incomplete/duplicate matrices,
 unsuccessful generation or judge records, missing reasoning traces, mixed
 provenance, and any denominator other than 300 per model/valence/condition
 cell:
 
 ```bash
 python -m ctm_data.adapters.eval_awareness.figure6_analysis \
-  --judgments "$FIGURE6_JUDGE_ROOT/judgments.jsonl" \
+  --judgments \
+    "$FIGURE6_JUDGE_ROOT/qwen32/judgments.jsonl" \
+    "$FIGURE6_JUDGE_ROOT/qwen_mo_mid/judgments.jsonl" \
+    "$FIGURE6_JUDGE_ROOT/qwen_mo_post/judgments.jsonl" \
+  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen32/openrouter-manifest.json" \
+  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen_mo_mid/openrouter-manifest.json" \
+  --judge-manifest "$FIGURE6_JUDGE_ROOT/qwen_mo_post/openrouter-manifest.json" \
+  --expected-model-key qwen32 \
+  --expected-model-key qwen_mo_mid \
+  --expected-model-key qwen_mo_post \
+  --expected-judge-profile deepseek-v3.2-direct \
   --output-csv "$FIGURE6_JUDGE_ROOT/figure6-aggregation.csv" \
   --summary-json "$FIGURE6_JUDGE_ROOT/figure6-summary.json"
 
 python -m ctm_data.adapters.eval_awareness.figure6_plot \
   --input-csv "$FIGURE6_JUDGE_ROOT/figure6-aggregation.csv" \
   --summary-json "$FIGURE6_JUDGE_ROOT/figure6-summary.json" \
-  --output-prefix "$FIGURE6_JUDGE_ROOT/figure6-reproduction"
+  --output-prefix "$FIGURE6_JUDGE_ROOT/figure6-qwen-only-reproduction"
 ```
 
-Publication-mode plotting accepts only a complete 37,800-record strict
-summary. The output is a computed reproduction from the supplied artifacts,
-not paper result data. Preserve the artifact, seven generation logs and their
-provenance/selection sidecars, batch manifest and approval record, raw batch
-outputs, normalized judgments, summary, CSV, PNG, and PDF together.
+Strict plotting derives the selected model order from the analysis summary and
+accepts this scope only when all three selected registered Qwen models have
+exactly 5,400 valid judgments (16,200 total). Strict DeepSeek-profile analysis recomputes every judgment
+file digest, validates its unique `run_completed` event and approval, walks the
+reviewed ceiling-amendment chain, binds every row to its planned custom ID and
+generation digest, and checks the exact direct route, provider routing, reasoning/JSON settings, requested
+and response model identities, provider request/response IDs, and plan hashes.
+It fails closed if any judgment file, manifest, or evidence file is absent,
+extra, mismatched, or tampered. Plotting automatically labels the title and source
+note with both `Qwen-only subset (3 of 7 models; 16,200 strict judgments)` and
+`OpenRouter DeepSeek V3.2 alternative judge`; custom title/source text is rejected if it
+omits either exact label. The output is complete only for the requested subset,
+not the full seven-model paper reproduction or paper result data. Preserve the
+artifact, three selected Qwen generation logs and their provenance/selection sidecars,
+OpenRouter manifests and durable attempt logs, normalized judgments, summary,
+CSV, PNG, and PDF together. Direct-mode strict analysis rejects route evidence.
+
+Omitting all three `--expected-model-key` options preserves the original strict
+seven-model default: 37,800 judgments and 126 aggregate cells.
+
+## 9. Archive and hand off without deleting audit material
+
+Create a new handoff directory; never reuse or clean an older handoff. Copy,
+do not move, the original generation histories and sidecars, the exact judge
+template, every reviewed dry
+plan, append-only attempt log, manifest, per-model judgment output, combined
+analysis/plot outputs, and both detached commit identities. Preserve failed
+attempts and superseded plan hashes—they are part of the audit trail:
+
+```bash
+export FIGURE6_HANDOFF_ROOT=/absolute/local/path/figure6-handoffs
+export FIGURE6_HANDOFF="$FIGURE6_HANDOFF_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-qwen-deepseek"
+mkdir -p "$FIGURE6_HANDOFF/generations" "$FIGURE6_HANDOFF/judge" \
+  "$FIGURE6_HANDOFF/results" "$FIGURE6_HANDOFF/source-identities"
+
+for MODEL_KEY in qwen32 qwen_mo_mid qwen_mo_post; do
+  mkdir -p "$FIGURE6_HANDOFF/generations/$MODEL_KEY" \
+    "$FIGURE6_HANDOFF/judge/$MODEL_KEY"
+  cp -a "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl" \
+    "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl.provenance.json" \
+    "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl.selections.jsonl" \
+    "$FIGURE6_HANDOFF/generations/$MODEL_KEY/"
+  cp -a "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/openrouter-attempts.jsonl" \
+    "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/openrouter-manifest.json" \
+    "$FIGURE6_JUDGE_ROOT/$MODEL_KEY"/plan.*.json \
+    "$FIGURE6_JUDGE_ROOT/$MODEL_KEY/judgments.jsonl" \
+    "$FIGURE6_HANDOFF/judge/$MODEL_KEY/"
+done
+
+cp -a "$FIGURE6_JUDGE_TEMPLATE_PATH" "$FIGURE6_HANDOFF/source-identities/"
+: "${FIGURE6_JUDGE_PROFILE:?export the exact registered profile used by all three manifests}"
+if test "$FIGURE6_JUDGE_PROFILE" = muse-spark-1.1-us-proxy; then
+  : "${ROUTE_EVIDENCE:?Muse handoff requires the exact route-evidence JSON}"
+  : "${VAST_CONSOLE_EVIDENCE:?Muse handoff requires the sanitized console evidence}"
+  test -f "$ROUTE_EVIDENCE"
+  test -f "$VAST_CONSOLE_EVIDENCE"
+  cp -a "$ROUTE_EVIDENCE" "$VAST_CONSOLE_EVIDENCE" \
+    "$FIGURE6_HANDOFF/source-identities/"
+elif test "$FIGURE6_JUDGE_PROFILE" != deepseek-v3.2-direct; then
+  printf 'Unexpected handoff judge profile: %s\n' "$FIGURE6_JUDGE_PROFILE" >&2
+  exit 1
+fi
+cp -a "$FIGURE6_JUDGE_ROOT/figure6-aggregation.csv" \
+  "$FIGURE6_JUDGE_ROOT/figure6-summary.json" \
+  "$FIGURE6_JUDGE_ROOT/figure6-qwen-only-reproduction.png" \
+  "$FIGURE6_JUDGE_ROOT/figure6-qwen-only-reproduction.pdf" \
+  "$FIGURE6_HANDOFF/results/"
+
+git -C "$FIGURE6_CODE_LOCAL" rev-parse HEAD \
+  > "$FIGURE6_HANDOFF/source-identities/repository-commit.txt"
+git -C "$FIGURE6_UPSTREAM_CODE_LOCAL" rev-parse HEAD \
+  > "$FIGURE6_HANDOFF/source-identities/upstream-commit.txt"
+find "$FIGURE6_HANDOFF" -type f ! -name SHA256SUMS -print0 | sort -z | \
+  xargs -0 shasum -a 256 > "$FIGURE6_HANDOFF/SHA256SUMS"
+```
+
+Verify the copied row counts (5,400 judgments per Qwen model), rerun strict
+analysis from the handoff copies, verify `SHA256SUMS`, and hand off the whole
+directory read-only. If the optional Muse profile was used, stop its tunnel
+only after all judging, verification, and copying finishes:
+
+```bash
+ssh -S "$FIGURE6_CONTROL_SOCKET" -O exit \
+  -p "$VAST_SSH_PORT" "root@$VAST_SSH_HOST"
+```
 
 ## Isambard capacity caveat
 

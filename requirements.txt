@@ -1,5 +1,6 @@
 # Complete development and experiment environment.
 openai>=2.45.0
+httpx[socks]>=0.28.1
 inspect-ai>=0.3.245
 # Inspect currently requires Click <8.2.2, while newer Hub releases require
 # Click >=8.4. Pin the last compatible Hub line used by tinker-cookbook.

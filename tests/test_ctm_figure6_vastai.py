@@ -127,6 +127,10 @@ def test_vast_runner_uses_pins_local_endpoint_and_append_only_resume():
     assert "--max-model-len 8192" in runner
     assert "VLLM_ARGS+=(--reasoning-parser qwen3)" in runner
     assert "VLLM_ARGS+=(--language-model-only)" in runner
+    assert 'if [[ "$MODEL_KEY" == qwen36 ]]' in runner
+    assert "VLLM_ARGS+=(--max-num-seqs 256)" in runner
+    assert 'if [[ "$MODEL_KEY" == llama_mo_post ]]' in runner
+    assert "VLLM_ARGS+=(--enforce-eager)" in runner
     assert 'vllm "${VLLM_ARGS[@]}" >> "$SERVER_LOG" 2>&1 &' in runner
     assert '--output "$GENERATION_LOG"' in runner
     assert "--api-key-env FIGURE6_LOCAL_ENDPOINT_TOKEN" in runner

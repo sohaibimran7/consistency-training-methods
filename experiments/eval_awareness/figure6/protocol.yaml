@@ -40,6 +40,18 @@ workload:
   generations_per_model: 5400
   model_count: 7
   total_generations: 37800
+  approved_current_scope:
+    model_keys:
+      - qwen32
+      - qwen_mo_mid
+      - qwen_mo_post
+    model_count: 3
+    total_generations: 16200
+    deferred_model_keys:
+      - qwen36
+      - llama33
+      - llama_mo_mid
+      - llama_mo_post
 
 generation:
   temperature: 0.3
@@ -56,3 +68,71 @@ judge:
   execution_stage: manual_paid_external
   submitted_by_gpu_jobs: false
   approval_required_before_submission: true
+  provider: OpenRouter
+  profile: deepseek-v3.2-direct
+  model: deepseek/deepseek-v3.2
+  allowed_response_models:
+    - deepseek/deepseek-v3.2
+  endpoint: https://openrouter.ai/api/v1/chat/completions
+  api_shape: /api/v1/chat/completions
+  route_mode: direct
+  proxy_policy: prohibited; httpx trust_env disabled
+  route_attestation_required: false
+  temperature: 0.0
+  max_tokens: 4096
+  concurrency: 24
+  max_attempts_per_generation: 5
+  max_retry_after: 300
+  provider_routing:
+    allow_fallbacks: false
+    data_collection: deny
+    require_parameters: true
+    sort: price
+  reasoning:
+    enabled: false
+  response_format:
+    type: json_object
+  prompt_sha256: e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
+  result_label: user_pinned_alternative_judge
+  access_region: no region attestation required for direct mode
+  paid_confirmation_flag: --yes
+  deterministic_plan_sha256_required: true
+  plan_hash_fields:
+    - exact_request_protocols
+    - exact_registered_model_scope
+    - judge_profile
+    - temperature
+    - concurrency
+    - max_attempts_per_generation
+    - max_retry_after
+    - proxy
+    - route_mode
+    - provider_routing
+    - reasoning
+    - response_format
+  malformed_paid_response_rescore_flag: --rescore-paid-errors
+  exhausted_retry_amendment_flag: --amend-attempt-ceiling
+  retry_amendment_policy: reviewed strictly higher ceiling only; preserve all attempts and successes
+  matrix_policy: one or more explicit keys from qwen32, qwen_mo_mid, qwen_mo_post; exactly 5400 generations per key before any paid request; qwen36 is not authorized
+  execution_policy: one independent lifecycle per completed selected Qwen model, then strict three-model combination
+  muse_us_proxy_alternate:
+    profile: muse-spark-1.1-us-proxy
+    model: meta/muse-spark-1.1
+    proxy_policy: exactly socks5h://127.0.0.1:1080 with trust_env disabled
+    evidence_policy: exact evidence bytes are mandatory; schema, fields, exit IP, US country, and socks5h scheme are validated
+    route_provenance:
+      vast_instance_id: "46276309"
+      ssh_host: ssh3.vast.ai
+      ssh_port: 36308
+      country_code: US
+      ssh_control_socket: /private/tmp/figure6-vast-a-socks-control
+      ssh_options:
+        ExitOnForwardFailure: true
+        ServerAliveInterval: 30
+        ServerAliveCountMax: 3
+      control_check_required: true
+      sanitized_evidence_sha256_in_plan: true
+  single_writer_policy: OS flock held across history, requests, attempts, and final output
+  strict_analysis_policy: exactly three per-model judgment files and manifests must match reviewed run_completed events for the selected profile; direct mode rejects route evidence
+  plot_label: OpenRouter DeepSeek V3.2 alternative judge
+  note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge.

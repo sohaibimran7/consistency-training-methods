@@ -314,6 +314,17 @@ fi
 if [[ "$LANGUAGE_MODEL_ONLY" == true ]]; then
     VLLM_ARGS+=(--language-model-only)
 fi
+if [[ "$MODEL_KEY" == qwen36 ]]; then
+    # Qwen3.6 has one recurrent-state cache block per decode sequence. vLLM's
+    # H100 default of 1024 exceeds the blocks available after loading this
+    # checkpoint; 256 remains far above the fixed generation concurrency 10.
+    VLLM_ARGS+=(--max-num-seqs 256)
+fi
+if [[ "$MODEL_KEY" == llama_mo_post ]]; then
+    # CUDA-graph capture for this checkpoint faults on the two H100 PCIe host;
+    # eager execution keeps the same model and sampling protocol.
+    VLLM_ARGS+=(--enforce-eager)
+fi
 
 printf '\n[%s] starting %s on GPUs %s, port %s\n' "$RUN_TAG" "$MODEL_KEY" "$GPU_LIST" "$VLLM_PORT" >> "$SERVER_LOG"
 echo "Starting pinned $MODEL_KEY server on assigned GPUs $GPU_LIST (TP=$TENSOR_PARALLEL_SIZE)."
