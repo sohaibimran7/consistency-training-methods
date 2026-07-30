@@ -251,7 +251,7 @@ def test_success_writes_durable_attempt_and_normalized_output(tmp_path: Path) ->
     assert observed[0]["model"] == scorer.DEFAULT_OPENROUTER_JUDGE_MODEL
     assert observed[0]["max_tokens"] == 4096
     assert observed[0]["temperature"] == 0.0
-    assert observed[0]["reasoning"] == {"enabled": False}
+    assert observed[0]["reasoning"] == {"effort": "low", "exclude": True}
     assert observed[0]["response_format"] == {"type": "json_object"}
     assert observed[0]["messages"] == [
         {"role": "system", "content": "Task: Do the task\nReasoning: I considered it.\nAnswer: Done"}
@@ -854,6 +854,7 @@ def test_public_dry_plan_binds_exact_scope_concurrency_retry_cap_and_route(tmp_p
         scorer.GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL,
     ]
     assert summary["provider_routing"]["sort"] == "throughput"
+    assert summary["reasoning"] == {"effort": "low", "exclude": True}
     assert summary["route"] is None
     assert summary["route_mode"] == "direct"
     assert len(summary["plan_sha256"]) == 64

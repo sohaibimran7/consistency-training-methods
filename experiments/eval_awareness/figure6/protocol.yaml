@@ -90,7 +90,8 @@ judge:
     require_parameters: true
     sort: throughput
   reasoning:
-    enabled: false
+    effort: low
+    exclude: true
   response_format:
     type: json_object
   prompt_sha256: e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
