@@ -1608,12 +1608,10 @@ async def _judge_generations(
             created_client = True
         request_client = client
         semaphore = asyncio.Semaphore(concurrency)
-        append_lock = asyncio.Lock()
         permanent_failure = asyncio.Event()
 
-        async def append(row: Mapping[str, Any]) -> None:
-            async with append_lock:
-                _append_attempt(attempt_path, row)
+        def append(row: Mapping[str, Any]) -> None:
+            _append_attempt(attempt_path, row)
 
         async def score(custom_id: str) -> tuple[str, dict[str, Any]]:
             generation = by_id[custom_id]
@@ -1770,7 +1768,7 @@ async def _judge_generations(
                                 "approval_index": approval_index,
                                 "paid_error_attempts": list(paid_attempt_numbers),
                             }
-                        await append(success_row)
+                        append(success_row)
                         return custom_id, judgment
                 except httpx.TransportError as exc:
                     retryable = True
@@ -1806,7 +1804,7 @@ async def _judge_generations(
                         "approval_index": approval_index,
                         "paid_error_attempts": list(paid_attempt_numbers),
                     }
-                await append(row)
+                append(row)
                 if response is not None and response.status_code in PERMANENT_ACCOUNT_HTTP_STATUSES:
                     raise PermanentOpenRouterError(
                         f"OpenRouter account request failed with HTTP {response.status_code}"
@@ -1833,19 +1831,61 @@ async def _judge_generations(
                 await sleep(delay)
             raise AssertionError("unreachable")
 
-        results: list[tuple[str, dict[str, Any]]] = []
         try:
-            for offset in range(0, len(pending_ids), concurrency):
-                chunk = pending_ids[offset : offset + concurrency]
-                outcomes = await asyncio.gather(
-                    *(score(custom_id) for custom_id in chunk),
-                    return_exceptions=True,
-                )
-                failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
-                results.extend(outcome for outcome in outcomes if not isinstance(outcome, BaseException))
-                if failures:
-                    raise failures[0]
-            successes.update(dict(results))
+            next_pending_index = 0
+            in_flight: dict[asyncio.Task[tuple[str, dict[str, Any]]], int] = {}
+            failures: list[tuple[int, BaseException]] = []
+            permanent_failures: list[tuple[int, PermanentOpenRouterError]] = []
+            fatal_failures: list[tuple[int, BaseException]] = []
+
+            def launch_available() -> None:
+                nonlocal next_pending_index
+                while (
+                    next_pending_index < len(pending_ids)
+                    and len(in_flight) < concurrency
+                    and not permanent_failure.is_set()
+                    and not permanent_failures
+                    and not fatal_failures
+                ):
+                    task = asyncio.create_task(score(pending_ids[next_pending_index]))
+                    in_flight[task] = next_pending_index
+                    next_pending_index += 1
+
+            try:
+                launch_available()
+                while in_flight:
+                    done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+                    completed: list[tuple[int, tuple[str, dict[str, Any]] | BaseException]] = []
+                    for task in done:
+                        pending_index = in_flight.pop(task)
+                        try:
+                            completed.append((pending_index, task.result()))
+                        except BaseException as exc:
+                            completed.append((pending_index, exc))
+                    for pending_index, outcome in sorted(completed, key=lambda item: item[0]):
+                        if isinstance(outcome, PermanentOpenRouterError):
+                            permanent_failures.append((pending_index, outcome))
+                        elif isinstance(outcome, OpenRouterJudgeError):
+                            failures.append((pending_index, outcome))
+                        elif isinstance(outcome, BaseException):
+                            fatal_failures.append((pending_index, outcome))
+                        else:
+                            custom_id, judgment = outcome
+                            successes[custom_id] = judgment
+                    launch_available()
+            finally:
+                if in_flight:
+                    unfinished = list(in_flight)
+                    for task in unfinished:
+                        task.cancel()
+                    await asyncio.gather(*unfinished, return_exceptions=True)
+                    in_flight.clear()
+            if permanent_failures:
+                raise min(permanent_failures, key=lambda item: item[0])[1]
+            if fatal_failures:
+                raise min(fatal_failures, key=lambda item: item[0])[1]
+            if failures:
+                raise min(failures, key=lambda item: item[0])[1]
             if set(successes) != set(by_id):
                 raise OpenRouterJudgeError("judge run ended without one success per generation")
             judgments = [successes[custom_id] for custom_id in sorted(successes)]

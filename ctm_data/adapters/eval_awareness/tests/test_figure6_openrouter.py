@@ -76,6 +76,22 @@ def _generation() -> dict[str, Any]:
     }
 
 
+def _generations(count: int) -> list[dict[str, Any]]:
+    generations: list[dict[str, Any]] = []
+    for index in range(count):
+        generation = _generation()
+        generation.update(
+            {
+                "condition_id": f"safety-unit-{index}-baseline",
+                "pair_id": f"unit-{index}",
+                "task_id": f"safety-unit-{index}",
+                "prompt": f"Do task {index}",
+            }
+        )
+        generations.append(generation)
+    return generations
+
+
 def _qwen_matrix(model_keys: tuple[str, ...]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for model_key in model_keys:
@@ -215,6 +231,42 @@ def _run(tmp_path: Path, client: httpx.AsyncClient | None, **kwargs: Any) -> dic
     )
 
 
+async def _run_many(
+    tmp_path: Path,
+    generations: list[dict[str, Any]],
+    client: httpx.AsyncClient,
+    *,
+    concurrency: int,
+    max_attempts: int = 1,
+) -> dict[str, Any]:
+    common = {
+        "template": TEMPLATE,
+        "attempt_log_path": tmp_path / "attempts.jsonl",
+        "output_path": tmp_path / "judgments.jsonl",
+        "judge_template_sha256": TEMPLATE_SHA256,
+        "judge_profile": scorer.GPT_OSS_120B_NITRO_DIRECT_PROFILE,
+        "concurrency": concurrency,
+        "max_attempts": max_attempts,
+        "_enforce_exact_paid_matrix": False,
+        "_enforce_registered_profile": False,
+    }
+    plan = await scorer._judge_generations(generations, api_key=None, dry_run=True, **common)
+    return await scorer._judge_generations(
+        generations,
+        api_key="test-key",
+        confirm_paid=True,
+        expected_plan_sha256=plan["plan_sha256"],
+        client=client,
+        **common,
+    )
+
+
+def _request_task_index(request: httpx.Request) -> int:
+    body = json.loads(request.content)
+    prompt = body["messages"][0]["content"]
+    return int(prompt.splitlines()[0].removeprefix("Task: Do task "))
+
+
 def test_dry_run_needs_no_key_and_writes_nothing(tmp_path: Path) -> None:
     summary = asyncio.run(
         scorer._judge_generations(
@@ -313,6 +365,154 @@ def test_permanent_geographic_error_fails_without_retry(tmp_path: Path) -> None:
     assert attempt["status"] == "error"
     assert attempt["retryable"] is False
     assert not (tmp_path / "judgments.jsonl").exists()
+
+
+def test_rolling_scheduler_never_exceeds_concurrency(tmp_path: Path) -> None:
+    generations = _generations(7)
+    active = 0
+    max_active = 0
+    max_score_tasks = 0
+
+    async def scenario() -> dict[str, Any]:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal active, max_active, max_score_tasks
+            active += 1
+            max_active = max(max_active, active)
+            score_tasks = sum(task.get_coro().__qualname__.endswith(".<locals>.score") for task in asyncio.all_tasks())
+            max_score_tasks = max(max_score_tasks, score_tasks)
+            try:
+                await asyncio.sleep(0.01)
+                return _success_response(request)
+            finally:
+                active -= 1
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _run_many(tmp_path, generations, client, concurrency=3)
+
+    summary = asyncio.run(scenario())
+    assert max_active == 3
+    assert max_score_tasks == 3
+    assert summary["completed"] == len(generations)
+    assert len((tmp_path / "attempts.jsonl").read_text().splitlines()) == len(generations)
+
+
+def test_rolling_scheduler_progresses_past_a_straggler(tmp_path: Path) -> None:
+    generations = _generations(5)
+    ordered = sorted(generations, key=scorer.custom_id_for_generation)
+    straggler_index = int(ordered[0]["prompt"].removeprefix("Do task "))
+    initial_indexes = {int(generation["prompt"].removeprefix("Do task ")) for generation in ordered[:2]}
+    release_straggler = asyncio.Event()
+    rolled_past_initial = asyncio.Event()
+
+    async def scenario() -> tuple[dict[str, Any], bool]:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            index = _request_task_index(request)
+            if index == straggler_index:
+                await release_straggler.wait()
+            elif index not in initial_indexes:
+                rolled_past_initial.set()
+            return _success_response(request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            run = asyncio.create_task(_run_many(tmp_path, generations, client, concurrency=2))
+            try:
+                await asyncio.wait_for(rolled_past_initial.wait(), timeout=1.0)
+                progressed = True
+            except TimeoutError:
+                progressed = False
+            release_straggler.set()
+            return await run, progressed
+
+    summary, progressed = asyncio.run(scenario())
+    assert progressed is True
+    assert summary["completed"] == len(generations)
+
+
+def test_ordinary_failure_is_quarantined_until_other_ids_finish_and_run_fails_closed(tmp_path: Path) -> None:
+    generations = _generations(5)
+    ordered = sorted(generations, key=scorer.custom_id_for_generation)
+    failing_index = int(ordered[0]["prompt"].removeprefix("Do task "))
+    seen: list[int] = []
+
+    async def scenario() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            index = _request_task_index(request)
+            seen.append(index)
+            if index == failing_index:
+                return httpx.Response(400, request=request, json={"error": "bad request"})
+            return _success_response(request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(scorer.OpenRouterJudgeError, match="non-retryable judge failure"):
+                await _run_many(tmp_path, generations, client, concurrency=2)
+
+    asyncio.run(scenario())
+    attempts = [json.loads(line) for line in (tmp_path / "attempts.jsonl").read_text().splitlines()]
+    assert set(seen) == set(range(len(generations)))
+    assert sum(attempt["status"] == "success" for attempt in attempts) == len(generations) - 1
+    assert sum(attempt["status"] == "error" for attempt in attempts) == 1
+    assert not (tmp_path / "judgments.jsonl").exists()
+    manifest = json.loads((tmp_path / "attempts.jsonl.manifest.json").read_text())
+    assert manifest["events"][-1]["event"] == "run_failed"
+
+
+def test_permanent_failure_stops_refill_but_preserves_in_flight_success(tmp_path: Path) -> None:
+    generations = _generations(6)
+    ordered = sorted(generations, key=scorer.custom_id_for_generation)
+    permanent_index = int(ordered[0]["prompt"].removeprefix("Do task "))
+    companion_index = int(ordered[1]["prompt"].removeprefix("Do task "))
+    companion_started = asyncio.Event()
+    permanent_response_ready = asyncio.Event()
+    seen: list[int] = []
+
+    async def scenario() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            index = _request_task_index(request)
+            seen.append(index)
+            if index == permanent_index:
+                await companion_started.wait()
+                permanent_response_ready.set()
+                return httpx.Response(403, request=request, json={"error": "account blocked"})
+            if index == companion_index:
+                companion_started.set()
+                await permanent_response_ready.wait()
+                await asyncio.sleep(0.01)
+                return _success_response(request)
+            raise AssertionError(f"scheduler launched unexpected paid request {index}")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(scorer.PermanentOpenRouterError, match="HTTP 403"):
+                await _run_many(tmp_path, generations, client, concurrency=2)
+
+    asyncio.run(scenario())
+    attempts = [json.loads(line) for line in (tmp_path / "attempts.jsonl").read_text().splitlines()]
+    assert set(seen) == {permanent_index, companion_index}
+    assert sorted(attempt["status"] for attempt in attempts) == ["error", "success"]
+    assert not (tmp_path / "judgments.jsonl").exists()
+
+
+def test_rolling_scheduler_normalized_output_is_deterministic(tmp_path: Path) -> None:
+    generations = _generations(3)
+
+    async def execute(run_path: Path, delays: dict[int, float]) -> tuple[dict[str, Any], list[int]]:
+        finished: list[int] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            index = _request_task_index(request)
+            await asyncio.sleep(delays[index])
+            finished.append(index)
+            return _success_response(request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            summary = await _run_many(run_path, generations, client, concurrency=3)
+        return summary, finished
+
+    first_summary, first_finished = asyncio.run(execute(tmp_path / "first", {0: 0.03, 1: 0.02, 2: 0.01}))
+    second_summary, second_finished = asyncio.run(execute(tmp_path / "second", {0: 0.01, 1: 0.02, 2: 0.03}))
+    assert first_finished == [2, 1, 0]
+    assert second_finished == [0, 1, 2]
+    assert first_summary["plan_sha256"] == second_summary["plan_sha256"]
+    assert (tmp_path / "first/judgments.jsonl").read_bytes() == (tmp_path / "second/judgments.jsonl").read_bytes()
 
 
 def test_completed_run_resumes_without_another_paid_call(tmp_path: Path) -> None:
