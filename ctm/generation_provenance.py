@@ -9,56 +9,25 @@ boundary without depending on a provider SDK.
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
-import re
-import unicodedata
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from typing import Any
 
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-
-
-class _CanonicalJsonError(ValueError):
-    """A value cannot be represented in the canonical JSON identity form."""
-
-
-def _normalize_text(value: str) -> str:
-    if not isinstance(value, str):
-        raise _CanonicalJsonError("text values must be strings")
-    return unicodedata.normalize("NFC", value).replace("\r\n", "\n").replace("\r", "\n").strip()
-
-
-def _normalize_json(value: Any) -> Any:
-    if isinstance(value, str):
-        return _normalize_text(value)
-    if isinstance(value, Mapping):
-        return {str(key): _normalize_json(item) for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))}
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        return [_normalize_json(item) for item in value]
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    raise _CanonicalJsonError(f"unsupported JSON value for stable identity: {type(value).__name__}")
-
-
-def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-def _sha256_bytes(payload: bytes) -> str:
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _sha256_json(value: Any) -> str:
-    return _sha256_bytes(_canonical_json(value).encode("utf-8"))
-
-
-def _require_sha256(value: Any, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise _CanonicalJsonError(f"{field} must be a lowercase SHA-256 digest")
-    return value
-
+from ctm.identity import (
+    IdentityValueError as _CanonicalJsonError,
+)
+from ctm.identity import (
+    normalize_json as _normalize_json,
+)
+from ctm.identity import (
+    require_sha256 as _require_sha256,
+)
+from ctm.identity import (
+    sha256_bytes as _sha256_bytes,
+)
+from ctm.identity import (
+    sha256_json as _sha256_json,
+)
 
 PROVENANCE_SCHEMA_VERSION = 1
 FRESH_SELF_GENERATED = "fresh_self_generated"

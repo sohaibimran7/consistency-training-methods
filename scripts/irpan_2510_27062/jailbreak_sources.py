@@ -8,12 +8,11 @@ additional immutable source identity.
 
 from __future__ import annotations
 
-import csv
-import json
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from ctm_data.sources import SourceRowError, load_local_rows
 from scripts.irpan_2510_27062.artifacts import (
     producer_identity,
     require_local_artifact,
@@ -54,21 +53,14 @@ def read_local_harmbench_export(path: str | Path) -> list[dict[str, Any]]:
     source = require_source("harmbench")
     target = require_local_artifact(path, source_key=source.key, acquisition_url=source.official_url)
     suffix = target.suffix.lower()
-    if suffix in {".jsonl", ".ndjson"}:
-        rows = _read_jsonl(target)
-    elif suffix == ".json":
-        try:
-            decoded = json.loads(target.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise HarmBenchSourceError(f"invalid JSON in {target}: {exc}") from exc
-        if not isinstance(decoded, list) or not all(isinstance(row, dict) for row in decoded):
-            raise HarmBenchSourceError(f"{target} must contain a JSON array of objects")
-        rows = [dict(row) for row in decoded]
-    elif suffix == ".csv":
-        with target.open(encoding="utf-8", newline="") as handle:
-            rows = [dict(row) for row in csv.DictReader(handle)]
-    else:
+    formats = {".jsonl": "jsonl", ".ndjson": "jsonl", ".json": "json", ".csv": "csv"}
+    source_format = formats.get(suffix)
+    if source_format is None:
         raise HarmBenchSourceError(f"unsupported HarmBench export format {suffix!r}; use .jsonl, .json, or .csv")
+    try:
+        rows = load_local_rows(target, format=source_format).rows
+    except SourceRowError as exc:
+        raise HarmBenchSourceError(str(exc)) from exc
     if not rows:
         raise HarmBenchSourceError(f"HarmBench export contains no rows: {target}")
     return rows
@@ -236,21 +228,6 @@ def materialize_harmbench_source(
             "partition_reconstruction": partition_provenance,
         },
     )
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            decoded = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise HarmBenchSourceError(f"invalid JSON in {path} line {line_number}: {exc}") from exc
-        if not isinstance(decoded, dict):
-            raise HarmBenchSourceError(f"{path} line {line_number} must be a JSON object")
-        rows.append(decoded)
-    return rows
 
 
 def _nonempty(value: Any, *, field: str) -> str:

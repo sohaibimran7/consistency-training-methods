@@ -2,18 +2,31 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
-import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from ctm.identity import (
+    IdentityValueError,
+    canonical_json,
+    sha256_bytes,
+    sha256_json,
+    sha256_text,
+)
+from ctm.identity import (
+    normalize_json as _normalize_json,
+)
+from ctm.identity import (
+    normalize_text as _normalize_text,
+)
+from ctm.identity import (
+    require_sha256 as _require_sha256,
+)
 
 PAPER_ID = "irpan_2510_27062"
 ARTIFACT_SCHEMA = f"ctm_data.{PAPER_ID}"
 SCHEMA_VERSION = 1
 
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -21,50 +34,29 @@ class RecordSchemaError(ValueError):
     """A reproduction row is malformed or its recorded digest is stale."""
 
 
-def canonical_json(value: Any) -> str:
-    """Return the one canonical JSON encoding used for all identities."""
-
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-def sha256_bytes(payload: bytes) -> str:
-    return hashlib.sha256(payload).hexdigest()
-
-
-def sha256_text(value: str) -> str:
-    return sha256_bytes(value.encode("utf-8"))
-
-
-def sha256_json(value: Any) -> str:
-    return sha256_text(canonical_json(value))
-
-
 def normalize_text(value: str) -> str:
-    """Normalize text for stable IDs without changing internal whitespace."""
+    """Apply the shared identity contract with a paper-schema error type."""
 
-    if not isinstance(value, str):
-        raise RecordSchemaError("text values must be strings")
-    return unicodedata.normalize("NFC", value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    try:
+        return _normalize_text(value)
+    except (IdentityValueError, TypeError) as exc:
+        raise RecordSchemaError(str(exc)) from exc
 
 
 def normalize_json(value: Any) -> Any:
     """Recursively normalize strings and mapping order for identity material."""
 
-    if isinstance(value, str):
-        return normalize_text(value)
-    if isinstance(value, Mapping):
-        return {str(key): normalize_json(item) for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))}
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        return [normalize_json(item) for item in value]
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    raise RecordSchemaError(f"unsupported JSON value for stable identity: {type(value).__name__}")
+    try:
+        return _normalize_json(value)
+    except (IdentityValueError, TypeError) as exc:
+        raise RecordSchemaError(str(exc)) from exc
 
 
 def require_sha256(value: Any, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise RecordSchemaError(f"{field} must be a lowercase SHA-256 digest")
-    return value
+    try:
+        return _require_sha256(value, field=field)
+    except (IdentityValueError, TypeError) as exc:
+        raise RecordSchemaError(str(exc)) from exc
 
 
 def stable_example_id(source: str, source_key: str, payload: Mapping[str, Any]) -> str:

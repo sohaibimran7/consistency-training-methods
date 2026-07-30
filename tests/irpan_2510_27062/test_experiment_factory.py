@@ -18,7 +18,7 @@ def test_checked_in_specs_expand_all_methods_for_both_domains(path: Path) -> Non
     plan = load_experiment(path)
     training = {entry["name"]: entry for entry in plan["training"]}
 
-    assert len(plan["data_preparation"]) == (10 if path == SMOKE else 8)
+    assert len(plan["data_preparation"]) == (4 if path == SMOKE else 2)
     assert len(training) == 12
     for domain in ("sycophancy", "jailbreak"):
         assert {name.removeprefix(f"{domain}_") for name in training if name.startswith(f"{domain}_")} == {
@@ -42,13 +42,22 @@ def test_pair_view_is_shared_and_bct_uses_only_generated_training_rows() -> None
         }
         assert len(pair_paths) == 1
         pair_path = pair_paths.pop()
-        assert pair_path.endswith("training-pairs.jsonl")
-        rmct_config = training[f"{domain}_rmct"]["args"]["setting_config"]
-        assert rmct_config["training_view_path"] == pair_path
+        assert pair_path == load_experiment_source(FULL)["spec"]["data"][domain]["training_artifact"]
+        rmct = training[f"{domain}_rmct"]["args"]
+        rmct_config = rmct["setting_config"]
+        assert rmct_config["data_path"] == pair_path
+        assert rmct["setting_factory"] == (
+            "ctm_data.adapters.mcq_bias.setting:mcq_correctness_pair_setting"
+            if domain == "sycophancy"
+            else "ctm.settings.pairs:refusal_pair_setting"
+        )
 
         bct_path = training[f"{domain}_bct"]["args"]["data"][0].split(":", 1)[0]
         assert bct_path.endswith("bct-training.jsonl")
         assert bct_path != pair_path
+        preparation = next(entry for entry in plan["data_preparation"] if entry["name"] == f"{domain}-bct-targets")
+        assert preparation["args"]["data_manifest"] == [f"{pair_path}.manifest.json"]
+        assert "responses" not in preparation["args"]
 
 
 def test_validation_uses_candidate_checkpoints_but_final_is_explicit() -> None:
@@ -113,6 +122,10 @@ def test_smoke_training_and_evaluation_commands_are_offline_dry_runs() -> None:
     plan = load_experiment(SMOKE)
     assert "materialize-smoke-fixtures" in plan["data_generation"]["command"]
     assert sum("build-smoke-bct-results" in entry["command"] for entry in plan["data_preparation"]) == 2
+    bct_entries = [
+        entry for entry in plan["data_preparation"] if Path(entry["command"][-1]).name == "prepare_bct_targets.py"
+    ]
+    assert all(entry["args"]["responses_manifest"].endswith(".manifest.json") for entry in bct_entries)
     assert all(entry["args"]["dry_run"] is True for entry in plan["training"])
     assert all(entry["args"]["dry_run"] is True for entry in plan["evaluation"])
     assert all("${training." not in str(entry) for entry in plan["evaluation"])
@@ -148,14 +161,19 @@ def test_factory_rejects_opct_values_that_the_training_config_cannot_accept() ->
         compile_experiment(source)
 
 
-def test_bct_request_and_import_are_bound_to_the_exact_training_model_identity() -> None:
+def test_bct_generation_is_bound_to_the_exact_training_model_identity() -> None:
     plan = load_experiment(FULL)
     preparation = {entry["name"]: entry for entry in plan["data_preparation"]}
     for domain in ("sycophancy", "jailbreak"):
-        request_identity = preparation[f"{domain}-bct-target-requests"]["args"]["generator_identity"]
-        import_identity = preparation[f"{domain}-bct-target-import"]["args"]["generator_identity"]
-        assert request_identity == import_identity
-        assert request_identity["model"] == load_experiment_source(FULL)["spec"]["model"]
+        target_args = preparation[f"{domain}-bct-targets"]["args"]
+        assert target_args["generator_identity"]["model"] == load_experiment_source(FULL)["spec"]["model"]
+        assert "responses" not in target_args
+
+    smoke_plan = load_experiment(SMOKE)
+    smoke_preparation = {entry["name"]: entry for entry in smoke_plan["data_preparation"]}
+    for domain in ("sycophancy", "jailbreak"):
+        target_args = smoke_preparation[f"{domain}-bct-targets"]["args"]
+        assert target_args["responses_manifest"] == f"{target_args['responses']}.manifest.json"
 
     source = load_experiment_source(FULL)
     source["spec"]["training"]["target_generation"]["generator_identity"]["model"] = "different/model"

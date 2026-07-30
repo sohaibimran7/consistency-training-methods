@@ -5,13 +5,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ctm.artifacts import write_atomic_bytes
+from ctm.artifacts import artifact_manifest_path, write_atomic_bytes, write_verified_jsonl_artifact
+from ctm.pairs import canonical_pair_row
 from ctm_data.adapters.mcq_bias.data import file_identity
 from ctm_data.adapters.mcq_bias.dataset_specs import parse_dataset_cli_tokens
+
+PAIR_ARTIFACT_SCHEMA = "ctm.prompt_pairs"
+PAIR_ARTIFACT_SCHEMA_VERSION = 1
 
 
 def interleave_rows(per_file_rows: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -39,9 +43,48 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSON: {exc.msg}") from exc
             if not isinstance(row, dict):
-                raise ValueError(f"{path}:{line_number}: row must be a JSON object")
+                raise TypeError(f"{path}:{line_number}: row must be a JSON object")
             rows.append(row)
     return rows
+
+
+def native_rows_to_prompt_pairs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Adapt native frozen MCQ rows to CTM's reusable flat pair schema."""
+
+    pairs: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, start=1):
+        labels = row.get("option_labels")
+        if not isinstance(labels, list) or len(labels) < 2 or not all(isinstance(label, str) for label in labels):
+            raise ValueError(
+                f"native mcq_bias row {index} has no option_labels; rebuild with a prompt family "
+                "that records its parser contract"
+            )
+        question_id = row.get("question_id")
+        source = row.get("source_dataset")
+        if not isinstance(question_id, str) or not question_id or not isinstance(source, str) or not source:
+            raise ValueError(f"native mcq_bias row {index} has invalid question/source identity")
+        pair = canonical_pair_row(
+            {
+                "pair_id": f"mcq-bias:{row['bias_type']}:{question_id}",
+                "source_id": question_id,
+                "source": source,
+                "reference_messages": row["unbiased_messages"],
+                "variant_messages": row["biased_messages"],
+                "alignment_text": row["question"],
+                "metadata": {
+                    "bias_type": row["bias_type"],
+                    "correct_label": row["ground_truth"],
+                    "biased_option": row["biased_option"],
+                    "valid_labels": labels,
+                    "prompt_family": row.get("prompt_family", "chua"),
+                    "prompt_style": row["prompt_style"],
+                    "wrong_option_seed": row.get("wrong_option_seed"),
+                    "biasing_text": row.get("biasing_text", ""),
+                },
+            }
+        )
+        pairs.append(pair)
+    return pairs
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -65,6 +108,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--generate-missing-arguments", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--manifest-output", type=Path, required=True)
+    parser.add_argument(
+        "--output-format",
+        choices=("native", "prompt_pairs"),
+        default="native",
+        help="Native mcq_bias rows or the shared ctm.prompt_pairs training schema",
+    )
     parser.add_argument("-y", "--yes", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -80,6 +129,11 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--generate-missing-arguments only applies to wrong_argument")
     if args.output.resolve() == args.manifest_output.resolve():
         parser.error("--output and --manifest-output must be different paths")
+    if (
+        args.output_format == "prompt_pairs"
+        and args.manifest_output.resolve() != artifact_manifest_path(args.output).resolve()
+    ):
+        parser.error("prompt_pairs output requires --manifest-output OUTPUT.manifest.json")
     existing = [str(path) for path in (args.output, args.manifest_output) if path.exists()]
     if existing:
         parser.error(f"refusing to overwrite existing output(s): {existing}")
@@ -132,24 +186,44 @@ def main(argv: list[str] | None = None) -> None:
         source_paths.append(source_path)
         per_dataset_rows.append(rows)
 
-    rows = interleave_rows(per_dataset_rows)
+    native_rows = interleave_rows(per_dataset_rows)
+    rows = native_rows_to_prompt_pairs(native_rows) if args.output_format == "prompt_pairs" else native_rows
     payload = b"".join((json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8") for row in rows)
+    selection = {
+        "bias_type": args.bias_type,
+        "datasets": [spec.dataset for spec in dataset_specs],
+        "dataset_specs": [spec.as_dict() for spec in dataset_specs],
+        "prompt_style": args.prompt_style,
+        "prompt_family": args.prompt_family,
+        "wrong_option_seed": args.wrong_option_seed,
+        "n_questions": args.n_questions,
+        "min_n_questions": args.min_n_questions,
+        "seed": args.seed,
+        "argument_model": argument_model,
+    }
+    if args.output_format == "prompt_pairs":
+        manifest = write_verified_jsonl_artifact(
+            args.output,
+            rows,
+            artifact_schema=PAIR_ARTIFACT_SCHEMA,
+            schema_version=PAIR_ARTIFACT_SCHEMA_VERSION,
+            provenance={
+                "kind": "mcq_bias_prompt_pairs",
+                "selection": selection,
+                "sources": [file_identity(path) for path in source_paths],
+                "merge": "round_robin",
+            },
+            row_validator=canonical_pair_row,
+            nonempty=True,
+        )
+        print(f"Materialized {len(rows)} balanced prompt pairs to {args.output}")
+        return
+
     manifest = {
         "schema_version": 1,
         "kind": "mcq_bias_training_selection",
-        "written_at": datetime.now(timezone.utc).isoformat(),
-        "selection": {
-            "bias_type": args.bias_type,
-            "datasets": [spec.dataset for spec in dataset_specs],
-            "dataset_specs": [spec.as_dict() for spec in dataset_specs],
-            "prompt_style": args.prompt_style,
-            "prompt_family": args.prompt_family,
-            "wrong_option_seed": args.wrong_option_seed,
-            "n_questions": args.n_questions,
-            "min_n_questions": args.min_n_questions,
-            "seed": args.seed,
-            "argument_model": argument_model,
-        },
+        "written_at": datetime.now(UTC).isoformat(),
+        "selection": selection,
         "sources": [file_identity(path) for path in source_paths],
         "merge": "round_robin",
         "row_count": len(rows),

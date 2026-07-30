@@ -1,6 +1,7 @@
 """Stable CTM import surface for the canonical upstream dataset specification."""
 
 from mcq_bias.dataset_specs import (
+    SOURCE_FORMATS,
     DatasetInput,
     DatasetSpec,
     normalize_dataset_spec,
@@ -10,6 +11,7 @@ from mcq_bias.dataset_specs import (
 )
 
 __all__ = [
+    "SOURCE_FORMATS",
     "DatasetInput",
     "DatasetSpec",
     "normalize_dataset_spec",

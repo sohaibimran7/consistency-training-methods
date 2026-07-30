@@ -42,4 +42,4 @@ anyio>=3.0.0
 
 # Published multiple-choice bias evaluation and data adapter. For local
 # co-development, install the adjacent checkout in editable mode with no deps.
-mcq-bias @ git+https://github.com/sohaibimran7/mcq-bias@496a09252fa94ccd18d815bd7e45125deae857a3
+mcq-bias @ git+https://github.com/sohaibimran7/mcq-bias@8c0b46b17cbf438958b064554a1375594d6ad4b2

@@ -12,15 +12,16 @@ spec:
 
   data:
     sycophancy:
+      # Produce this ctm.prompt_pairs artifact with the reusable mcq-bias
+      # materializer (`--prompt-family irpan --output-format prompt_pairs`).
       training_artifact: ctm_data/local/irpan-2510-27062/sycophancy-training-pairs.jsonl
-      bct_result_export: ctm_data/local/irpan-2510-27062/sycophancy-bct-results.jsonl
       validation:
         mmlu: ctm_data/local/irpan-2510-27062/mmlu-validation.jsonl
       final:
         mmlu: ctm_data/local/irpan-2510-27062/mmlu-final.jsonl
     jailbreak:
-      training_artifact: ctm_data/local/irpan-2510-27062/jailbreak-act-training.jsonl
-      bct_result_export: ctm_data/local/irpan-2510-27062/jailbreak-bct-results.jsonl
+      # Produce this ctm.prompt_pairs artifact from retained wrapper candidates.
+      training_artifact: ctm_data/local/irpan-2510-27062/jailbreak-training-pairs.jsonl
       validation:
         harmbench: ctm_data/local/irpan-2510-27062/harmbench-validation.jsonl
         or_bench: ctm_data/local/irpan-2510-27062/or-bench-validation.jsonl

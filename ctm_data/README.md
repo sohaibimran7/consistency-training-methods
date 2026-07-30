@@ -41,7 +41,7 @@ Adapters can emit the training-wide pair contract while retaining their own
 flat metadata fields:
 
 ```python
-from ctm_data.pairs import make_pair_row
+from ctm.pairs import make_pair_row
 
 pair = make_pair_row(
     reference_messages=[{"role": "user", "content": clean_prompt}],
@@ -153,10 +153,13 @@ uv run python -m ctm_data.adapters.mcq_bias.materialize \
   --bias-type suggested_answer \
   --datasets mmlu \
     '{"dataset":"allenai/ai2_arc","dataset_config":"ARC-Challenge","split":"validation","revision":"<commit>","question_field":"question","choices_field":"choices","answer_field":"answerKey"}' \
+    '{"dataset":"allenai/openbookqa","dataset_config":"main","split":"validation","revision":"<commit>","question_field":"question_stem","answer_field":"answerKey"}' \
+    '{"dataset":"<loadable-bbh-export>","dataset_config":"logical_deduction_three_objects","split":"train","revision":"<commit>","source_format":"bbh"}' \
   --n-questions 250 \
   --dataset-dir artifacts/mcq_bias/train \
+  --output-format prompt_pairs \
   --output artifacts/data/suggested-answer-pairs.jsonl \
-  --manifest-output artifacts/data/suggested-answer-pairs.manifest.json
+  --manifest-output artifacts/data/suggested-answer-pairs.jsonl.manifest.json
 ```
 
 The same objects can appear directly in experiment YAML. The canonical
@@ -164,6 +167,9 @@ The same objects can appear directly in experiment YAML. The canonical
 stable adapter import and CLI/YAML routing. Plain dataset strings remain
 backward compatible. Source revisions, schema fields, local paths and
 local-file content participate in the upstream frozen-artifact identity.
+The strict `source_format: bbh` preset parses canonical multiple-choice BBH
+`input`/`target` rows with one embedded `Options:` block; non-MCQ subsets and
+ambiguous field overrides fail explicitly.
 For `suggested_answer`, `--prompt-family {chua,irpan}` selects the prompt
 reconstruction and `--wrong-option-seed` optionally salts the deterministic
 incorrect-option choice.
@@ -176,12 +182,13 @@ uv run python scripts/prepare_bct_targets.py \
   --backend local \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --data artifacts/data/wrong-argument-pairs.jsonl \
-  --source-messages-field unbiased_messages \
-  --main-messages-field biased_messages \
-  --control-messages-field unbiased_messages \
+  --data-manifest artifacts/data/wrong-argument-pairs.jsonl.manifest.json \
+  --source-messages-field reference_messages \
+  --main-messages-field variant_messages \
+  --control-messages-field reference_messages \
   --main-output artifacts/data/bct.jsonl \
   --control-output artifacts/data/bct-control.jsonl \
-  --manifest-output artifacts/data/bct-targets.manifest.json
+  --manifest-output artifacts/data/bct.jsonl.manifest.json
 ```
 
 Every source row is validated before the backend is initialized. CTM samples

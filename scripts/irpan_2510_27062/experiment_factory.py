@@ -231,7 +231,9 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     raw_data = _section(spec["data"], "data", set(DOMAINS))
     data: dict[str, dict[str, Any]] = {}
     for domain in DOMAINS:
-        required = {"training_artifact", "bct_result_export", "validation", "final"}
+        required = {"training_artifact", "validation", "final"}
+        if smoke:
+            required.add("bct_result_export")
         section = _section(
             raw_data[domain],
             f"data.{domain}",
@@ -245,12 +247,16 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         final = _section(section["final"], f"data.{domain}.final", _FINAL_KEYS[domain])
         data[domain] = {
             "training_artifact": _path(section["training_artifact"], label=f"data.{domain}.training_artifact"),
-            "bct_result_export": _path(section["bct_result_export"], label=f"data.{domain}.bct_result_export"),
             "validation": {
                 key: _path(value, label=f"data.{domain}.validation.{key}") for key, value in validation.items()
             },
             "final": {key: _path(value, label=f"data.{domain}.final.{key}") for key, value in final.items()},
         }
+        if smoke:
+            data[domain]["bct_result_export"] = _path(
+                section["bct_result_export"],
+                label=f"data.{domain}.bct_result_export",
+            )
         role_paths = [
             data[domain]["training_artifact"],
             *data[domain]["validation"].values(),
@@ -411,82 +417,54 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     for domain in DOMAINS:
         domain_root = f"{root}/data/{domain}"
         paths[domain] = {
-            "pairs": f"{domain_root}/training-pairs.jsonl",
-            "requests": f"{domain_root}/bct-target-requests.jsonl",
-            "targets": f"{domain_root}/bct-targets.jsonl",
+            # Source adapters publish the reusable pair contract directly.
+            # The paper layer selects a source; it does not wrap that contract
+            # in a second, Irpan-specific training-view artifact.
+            "pairs": data[domain]["training_artifact"],
             "bct": f"{domain_root}/bct-training.jsonl",
+            "bct_control": f"{domain_root}/bct-control.jsonl",
         }
         domain_preparation = [
             {
-                "name": f"{domain}-training-view",
+                "name": f"{domain}-bct-targets",
                 "target": "data",
                 "resource": "cpu",
                 "command": [
                     "${python}",
-                    "-m",
-                    "scripts.irpan_2510_27062",
-                    "export-training-view",
+                    "scripts/prepare_bct_targets.py",
                 ],
                 "args": {
-                    "domain": domain,
-                    "input": data[domain]["training_artifact"],
-                    "output": paths[domain]["pairs"],
-                },
-            },
-            {
-                "name": f"{domain}-bct-target-requests",
-                "target": "data",
-                "resource": "cpu",
-                "command": [
-                    "${python}",
-                    "-m",
-                    "scripts.irpan_2510_27062",
-                    "build-bct-requests",
-                ],
-                "args": {
-                    "training_view": paths[domain]["pairs"],
-                    "output": paths[domain]["requests"],
+                    "model": model,
+                    "data": [paths[domain]["pairs"]],
+                    "data_manifest": [_manifest(paths[domain]["pairs"])],
+                    "limit": examples[domain],
+                    "source_messages_field": "reference_messages",
+                    "main_messages_field": "variant_messages",
+                    "control_messages_field": "reference_messages",
                     "generator_identity": generator_identity,
-                },
-            },
-            {
-                "name": f"{domain}-bct-target-import",
-                "target": "data",
-                "resource": "cpu",
-                "command": [
-                    "${python}",
-                    "-m",
-                    "scripts.irpan_2510_27062",
-                    "import-bct-targets",
-                ],
-                "args": {
-                    "requests": paths[domain]["requests"],
-                    "results": data[domain]["bct_result_export"],
-                    "output": paths[domain]["targets"],
-                    "generator_identity": generator_identity,
-                    "decoding_parameters": decoding_parameters,
-                },
-            },
-            {
-                "name": f"{domain}-bct-training-export",
-                "target": "data",
-                "resource": "cpu",
-                "command": [
-                    "${python}",
-                    "-m",
-                    "scripts.irpan_2510_27062",
-                    "export-bct-training",
-                ],
-                "args": {
-                    "training_view": paths[domain]["pairs"],
-                    "targets": paths[domain]["targets"],
-                    "output": paths[domain]["bct"],
+                    "main_output": paths[domain]["bct"],
+                    "control_output": paths[domain]["bct_control"],
+                    "manifest_output": _manifest(paths[domain]["bct"]),
+                    "max_tokens": decoding_parameters.get("max_tokens", 2048),
+                    "temperature": decoding_parameters.get("temperature", 0.0),
+                    "max_concurrency": decoding_parameters.get("max_concurrency", 32),
+                    "yes": True,
+                    **(
+                        {
+                            "responses": data[domain]["bct_result_export"],
+                            "responses_manifest": _manifest(data[domain]["bct_result_export"]),
+                            "response_id_field": "source_id",
+                            "response_field": "response",
+                        }
+                        if smoke
+                        else {}
+                    ),
                 },
             },
         ]
         if smoke:
             domain_preparation.insert(
-                2,
+                0,
                 {
                     "name": f"{domain}-smoke-bct-results",
                     "target": "data",
@@ -498,7 +476,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
                         "build-smoke-bct-results",
                     ],
                     "args": {
-                        "requests": paths[domain]["requests"],
+                        "pairs": paths[domain]["pairs"],
                         "output": data[domain]["bct_result_export"],
                     },
                 },
@@ -575,6 +553,18 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
                 }
             )
         rmct_name = f"{domain}_rmct"
+        if domain == "sycophancy":
+            setting_factory = "ctm_data.adapters.mcq_bias.setting:mcq_correctness_pair_setting"
+            setting_config = {
+                "data_path": paths[domain]["pairs"],
+                "prompt_family": "irpan",
+            }
+        else:
+            setting_factory = "ctm.settings.pairs:refusal_pair_setting"
+            setting_config = {
+                "data_path": paths[domain]["pairs"],
+                "grader_model": judge_model,
+            }
         training_jobs.append(
             {
                 "name": rmct_name,
@@ -582,11 +572,8 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
                 "command": ["${python}", "scripts/train_rlct.py"],
                 "args": {
                     **common,
-                    "setting_factory": ("scripts.irpan_2510_27062.rmct_setting:" f"{domain}_rmct_setting"),
-                    "setting_config": {
-                        "training_view_path": paths[domain]["pairs"],
-                        **({"grader_model": judge_model} if domain == "jailbreak" else {}),
-                    },
+                    "setting_factory": setting_factory,
+                    "setting_config": setting_config,
                     "n_datapoints": limit,
                     "run_name": rmct_name,
                     "lr": learning_rate,
@@ -656,9 +643,9 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
                 "n_questions": None,
                 "seed": str(seed),
                 "dataset_dir": mcq_dataset_dir,
-                "question_field": "payload.question",
-                "choices_field": "payload.choices",
-                "answer_field": "payload.correct_label",
+                "question_field": "question",
+                "choices_field": "choices",
+                "answer_field": "answer",
                 "prompt_family": "irpan",
             }
             if condition == "wrong_suggestion":
@@ -735,9 +722,9 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
                 "n_questions": None,
                 "seed": str(seed),
                 "dataset_dir": mcq_dataset_dir,
-                "question_field": "payload.question",
-                "choices_field": "payload.choices",
-                "answer_field": "payload.correct_label",
+                "question_field": "question",
+                "choices_field": "choices",
+                "answer_field": "answer",
                 "prompt_family": "irpan",
             }
             if condition == "wrong_suggestion":

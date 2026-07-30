@@ -54,7 +54,7 @@ def _log(
         eval=SimpleNamespace(
             created=created,
             metadata=task_metadata,
-            task=task or ("mcq_bias/mcq_bias" if samples is not None else "scripts.irpan_2510_27062.mmlu_tasks:legacy"),
+            task=task or ("mcq_bias/mcq_bias" if samples is not None else "legacy/summary-metric"),
         ),
         results=SimpleNamespace(
             completed_samples=completed_samples,

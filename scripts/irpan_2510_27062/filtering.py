@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from ctm.artifacts import parent_artifact_identity, write_verified_jsonl_artifact
+from ctm.pairs import canonical_pair_row
 from scripts.irpan_2510_27062.artifacts import producer_identity, read_artifact, write_artifact
 from scripts.irpan_2510_27062.partitions import TRAINING
 from scripts.irpan_2510_27062.schema import (
@@ -260,6 +262,72 @@ def materialize_vulnerability_filter(
     return audit_manifest, retained_manifest
 
 
+def retained_to_prompt_pairs(retained_rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Adapt the paper-specific retained subset to CTM's shared pair contract."""
+
+    retained = _unique_records(retained_rows, expected_type="vulnerable_candidate")
+    pairs: list[dict[str, Any]] = []
+    for candidate in retained:
+        payload = candidate["payload"]
+        candidate_id = _text(payload, "candidate_id", context=candidate["example_id"])
+        clean_prompt = _text(payload, "clean_prompt", context=candidate_id)
+        wrapped_prompt = _text(payload, "wrapped_prompt", context=candidate_id)
+        alignment = payload.get("alignment")
+        if not isinstance(alignment, Mapping):
+            raise VulnerabilityFilterError(f"{candidate_id} has no alignment object")
+        alignment_text = _text(alignment, "alignment_text", context=candidate_id)
+        if alignment_text not in clean_prompt or alignment_text not in wrapped_prompt:
+            raise VulnerabilityFilterError(f"{candidate_id} alignment text is absent from a prompt")
+        pairs.append(
+            canonical_pair_row(
+                {
+                    "pair_id": candidate_id,
+                    "source_id": _text(payload, "source_id", context=candidate_id),
+                    "source": candidate["source"],
+                    "reference_messages": [{"role": "user", "content": clean_prompt}],
+                    "variant_messages": [{"role": "user", "content": wrapped_prompt}],
+                    "alignment_text": alignment_text,
+                    "metadata": {
+                        "wrapper_id": _text(payload, "wrapper_id", context=candidate_id),
+                        "wrapper_family": _text(payload, "wrapper_family", context=candidate_id),
+                        "filter_version": _text(payload, "filter_version", context=candidate_id),
+                        "retained_content_sha256": candidate["content_sha256"],
+                    },
+                }
+            )
+        )
+    if not pairs:
+        raise VulnerabilityFilterError("retained prompt-pair export requires at least one candidate")
+    return pairs
+
+
+def materialize_retained_prompt_pairs(
+    retained_path: str | Path,
+    output_path: str | Path,
+) -> dict[str, Any]:
+    """Publish retained jailbreak prompts directly as ``ctm.prompt_pairs``."""
+
+    retained, _manifest = read_artifact(
+        retained_path,
+        expected_kind="retained_vulnerabilities",
+        expected_role=TRAINING,
+    )
+    return write_verified_jsonl_artifact(
+        output_path,
+        retained_to_prompt_pairs(retained),
+        artifact_schema="ctm.prompt_pairs",
+        schema_version=1,
+        row_validator=canonical_pair_row,
+        nonempty=True,
+        provenance={
+            "producer": producer_identity("irpan-retained-prompt-pair-adapter", __file__),
+            "domain": "jailbreak",
+            "paper_id": "irpan_2510_27062",
+            "parent_artifact": parent_artifact_identity(retained_path),
+        },
+    )
+
+
 def _unique_records(rows: Sequence[Mapping[str, Any]], *, expected_type: str) -> list[dict[str, Any]]:
     validated: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -321,6 +389,8 @@ __all__ = [
     "RETAIN_REASON",
     "VulnerabilityFilterError",
     "build_vulnerability_filter",
+    "materialize_retained_prompt_pairs",
     "materialize_vulnerability_filter",
+    "retained_to_prompt_pairs",
     "vulnerability_decision",
 ]

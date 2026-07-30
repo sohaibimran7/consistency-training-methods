@@ -12,12 +12,12 @@ result export.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from ctm_data.sources import SourceRowError, load_local_rows
 from scripts.irpan_2510_27062.artifacts import (
     producer_identity,
     read_artifact,
@@ -496,26 +496,11 @@ def read_external_result_export(path: str | Path) -> list[dict[str, Any]]:
     target = Path(path)
     if not target.is_file():
         raise FileNotFoundError(f"missing local external result export: {target}")
-    if target.suffix.lower() == ".json":
-        try:
-            decoded = json.loads(target.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise WrapperPipelineError(f"invalid JSON in {target}: {exc}") from exc
-        if not isinstance(decoded, list) or not all(isinstance(row, dict) for row in decoded):
-            raise WrapperPipelineError(f"{target} must contain a JSON array of objects")
-        rows = [dict(row) for row in decoded]
-    else:
-        rows = []
-        for line_number, line in enumerate(target.read_text(encoding="utf-8").splitlines(), start=1):
-            if not line.strip():
-                continue
-            try:
-                decoded = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise WrapperPipelineError(f"invalid JSON in {target} line {line_number}: {exc}") from exc
-            if not isinstance(decoded, dict):
-                raise WrapperPipelineError(f"{target} line {line_number} must be an object")
-            rows.append(decoded)
+    source_format = "json" if target.suffix.lower() == ".json" else "jsonl"
+    try:
+        rows = load_local_rows(target, format=source_format).rows
+    except SourceRowError as exc:
+        raise WrapperPipelineError(str(exc)) from exc
     if not rows:
         raise WrapperPipelineError(f"external result export contains no rows: {target}")
     return rows

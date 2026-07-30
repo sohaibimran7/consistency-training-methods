@@ -16,15 +16,13 @@ from numbers import Real
 from types import MappingProxyType
 from typing import Any
 
-from scripts.irpan_2510_27062.mmlu_tasks import (
-    FOLLOWED_WRONG_SUGGESTION,
-    MMLU_ACCURACY,
-)
 from scripts.irpan_2510_27062.reconstruction import CHOICES
 from scripts.irpan_2510_27062.schema import normalize_json, sha256_json
 
 HARMFUL_ASR = "harmful_asr"
 ANSWERED_BENIGN = "answered_benign"
+MMLU_ACCURACY = "mmlu_accuracy"
+FOLLOWED_WRONG_SUGGESTION = "followed_wrong_suggestion"
 SAFETY_SCORE = "safety_score"
 NON_SYCOPHANCY = "non_sycophancy"
 
@@ -436,10 +434,7 @@ def validate_expected_count(
     count = _nonnegative_int(actual_count, field="actual_count")
     if route.expected_count is None or count == route.expected_count:
         return ()
-    message = (
-        f"{route.route_id} has {count} local points; the paper reports {route.expected_count}. "
-        "Verify the pinned export, subset, annotations, and exclusions; no rows were modified."
-    )
+    message = f"{route.route_id} has {count} local points; the paper reports {route.expected_count}. Verify the pinned export, subset, annotations, and exclusions; no rows were modified."
     if strict:
         raise AnalysisError(message)
     warnings.warn(message, ExpectedCountWarning, stacklevel=2)
@@ -613,8 +608,7 @@ def _prepare_selection_inputs(
             raise SelectionError(f"selection inputs must have stage {VALIDATION!r}, got {observation.stage!r}")
         if observation.status == UNSCORED:
             raise SelectionError(
-                f"candidate {observation.candidate_id!r} has unscored metric "
-                f"{observation.metric!r}: {observation.unscored_reason}"
+                f"candidate {observation.candidate_id!r} has unscored metric {observation.metric!r}: {observation.unscored_reason}"
             )
         route = get_benchmark_route(
             observation.benchmark,
@@ -627,12 +621,11 @@ def _prepare_selection_inputs(
             raise SelectionError(f"route {route.route_id!r} is not a selection input")
         if observation.domain is not None and observation.domain != route.domain:
             raise SelectionError(
-                f"observation domain {observation.domain!r} conflicts with route "
-                f"{route.route_id!r} domain {route.domain!r}"
+                f"observation domain {observation.domain!r} conflicts with route {route.route_id!r} domain {route.domain!r}"
             )
         if expected_domain is not None and route.domain != expected_domain:
             raise SelectionError(
-                f"{expected_domain} selector cannot consume route {route.route_id!r} " f"from domain {route.domain!r}"
+                f"{expected_domain} selector cannot consume route {route.route_id!r} from domain {route.domain!r}"
             )
         allowed_metrics = {route.metric}
         if route.derived_metric is not None:
@@ -739,8 +732,7 @@ def _rank_sycophancy_prepared(
         supplied_routes = set(candidate["routes"])
         if supplied_routes != required_routes:
             raise SelectionError(
-                f"candidate {candidate_id!r} must have exactly {sorted(required_routes)}; "
-                f"got {sorted(supplied_routes)}"
+                f"candidate {candidate_id!r} must have exactly {sorted(required_routes)}; got {sorted(supplied_routes)}"
             )
         helpful = candidate["routes"]["mmlu_clean_validation"]
         harmful = candidate["routes"]["mmlu_wrong_suggestion_validation"]
@@ -1005,8 +997,7 @@ def _selection_observation(raw: SelectionObservation | Mapping[str, Any]) -> Sel
         raise SelectionError(f"domain must be None or one of {sorted(SELECTION_DOMAINS)}, got {observation.domain!r}")
     if observation.schema is not None and observation.schema != SELECTION_OBSERVATION_SCHEMA:
         raise SelectionError(
-            f"unsupported selection observation schema {observation.schema!r}; "
-            f"expected {SELECTION_OBSERVATION_SCHEMA!r}"
+            f"unsupported selection observation schema {observation.schema!r}; expected {SELECTION_OBSERVATION_SCHEMA!r}"
         )
     if observation.schema is not None and observation.domain is None:
         raise SelectionError("typed selection observations require domain")

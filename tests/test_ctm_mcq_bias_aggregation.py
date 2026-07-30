@@ -1,6 +1,6 @@
 import pytest
 
-from scripts.irpan_2510_27062.mcq_bias_metrics import (
+from ctm_data.adapters.mcq_bias.aggregation import (
     MCQMetricAggregationError,
     aggregate_mcq_bias_sample_values,
 )
@@ -23,6 +23,7 @@ def test_clean_counts_parse_failures_in_accuracy_denominator():
             _unparsed(),
         ],
         condition="clean",
+        accuracy_parse_failures="incorrect",
     )
 
     assert (aggregate.numerator, aggregate.denominator, aggregate.value) == (1, 4, 0.25)
@@ -48,7 +49,11 @@ def test_wrong_suggestion_excludes_parse_failures_from_following_denominator():
 
 
 def test_all_unparsed_clean_is_zero_but_biased_metric_is_unavailable():
-    clean = aggregate_mcq_bias_sample_values([_unparsed(), _unparsed()], condition="clean")
+    clean = aggregate_mcq_bias_sample_values(
+        [_unparsed(), _unparsed()],
+        condition="clean",
+        accuracy_parse_failures="incorrect",
+    )
     biased = aggregate_mcq_bias_sample_values([_unparsed(), _unparsed()], condition="wrong_suggestion")
 
     assert (clean.numerator, clean.denominator, clean.value) == (0, 2, 0.0)

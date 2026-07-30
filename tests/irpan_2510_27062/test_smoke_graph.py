@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from scripts import run_evals, train_bct, train_opct, train_rlct
+from scripts import prepare_bct_targets, run_evals, train_bct, train_opct, train_rlct
 from scripts.irpan_2510_27062 import cli as adapter_cli
 from scripts.run_experiment import (
     command_argv,
@@ -45,8 +45,11 @@ def _temporary_smoke_source(tmp_path: Path) -> dict[str, Any]:
 
 def _run_adapter_entry(entry: dict[str, Any], context: dict[str, Any]) -> None:
     argv = command_argv(entry, context)
-    assert argv[1:3] == ["-m", ADAPTER_MODULE]
-    adapter_cli.main(argv[3:])
+    if argv[1:3] == ["-m", ADAPTER_MODULE]:
+        adapter_cli.main(argv[3:])
+        return
+    assert Path(argv[1]).name == "prepare_bct_targets.py"
+    prepare_bct_targets.main(argv[2:])
 
 
 def _backend_must_not_initialize(*_args: Any, **_kwargs: Any) -> None:

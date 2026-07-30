@@ -5,10 +5,15 @@ import json
 import pytest
 
 from ctm.backends.base import SampledSequence
+from ctm.generation_provenance import make_generator_identity
 from ctm.training.bct_targets import (
     BCTProgressStore,
+    build_bct_rows_from_completions,
+    build_completion_export_generation_provenance,
+    completions_from_rows,
     generate_bct_rows,
     prepare_paired_prompts,
+    validate_completion_export_generation_provenance,
     write_bct_target_artifacts,
 )
 
@@ -87,6 +92,90 @@ def test_generate_bct_rows_samples_reference_once_and_shares_completion():
     assert [row["messages"][-1] for row in main] == [row["messages"][-1] for row in control]
     assert [row["messages"][-1]["content"] for row in main] == ["answer-0", "answer-1", "answer-2"]
     assert [row["source_id"] for row in main] == ["q-0", "q-1", "q-2"]
+
+
+def test_offline_completion_export_matches_exact_ids_and_shares_targets():
+    prompts = prepare_paired_prompts(
+        _rows(2),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+    completions = completions_from_rows(
+        prompts,
+        [
+            {"source_id": "q-1", "response": "answer one"},
+            {"source_id": "q-0", "response": "answer zero"},
+        ],
+    )
+    main, control = build_bct_rows_from_completions(prompts, completions)
+
+    assert [row["source_id"] for row in main] == ["q-0", "q-1"]
+    assert [row["messages"][-1] for row in main] == [row["messages"][-1] for row in control]
+    assert [row["messages"][-1]["content"] for row in main] == ["answer zero", "answer one"]
+
+
+def test_offline_completion_export_rejects_missing_or_extra_ids():
+    prompts = prepare_paired_prompts(
+        _rows(1),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+    with pytest.raises(ValueError, match=r"missing=\['q-0'\].*extra=\['other'\]"):
+        completions_from_rows(prompts, [{"source_id": "other", "response": "answer"}])
+
+
+def test_offline_completion_provenance_binds_prompts_generator_decoding_and_responses():
+    identities = [
+        {
+            "artifact_schema": "ctm.prompt_pairs",
+            "schema_version": 1,
+            "row_count": 2,
+            "content_sha256": "a" * 64,
+            "manifest_sha256": "b" * 64,
+        }
+    ]
+    generator = make_generator_identity(
+        generator_id="self-bct",
+        provider="local",
+        model="model",
+        model_revision="revision-1",
+    )
+    rows = [
+        {"source_id": "q-0", "response": "zero"},
+        {"source_id": "q-1", "response": "one"},
+    ]
+    provenance = build_completion_export_generation_provenance(
+        rows,
+        prompt_artifact_identities=identities,
+        generator_identity=generator,
+        decoding_parameters={"temperature": 0.0, "max_tokens": 16},
+        source_messages_field="reference_messages",
+        generated_at_utc="2026-07-30T00:00:00Z",
+    )
+
+    assert (
+        validate_completion_export_generation_provenance(
+            rows,
+            provenance,
+            prompt_artifact_identities=identities,
+            generator_identity=generator,
+            decoding_parameters={"temperature": 0.0, "max_tokens": 16},
+            source_messages_field="reference_messages",
+        )
+        == provenance
+    )
+    tampered = [*rows[:-1], {"source_id": "q-1", "response": "changed"}]
+    with pytest.raises(ValueError, match="ordered_response_manifest"):
+        validate_completion_export_generation_provenance(
+            tampered,
+            provenance,
+            prompt_artifact_identities=identities,
+            generator_identity=generator,
+            decoding_parameters={"temperature": 0.0, "max_tokens": 16},
+            source_messages_field="reference_messages",
+        )
 
 
 def test_generate_bct_rows_resumes_completed_rows_in_source_order(tmp_path):

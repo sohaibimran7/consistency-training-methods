@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from ctm_data.adapters.mcq_bias.dataset_specs import (
@@ -15,7 +17,9 @@ def test_pinned_upstream_exposes_the_adapter_contract():
     from mcq_bias.tasks import mcq_bias, suite_tasks
 
     assert set(PROMPT_FAMILIES) == {"chua", "irpan"}
-    assert {"revision", "prompt_family", "wrong_option_seed"} <= set(inspect.signature(mcq_bias).parameters)
+    assert {"revision", "prompt_family", "source_format", "wrong_option_seed"} <= set(
+        inspect.signature(mcq_bias).parameters
+    )
     assert "datasets" in inspect.signature(suite_tasks).parameters
     assert DatasetSpec.__module__ == "mcq_bias.dataset_specs"
 
@@ -53,6 +57,24 @@ def test_cli_mapping_tokens_are_json_objects_but_plain_names_stay_plain():
     assert parse_dataset_cli_tokens(['{"split":"test","dataset":"org/custom"}']) == (
         DatasetSpec(dataset="org/custom", split="test"),
     )
+
+
+def test_bbh_source_format_is_configuration_not_a_paper_normalizer():
+    token = json.dumps(
+        {
+            "dataset": "org/bbh",
+            "dataset_config": "logical_deduction_three_objects",
+            "split": "train",
+            "revision": "abc123",
+            "source_format": "bbh",
+        }
+    )
+    (spec,) = parse_dataset_cli_tokens([token])
+
+    assert isinstance(spec, DatasetSpec)
+    assert spec.as_dict()["source_format"] == "bbh"
+    with pytest.raises(ValueError, match="cannot be combined"):
+        DatasetSpec(dataset="org/bbh", source_format="bbh", question_field="input")
 
 
 @pytest.mark.parametrize(

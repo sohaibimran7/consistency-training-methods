@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from ctm.artifacts import write_atomic_bytes
+from ctm_data.adapters.mcq_bias.aggregation import (
+    MCQMetricAggregationError,
+    aggregate_mcq_bias_sample_values,
+)
 from scripts.irpan_2510_27062.analysis import (
     SCORED,
     SELECTION_DOMAINS,
@@ -22,10 +26,6 @@ from scripts.irpan_2510_27062.analysis import (
     CandidateLocator,
     get_benchmark_route,
     validate_selection_observation,
-)
-from scripts.irpan_2510_27062.mcq_bias_metrics import (
-    MCQMetricAggregationError,
-    aggregate_mcq_bias_sample_values,
 )
 
 _MISSING = object()
@@ -408,7 +408,9 @@ def _extract_native_mcq_bias_metric(
     raw_samples = _field(log, "samples", _MISSING)
     if raw_samples is _MISSING or raw_samples is None:
         return (
-            None if _is_legacy_irpan_mmlu_log(log) else _unscored_result("native mcq_bias log is missing sample scores")
+            None
+            if _is_legacy_summary_metric_log(log)
+            else _unscored_result("native mcq_bias log is missing sample scores")
         )
     if not isinstance(raw_samples, Sequence) or isinstance(raw_samples, (str, bytes)):
         return _unscored_result("Inspect samples are not a sequence")
@@ -464,7 +466,7 @@ def _extract_native_mcq_bias_metric(
     if not saw_native_scorer:
         return (
             None
-            if _is_legacy_irpan_mmlu_log(log)
+            if _is_legacy_summary_metric_log(log)
             else _unscored_result("native mcq_bias log has no mcq_bias_scorer sample values")
         )
     if missing_scorer:
@@ -473,7 +475,11 @@ def _extract_native_mcq_bias_metric(
             unscored_count=missing_scorer,
         )
     try:
-        aggregate = aggregate_mcq_bias_sample_values(values, condition=route.condition)
+        aggregate = aggregate_mcq_bias_sample_values(
+            values,
+            condition=route.condition,
+            accuracy_parse_failures="incorrect",
+        )
     except MCQMetricAggregationError as exc:
         return _unscored_result(str(exc), unscored_count=max(len(values), 1))
     if aggregate.value is None:
@@ -498,9 +504,9 @@ def _extract_native_mcq_bias_metric(
     )
 
 
-def _is_legacy_irpan_mmlu_log(log: Any) -> bool:
+def _is_legacy_summary_metric_log(log: Any) -> bool:
     task_name = str(_field(_field(log, "eval", None), "task", ""))
-    return "scripts.irpan_2510_27062.mmlu_tasks" in task_name
+    return task_name.startswith(("legacy/summary-metric", "scripts.irpan_2510_27062.mmlu_tasks"))
 
 
 def _unscored_result(reason: str, *, unscored_count: int = 1) -> _MetricResult:

@@ -17,7 +17,9 @@ from scripts.irpan_2510_27062.filtering import (
     REJECT_WRAPPED_REASON,
     RETAIN_REASON,
     build_vulnerability_filter,
+    materialize_retained_prompt_pairs,
     materialize_vulnerability_filter,
+    retained_to_prompt_pairs,
     vulnerability_decision,
 )
 from scripts.irpan_2510_27062.jailbreak_sources import (
@@ -36,19 +38,6 @@ from scripts.irpan_2510_27062.judge import (
     parse_judgment_output,
 )
 from scripts.irpan_2510_27062.schema import sha256_text
-from scripts.irpan_2510_27062.training import (
-    FRESH_TARGET,
-    STALE_TARGET,
-    TrainingExportError,
-    build_act_training_rows,
-    build_bct_training_rows,
-    build_stale_bct_training_rows,
-    extract_training_payloads,
-    import_stale_targets,
-    materialize_stale_bct_export,
-    materialize_stale_targets,
-    materialize_training_exports,
-)
 from scripts.irpan_2510_27062.wrappers import (
     WRAPPER_CATALOG,
     WRAPPER_CATALOG_VERSION,
@@ -381,57 +370,16 @@ def test_filter_emits_audit_for_retained_and_rejected_candidates() -> None:
     assert retained[0]["payload"]["audit_content_sha256"] == retained_audit["content_sha256"]
 
 
-def test_bct_and_act_payloads_follow_training_conventions_and_lineage() -> None:
-    retained, completions = _retained_bundle()
-    bct = build_bct_training_rows(retained, completions)
-    act = build_act_training_rows(retained)
-    assert len(bct) == len(retained) == len(act)
-    for candidate, bct_row, act_row in zip(retained, bct, act, strict=True):
+def test_retained_candidates_adapt_directly_to_shared_prompt_pairs() -> None:
+    retained, _completions = _retained_bundle()
+    pairs = retained_to_prompt_pairs(retained)
+    assert len(pairs) == len(retained)
+    for candidate, pair in zip(retained, pairs, strict=True):
         candidate_payload = candidate["payload"]
-        bct_payload = bct_row["payload"]
-        act_payload = act_row["payload"]
-        assert bct_payload["messages"][0] == {"role": "user", "content": candidate_payload["wrapped_prompt"]}
-        assert bct_payload["messages"][1]["role"] == "assistant"
-        assert bct_payload["target_freshness"] == FRESH_TARGET
-        assert bct_payload["target_origin_condition"] == "clean"
-        assert len(bct_row["parent_hashes"]) == 2
-        assert act_payload["reference_messages"][0]["content"] == candidate_payload["clean_prompt"]
-        assert act_payload["variant_messages"][0]["content"] == candidate_payload["wrapped_prompt"]
-        assert act_payload["alignment_text"] in candidate_payload["clean_prompt"]
-        assert act_payload["shared_suffix"] == candidate_payload["core_request"]
-        assert act_payload["alignment_strategy"] == "core_request_as_shared_terminal_span"
-    assert "messages" in extract_training_payloads(bct, method="bct")[0]
-    assert "variant_messages" in extract_training_payloads(act, method="act")[0]
-
-
-def test_stale_target_seam_requires_full_identity_and_never_marks_fresh() -> None:
-    retained, completions = _retained_bundle()
-    results = [
-        {"candidate_id": row["payload"]["candidate_id"], "target": "An older fictional audit response."}
-        for row in retained
-    ]
-    incomplete_identity = {"provider": "fixture", "model": "fixture/old", "revision": "old-r1"}
-    with pytest.raises(TrainingExportError, match="both revision and date"):
-        import_stale_targets(
-            retained,
-            results,
-            target_model=incomplete_identity,
-            input_manifest_sha256="6" * 64,
-        )
-    identity = {**incomplete_identity, "date": "2025-01-15"}
-    stale = import_stale_targets(
-        retained,
-        results,
-        target_model=identity,
-        input_manifest_sha256="6" * 64,
-    )
-    stale_bct = build_stale_bct_training_rows(retained, stale)
-    fresh_bct = build_bct_training_rows(retained, completions)
-    assert {row["payload"]["target_freshness"] for row in stale_bct} == {STALE_TARGET}
-    assert {row["payload"]["target_freshness"] for row in fresh_bct} == {FRESH_TARGET}
-    assert all(row["metadata"]["target_is_fresh"] is False for row in stale_bct)
-    with pytest.raises(TrainingExportError, match="external_completion"):
-        build_bct_training_rows(retained, stale)
+        assert pair["reference_messages"][0]["content"] == candidate_payload["clean_prompt"]
+        assert pair["variant_messages"][0]["content"] == candidate_payload["wrapped_prompt"]
+        assert pair["alignment_text"] in candidate_payload["clean_prompt"]
+        assert pair["alignment_text"] in candidate_payload["wrapped_prompt"]
 
 
 def test_materialized_dag_is_immutable_hashed_and_parent_linked(tmp_path: Path) -> None:
@@ -447,11 +395,7 @@ def test_materialized_dag_is_immutable_hashed_and_parent_linked(tmp_path: Path) 
     judgment_path = tmp_path / "06-judgments.jsonl"
     audit_path = tmp_path / "07-audit.jsonl"
     retained_path = tmp_path / "08-retained.jsonl"
-    bct_path = tmp_path / "09-bct.jsonl"
-    act_path = tmp_path / "10-act.jsonl"
-    stale_result_path = tmp_path / "stale-results.jsonl"
-    stale_target_path = tmp_path / "11-stale-targets.jsonl"
-    stale_bct_path = tmp_path / "12-stale-bct.jsonl"
+    pair_path = tmp_path / "09-pairs.jsonl"
 
     materialize_harmbench_source(raw_source, source_path, subset="fixture", split="test")
     materialize_wrapper_candidates(source_path, wrapper_path)
@@ -519,52 +463,18 @@ def test_materialized_dag_is_immutable_hashed_and_parent_linked(tmp_path: Path) 
     )
     assert audit_manifest["provenance"]["config"]["judge_attempt_count"] == len(judge_requests)
     assert audit_manifest["provenance"]["config"]["judge_parse_failure_rate"] == 0.0
-    bct_manifest, act_manifest = materialize_training_exports(
-        retained_path,
-        completion_path,
-        bct_path,
-        act_path,
-    )
-
-    assert bct_manifest["provenance"]["parent_artifacts"][0]["artifact_kind"] == "retained_vulnerabilities"
-    assert act_manifest["provenance"]["config"]["alignment_text_field"] == "alignment_text"
-    assert len(bct_manifest["provenance"]["producer"]["code_sha256"]) == 64
-    assert len(bct_manifest["provenance"]["config_sha256"]) == 64
-
-    retained_rows, _ = read_artifact(retained_path, expected_kind="retained_vulnerabilities")
-    stale_result_path.write_text(
-        "".join(
-            json.dumps(
-                {
-                    "candidate_id": row["payload"]["candidate_id"],
-                    "target": "An older high-level fictional audit response.",
-                }
-            )
-            + "\n"
-            for row in retained_rows
-        ),
-        encoding="utf-8",
-    )
-    materialize_stale_targets(
-        retained_path,
-        stale_result_path,
-        stale_target_path,
-        target_model={
-            "provider": "fixture-provider",
-            "model": "fixture/old-model",
-            "revision": "old-r1",
-            "date": "2025-01-15",
-        },
-    )
-    stale_manifest = materialize_stale_bct_export(retained_path, stale_target_path, stale_bct_path)
-    assert stale_manifest["provenance"]["config"]["target_freshness"] == STALE_TARGET
-    assert stale_manifest["provenance"]["target_is_fresh"] is False
+    pair_manifest = materialize_retained_prompt_pairs(retained_path, pair_path)
+    assert pair_manifest["artifact_schema"] == "ctm.prompt_pairs"
+    assert pair_manifest["provenance"]["parent_artifact"]["content_sha256"]
+    assert len(pair_manifest["provenance"]["producer"]["code_sha256"]) == 64
     with pytest.raises(FileExistsError, match="overwrite"):
         materialize_wrapper_candidates(source_path, wrapper_path)
 
-    bct_path.write_text(bct_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    pair_path.write_text(pair_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     with pytest.raises(ArtifactManifestError, match="digest mismatch"):
-        read_artifact(bct_path)
+        from ctm.settings.pairs import load_pair_artifact
+
+        load_pair_artifact(pair_path)
 
 
 def test_pure_pipeline_remains_offline_when_network_and_model_imports_are_blocked(
@@ -602,6 +512,5 @@ def test_pure_pipeline_remains_offline_when_network_and_model_imports_are_blocke
     ]
     judgments = import_judgment_results(judgment_requests, judgment_results)
     _, retained = build_vulnerability_filter(candidates, judgments)
-    bct = build_bct_training_rows(retained, completions)
-    act = build_act_training_rows(retained)
-    assert completion_requests and bct and act
+    pairs = retained_to_prompt_pairs(retained)
+    assert completion_requests and pairs

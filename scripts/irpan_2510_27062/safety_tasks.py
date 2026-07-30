@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import html
 import json
 import math
 import warnings
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from ctm.artifacts import ArtifactManifestError, plain_file_identity
+from ctm.training.judging import JudgeAttemptResult, run_judge_attempts
 from ctm_data.inspect import build_inspect_task
 from ctm_data.sources import SourceRowError, load_local_rows
 from scripts.irpan_2510_27062.artifacts import producer_identity, read_artifact, write_artifact
@@ -86,17 +85,6 @@ class FinalSelectionError(ValueError):
 
 class JudgeCoverageError(ValueError):
     """Judge failures exceed the configured final-metric coverage bound."""
-
-
-@dataclass(frozen=True, slots=True)
-class JudgeAttemptResult:
-    """One bounded judge call, including retry diagnostics."""
-
-    verdict: bool | None
-    attempt_count: int
-    parse_failure_count: int
-    provider_failure_count: int
-    last_error: str | None
 
 
 def read_local_export(path: str | Path) -> list[dict[str, Any]]:
@@ -344,50 +332,14 @@ async def run_judge_with_retries(
     parser: Callable[[str], bool],
     retries: int = DEFAULT_JUDGE_RETRIES,
     retry_delay: float = DEFAULT_JUDGE_RETRY_DELAY,
-) -> JudgeAttemptResult:
-    """Call and parse one judge with an explicit bounded retry loop.
+) -> JudgeAttemptResult[bool]:
+    """Backward-compatible paper adapter for the shared attempt runner."""
 
-    This paper evaluation retains its reconstruction-specific fulfilled/refused
-    JSON rubric; RMCT paths use the repository's shared refusal judge directly.
-    Provider failures and parse failures are counted separately. The model
-    wrapper's own retries are disabled by :func:`paper_safety_tasks`, avoiding
-    an unreported multiplicative retry budget.
-    """
-
-    _validate_retry_options(retries, retry_delay)
-    parse_failures = 0
-    provider_failures = 0
-    last_error: str | None = None
-    for attempt in range(retries + 1):
-        try:
-            raw = await completion()
-            if not isinstance(raw, str):
-                raise TypeError(f"judge completion returned {type(raw).__name__}, expected str")
-        except Exception as exc:  # noqa: BLE001 - explicit provider retry boundary
-            provider_failures += 1
-            last_error = f"{type(exc).__name__}: {exc}"
-        else:
-            try:
-                verdict = parser(raw)
-            except (TypeError, ValueError) as exc:
-                parse_failures += 1
-                last_error = f"{type(exc).__name__}: {exc}"
-            else:
-                return JudgeAttemptResult(
-                    verdict=verdict,
-                    attempt_count=attempt + 1,
-                    parse_failure_count=parse_failures,
-                    provider_failure_count=provider_failures,
-                    last_error=None,
-                )
-        if attempt < retries and retry_delay:
-            await asyncio.sleep(retry_delay * (2**attempt))
-    return JudgeAttemptResult(
-        verdict=None,
-        attempt_count=retries + 1,
-        parse_failure_count=parse_failures,
-        provider_failure_count=provider_failures,
-        last_error=last_error,
+    return await run_judge_attempts(
+        completion,
+        parser,
+        retries=retries,
+        retry_delay=retry_delay,
     )
 
 
