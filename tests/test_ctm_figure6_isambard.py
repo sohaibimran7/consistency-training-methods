@@ -164,7 +164,7 @@ def test_protocol_has_exact_workload_and_prompt_pins():
         "openai/gpt-oss-120b:nitro",
     ]
     assert judge["api_shape"] == "/api/v1/chat/completions"
-    assert judge["max_tokens"] == 4096
+    assert judge["max_tokens"] == 32_768
     assert judge["prompt_sha256"] == "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870"
     assert judge["result_label"] == "user_pinned_alternative_judge"
     assert judge["route_mode"] == "direct"
@@ -192,6 +192,7 @@ def test_openrouter_operator_protocol_uses_shell_variables_and_paid_gates():
     assert "--yes" in readme
     assert "--judge-profile gpt-oss-120b-nitro-direct" in readme
     assert "--expected-judge-profile gpt-oss-120b-nitro-direct" in readme
+    assert "--expected-judge-max-completion-tokens 32768" in readme
     assert "OpenRouter GPT-OSS 120B Nitro alternative judge" in readme
     assert "PASTE_INDEPENDENTLY_REVIEWED_64_HEX_HASH" in readme
 

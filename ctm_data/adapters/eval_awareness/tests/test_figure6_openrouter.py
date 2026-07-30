@@ -249,7 +249,7 @@ def test_success_writes_durable_attempt_and_normalized_output(tmp_path: Path) ->
 
     assert summary["completed"] == 1
     assert observed[0]["model"] == scorer.DEFAULT_OPENROUTER_JUDGE_MODEL
-    assert observed[0]["max_tokens"] == 4096
+    assert observed[0]["max_tokens"] == 32_768
     assert observed[0]["temperature"] == 0.0
     assert observed[0]["reasoning"] == {"effort": "high", "exclude": True}
     assert observed[0]["response_format"] == {"type": "json_object"}
@@ -845,7 +845,8 @@ def test_public_dry_plan_binds_exact_scope_concurrency_retry_cap_and_route(tmp_p
     )
     assert summary["generation_count"] == 5_400
     assert summary["matrix"]["model_keys"] == ["qwen32"]
-    assert summary["concurrency"] == 24
+    assert summary["concurrency"] == 4
+    assert summary["max_tokens"] == 32_768
     assert summary["max_retry_after"] == 300.0
     assert summary["judge_profile"] == scorer.GPT_OSS_120B_NITRO_DIRECT_PROFILE
     assert summary["judge_model"] == scorer.GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL

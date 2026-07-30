@@ -1374,7 +1374,7 @@ def analyze_judgments(
     expected_judge_model: str = DEFAULT_JUDGE_MODEL,
     expected_judge_provider: str | None = None,
     expected_judge_response_models: Sequence[str] | None = None,
-    expected_judge_max_completion_tokens: int = MAX_JUDGE_TOKENS,
+    expected_judge_max_completion_tokens: int | None = None,
 ) -> AnalysisResult:
     """Validate and aggregate normalized judgments.
 
@@ -1406,8 +1406,12 @@ def analyze_judgments(
             raise ValueError("registered OpenRouter judge profiles require expected_judge_provider=OpenRouter")
         if expected_judge_response_models is None:
             expected_judge_response_models = openrouter_profile["allowed_response_models"]
-        if expected_judge_max_completion_tokens != openrouter_profile["max_tokens"]:
+        if expected_judge_max_completion_tokens is None:
+            expected_judge_max_completion_tokens = openrouter_profile["max_tokens"]
+        elif expected_judge_max_completion_tokens != openrouter_profile["max_tokens"]:
             raise ValueError("expected judge token limit differs from the selected registered judge profile")
+    elif expected_judge_max_completion_tokens is None:
+        expected_judge_max_completion_tokens = MAX_JUDGE_TOKENS
     if not isinstance(expected_judge_model, str) or not expected_judge_model:
         raise ValueError("expected_judge_model must be a non-empty string")
     if expected_judge_provider is not None and (
@@ -1823,7 +1827,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--expected-judge-max-completion-tokens",
         type=int,
-        default=MAX_JUDGE_TOKENS,
+        help="Exact judge ceiling; defaults to the selected profile ceiling or the paper judge ceiling.",
     )
     parser.add_argument(
         "--allow-partial",

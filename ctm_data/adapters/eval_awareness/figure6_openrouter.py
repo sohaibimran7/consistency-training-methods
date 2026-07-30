@@ -74,8 +74,8 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "route_mode": "direct",
         "temperature": 0.0,
-        "max_tokens": MAX_JUDGE_TOKENS,
-        "concurrency": 24,
+        "max_tokens": 32_768,
+        "concurrency": 4,
         "max_retry_after": 300.0,
         "provider_routing": {
             "allow_fallbacks": False,
@@ -148,7 +148,7 @@ JUDGE_PROFILES: dict[str, dict[str, Any]] = {
 DEFAULT_OPENROUTER_JUDGE_MODEL = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["model"]
 DEFAULT_ALLOWED_RESPONSE_MODELS = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["allowed_response_models"]
 DEFAULT_TEMPERATURE = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["temperature"]
-DEFAULT_CONCURRENCY = 24
+DEFAULT_CONCURRENCY = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["concurrency"]
 DEFAULT_MAX_ATTEMPTS = 5
 DEFAULT_MAX_RETRY_AFTER = JUDGE_PROFILES[DEFAULT_JUDGE_PROFILE]["max_retry_after"]
 CURRENT_QWEN_MODEL_KEYS = ("qwen32", "qwen_mo_mid", "qwen_mo_post")

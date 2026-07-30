@@ -547,7 +547,7 @@ def _attach_paid_manifest(
             "model": profile["model"],
             "allowed_response_models": allowed_models,
             "temperature": profile["temperature"],
-            "max_tokens": judge.MAX_JUDGE_TOKENS,
+            "max_tokens": profile["max_tokens"],
             "provider_routing": profile["provider_routing"],
             "reasoning": profile["reasoning"],
             "response_format": profile["response_format"],
@@ -576,6 +576,7 @@ def _attach_paid_manifest(
                 "judge_reasoning": profile["reasoning"],
                 "judge_response_format": profile["response_format"],
                 "judge_route_mode": profile["route_mode"],
+                "judge_max_completion_tokens": profile["max_tokens"],
                 "judge_proxy": proxy,
                 "judge_route": route,
             }
@@ -600,9 +601,9 @@ def _attach_paid_manifest(
         "allowed_response_models": allowed_models,
         "judge_template_sha256": judge.PAPER_JUDGE_TEMPLATE_SHA256,
         "temperature": profile["temperature"],
-        "max_tokens": judge.MAX_JUDGE_TOKENS,
+        "max_tokens": profile["max_tokens"],
         "max_attempts_per_generation": 5,
-        "concurrency": 24,
+        "concurrency": profile["concurrency"],
         "max_retry_after": profile["max_retry_after"],
         "proxy": proxy,
         "route": route,
@@ -627,9 +628,9 @@ def _attach_paid_manifest(
         allowed_response_models=allowed_models,
         judge_template_sha256=judge.PAPER_JUDGE_TEMPLATE_SHA256,
         temperature=profile["temperature"],
-        max_tokens=judge.MAX_JUDGE_TOKENS,
+        max_tokens=profile["max_tokens"],
         max_attempts=5,
-        concurrency=24,
+        concurrency=profile["concurrency"],
         max_retry_after=profile["max_retry_after"],
         endpoint="https://openrouter.ai/api/v1/chat/completions",
         proxy=proxy,
@@ -748,6 +749,7 @@ def test_current_three_qwen_gpt_oss_nitro_scope_is_strict_complete_at_16200(tmp_
                 "judge_provider": "OpenRouter",
                 "judge_response_model": profile["model"],
                 "judge_allowed_response_models": allowed_response_models,
+                "judge_max_completion_tokens": profile["max_tokens"],
             }
         )
     with pytest.raises(PublicationValidationError, match="matching paid judge manifests"):

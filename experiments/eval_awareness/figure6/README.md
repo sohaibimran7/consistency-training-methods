@@ -304,11 +304,11 @@ without one.
 
 The current reproduction uses `openai/gpt-oss-120b:nitro` directly from the
 operator laptop through OpenRouter with
-the exact hash-pinned paper judge prompt and a 4,096-token output ceiling. This
+the exact hash-pinned paper judge prompt and a 32,768-token output ceiling. This
 is a user-pinned alternative judge, not the paper's GPT-5 judge. The registered
 `gpt-oss-120b-nitro-direct` profile prohibits proxies and route attestations, uses
 the model's maximum supported mandatory reasoning effort (`high`) without returning
-the reasoning trace, requests a JSON object, and hash-binds temperature 0, concurrency 24,
+the reasoning trace, requests a JSON object, and hash-binds temperature 0, concurrency 4,
 the 300-second retry cap, and exact provider routing. The Nitro suffix and the
 explicit `provider.sort=throughput` pin throughput-prioritized routing. The profile
 accepts the requested Nitro model ID or OpenRouter's base response identity
@@ -771,6 +771,7 @@ python -m ctm_data.adapters.eval_awareness.figure6_analysis \
   --expected-model-key qwen_mo_mid \
   --expected-model-key qwen_mo_post \
   --expected-judge-profile gpt-oss-120b-nitro-direct \
+  --expected-judge-max-completion-tokens 32768 \
   --output-csv "$FIGURE6_JUDGE_ROOT/figure6-aggregation.csv" \
   --summary-json "$FIGURE6_JUDGE_ROOT/figure6-summary.json"
 
