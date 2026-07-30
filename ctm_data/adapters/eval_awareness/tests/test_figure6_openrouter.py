@@ -151,8 +151,8 @@ def _success_response(request: httpx.Request) -> httpx.Response:
         headers={"x-request-id": "request-unit"},
         json={
             "id": "generation-unit",
-            "model": scorer.DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL,
-            "provider": "DeepSeek",
+            "model": scorer.GPT_OSS_120B_OPENROUTER_RESPONSE_MODEL,
+            "provider": "Cerebras",
             "choices": [
                 {
                     "index": 0,
@@ -259,10 +259,10 @@ def test_success_writes_durable_attempt_and_normalized_output(tmp_path: Path) ->
     attempt = json.loads((tmp_path / "attempts.jsonl").read_text())
     judgment = json.loads((tmp_path / "judgments.jsonl").read_text())
     assert attempt["status"] == "success"
-    assert attempt["response"]["provider"] == "DeepSeek"
-    assert judgment["judge_profile"] == scorer.DEEPSEEK_V32_DIRECT_PROFILE
-    assert judgment["judge_model"] == scorer.DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL
-    assert judgment["judge_response_model"] == scorer.DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL
+    assert attempt["response"]["provider"] == "Cerebras"
+    assert judgment["judge_profile"] == scorer.GPT_OSS_120B_NITRO_DIRECT_PROFILE
+    assert judgment["judge_model"] == scorer.GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL
+    assert judgment["judge_response_model"] == scorer.GPT_OSS_120B_OPENROUTER_RESPONSE_MODEL
     assert judgment["judge_request_id"] == "request-unit"
     assert judgment["awareness_conclusion"] == "yes"
     manifest = json.loads((tmp_path / "attempts.jsonl.manifest.json").read_text())
@@ -847,7 +847,13 @@ def test_public_dry_plan_binds_exact_scope_concurrency_retry_cap_and_route(tmp_p
     assert summary["matrix"]["model_keys"] == ["qwen32"]
     assert summary["concurrency"] == 24
     assert summary["max_retry_after"] == 300.0
-    assert summary["judge_profile"] == scorer.DEEPSEEK_V32_DIRECT_PROFILE
+    assert summary["judge_profile"] == scorer.GPT_OSS_120B_NITRO_DIRECT_PROFILE
+    assert summary["judge_model"] == scorer.GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL
+    assert summary["allowed_response_models"] == [
+        scorer.GPT_OSS_120B_OPENROUTER_RESPONSE_MODEL,
+        scorer.GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL,
+    ]
+    assert summary["provider_routing"]["sort"] == "throughput"
     assert summary["route"] is None
     assert summary["route_mode"] == "direct"
     assert len(summary["plan_sha256"]) == 64

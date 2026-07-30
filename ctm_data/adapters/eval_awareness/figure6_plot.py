@@ -18,6 +18,9 @@ from ctm_data.adapters.eval_awareness.figure6_analysis import (
     OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL,
     OPENROUTER_DEEPSEEK_V32_JUDGE_MODEL,
     OPENROUTER_DEEPSEEK_V32_PROFILE,
+    OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL,
+    OPENROUTER_GPT_OSS_120B_NITRO_JUDGE_MODEL,
+    OPENROUTER_GPT_OSS_120B_NITRO_PROFILE,
     OPENROUTER_MUSE_ALTERNATIVE_LABEL,
     OPENROUTER_MUSE_JUDGE_MODEL,
     QWEN_MODEL_KEY_ORDER,
@@ -158,6 +161,13 @@ def _alternative_plot_label(summary: Mapping[str, Any] | None) -> str | None:
             or label != OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL
         ):
             raise ValueError("OpenRouter DeepSeek alternative summary has an invalid profile, provider, or label")
+    if provenance.get("expected_judge_model") == OPENROUTER_GPT_OSS_120B_NITRO_JUDGE_MODEL:
+        if (
+            provenance.get("judge_provider") != "OpenRouter"
+            or provenance.get("judge_profile") != OPENROUTER_GPT_OSS_120B_NITRO_PROFILE
+            or label != OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL
+        ):
+            raise ValueError("OpenRouter GPT-OSS Nitro summary has an invalid profile, provider, or label")
     source_note = value.get("source_note")
     if not isinstance(source_note, str) or label not in source_note:
         raise ValueError("alternative-judge analysis source note must include its plot label")

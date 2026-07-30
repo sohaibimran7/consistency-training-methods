@@ -16,7 +16,7 @@ from ctm_data.adapters.eval_awareness.figure6_analysis import (
     EXPECTED_CELL_COUNT,
     EXPECTED_JUDGMENT_COUNT,
     EXPECTED_MODEL_JUDGMENT_COUNT,
-    OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL,
+    OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL,
     OPENROUTER_MUSE_ALTERNATIVE_LABEL,
     PublicationValidationError,
     STRICT_SUBSET_ALTERNATIVE_RESULT_LABEL,
@@ -532,7 +532,7 @@ def _attach_paid_manifest(
     *,
     model_keys: tuple[str, ...],
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    profile = openrouter._judge_profile(openrouter.DEEPSEEK_V32_DIRECT_PROFILE)
+    profile = openrouter._judge_profile(openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE)
     proxy = {"enabled": False}
     route = None
     allowed_models = sorted(profile["allowed_response_models"])
@@ -734,10 +734,10 @@ def test_default_publication_matrix_is_37800_with_300_per_cell():
     assert len(result.summary["expected"]["pair_ids"]) == 100
 
 
-def test_current_three_qwen_deepseek_scope_is_strict_complete_at_16200(tmp_path: Path):
+def test_current_three_qwen_gpt_oss_nitro_scope_is_strict_complete_at_16200(tmp_path: Path):
     pytest.importorskip("matplotlib")
     judgments = _registered_publication_matrix(CURRENT_QWEN_MODEL_KEY_ORDER)
-    profile = openrouter._judge_profile(openrouter.DEEPSEEK_V32_DIRECT_PROFILE)
+    profile = openrouter._judge_profile(openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE)
     allowed_response_models = list(profile["allowed_response_models"])
     for row in judgments:
         row.update(
@@ -807,17 +807,17 @@ def test_current_three_qwen_deepseek_scope_is_strict_complete_at_16200(tmp_path:
     assert "not the full seven-model paper reproduction" in result.summary["source_note"]
     assert len(validate_plot_rows(result.rows, summary=result.summary)) == 54
 
-    png = tmp_path / "qwen-only-deepseek.png"
-    pdf = tmp_path / "qwen-only-deepseek.pdf"
+    png = tmp_path / "qwen-only-gpt-oss-nitro.png"
+    pdf = tmp_path / "qwen-only-gpt-oss-nitro.pdf"
     render_figure6(result.rows, summary=result.summary, png_path=png, pdf_path=pdf)
     assert result.summary["scope_label"].encode() in png.read_bytes()
-    assert OPENROUTER_DEEPSEEK_V32_ALTERNATIVE_LABEL.encode() in png.read_bytes()
+    assert OPENROUTER_GPT_OSS_120B_NITRO_ALTERNATIVE_LABEL.encode() in png.read_bytes()
     assert pdf.read_bytes().startswith(b"%PDF")
 
 
 def test_strict_openrouter_analysis_rejects_qwen36_scope() -> None:
     judgments = _registered_publication_matrix(("qwen36",))
-    profile = openrouter._judge_profile(openrouter.DEEPSEEK_V32_DIRECT_PROFILE)
+    profile = openrouter._judge_profile(openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE)
     for row in judgments:
         row.update(
             {
@@ -934,7 +934,7 @@ def test_analysis_cli_forwards_repeatable_expected_model_keys(tmp_path: Path, mo
             "--expected-model-key",
             "qwen_mo_post",
             "--expected-judge-profile",
-            openrouter.DEEPSEEK_V32_DIRECT_PROFILE,
+            openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE,
         ]
     )
 
@@ -944,7 +944,7 @@ def test_analysis_cli_forwards_repeatable_expected_model_keys(tmp_path: Path, mo
     assert captured["kwargs"]["judgment_artifacts"] == [{"artifact": True}]
     assert captured["kwargs"]["judge_manifests"] == [{"manifest": True}]
     assert captured["kwargs"]["route_attestations"] == []
-    assert captured["kwargs"]["expected_judge_profile"] == openrouter.DEEPSEEK_V32_DIRECT_PROFILE
+    assert captured["kwargs"]["expected_judge_profile"] == openrouter.GPT_OSS_120B_NITRO_DIRECT_PROFILE
 
 
 def test_plot_order_labels_completeness_and_forbidden_label():

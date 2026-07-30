@@ -300,17 +300,18 @@ error rows; those remain part of the audit history. The judge adapter selects
 exactly one terminal success for each logical key and rejects any history
 without one.
 
-## 7. Run the approved DeepSeek V3.2 alternative judge through OpenRouter
+## 7. Run the approved GPT-OSS 120B Nitro alternative judge through OpenRouter
 
-The current reproduction uses `deepseek/deepseek-v3.2` directly from the
+The current reproduction uses `openai/gpt-oss-120b:nitro` directly from the
 operator laptop through OpenRouter with
 the exact hash-pinned paper judge prompt and a 4,096-token output ceiling. This
 is a user-pinned alternative judge, not the paper's GPT-5 judge. The registered
-`deepseek-v3.2-direct` profile prohibits proxies and route attestations, disables
+`gpt-oss-120b-nitro-direct` profile prohibits proxies and route attestations, disables
 reasoning, requests a JSON object, and hash-binds temperature 0, concurrency 24,
-the 300-second retry cap, and exact provider routing. It accepts OpenRouter's
-requested model ID and its canonical dated response identity
-`deepseek/deepseek-v3.2-20251201`, while rejecting every other response model.
+the 300-second retry cap, and exact provider routing. The Nitro suffix and the
+explicit `provider.sort=throughput` pin throughput-prioritized routing. The profile
+accepts the requested Nitro model ID or OpenRouter's base response identity
+`openai/gpt-oss-120b`, while rejecting every other response model.
 The approved scope is exactly
 `qwen32`, `qwen_mo_mid`, and `qwen_mo_post`; do not add `qwen36` or a Llama key. Each model has its own complete
 5,400-request paid lifecycle, so it can be judged as soon as that model's
@@ -375,7 +376,7 @@ mkdir -p "$FIGURE6_JUDGE_ROOT"
 ```
 
 Keep `OPENROUTER_API_KEY` only on that operator machine. Do not configure a
-proxy or U.S. route evidence for the current direct DeepSeek profile.
+proxy or U.S. route evidence for the current direct GPT-OSS Nitro profile.
 
 ### Optional Muse US-proxy profile
 
@@ -476,7 +477,7 @@ build_judge_args() {
   JUDGE_ARGS=(
     --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
     --expected-model-key "$MODEL_KEY"
-    --judge-profile deepseek-v3.2-direct
+    --judge-profile gpt-oss-120b-nitro-direct
     --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
     --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
     --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
@@ -510,7 +511,7 @@ mkdir -p "$MODEL_JUDGE_ROOT"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile deepseek-v3.2-direct
+  --judge-profile gpt-oss-120b-nitro-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
   --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
   --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
@@ -550,7 +551,7 @@ export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile deepseek-v3.2-direct
+  --judge-profile gpt-oss-120b-nitro-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
   --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
   --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
@@ -576,7 +577,7 @@ export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile deepseek-v3.2-direct
+  --judge-profile gpt-oss-120b-nitro-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
   --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
   --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
@@ -606,7 +607,7 @@ export MODEL_JUDGE_ROOT="$FIGURE6_JUDGE_ROOT/$MODEL_KEY"
 JUDGE_ARGS=(
   --generations "$FIGURE6_LOCAL_GENERATION_ROOT/$MODEL_KEY/generations.jsonl"
   --expected-model-key "$MODEL_KEY"
-  --judge-profile deepseek-v3.2-direct
+  --judge-profile gpt-oss-120b-nitro-direct
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH"
   --attempt-log "$MODEL_JUDGE_ROOT/openrouter-attempts.jsonl"
   --manifest "$MODEL_JUDGE_ROOT/openrouter-manifest.json"
@@ -768,7 +769,7 @@ python -m ctm_data.adapters.eval_awareness.figure6_analysis \
   --expected-model-key qwen32 \
   --expected-model-key qwen_mo_mid \
   --expected-model-key qwen_mo_post \
-  --expected-judge-profile deepseek-v3.2-direct \
+  --expected-judge-profile gpt-oss-120b-nitro-direct \
   --output-csv "$FIGURE6_JUDGE_ROOT/figure6-aggregation.csv" \
   --summary-json "$FIGURE6_JUDGE_ROOT/figure6-summary.json"
 
@@ -780,7 +781,7 @@ python -m ctm_data.adapters.eval_awareness.figure6_plot \
 
 Strict plotting derives the selected model order from the analysis summary and
 accepts this scope only when all three selected registered Qwen models have
-exactly 5,400 valid judgments (16,200 total). Strict DeepSeek-profile analysis recomputes every judgment
+exactly 5,400 valid judgments (16,200 total). Strict GPT-OSS Nitro-profile analysis recomputes every judgment
 file digest, validates its unique `run_completed` event and approval, walks the
 reviewed ceiling-amendment chain, binds every row to its planned custom ID and
 generation digest, and checks the exact direct route, provider routing, reasoning/JSON settings, requested
@@ -788,7 +789,7 @@ and response model identities, provider request/response IDs, and plan hashes.
 It fails closed if any judgment file, manifest, or evidence file is absent,
 extra, mismatched, or tampered. Plotting automatically labels the title and source
 note with both `Qwen-only subset (3 of 7 models; 16,200 strict judgments)` and
-`OpenRouter DeepSeek V3.2 alternative judge`; custom title/source text is rejected if it
+`OpenRouter GPT-OSS 120B Nitro alternative judge`; custom title/source text is rejected if it
 omits either exact label. The output is complete only for the requested subset,
 not the full seven-model paper reproduction or paper result data. Preserve the
 artifact, three selected Qwen generation logs and their provenance/selection sidecars,
@@ -809,7 +810,7 @@ attempts and superseded plan hashes—they are part of the audit trail:
 
 ```bash
 export FIGURE6_HANDOFF_ROOT=/absolute/local/path/figure6-handoffs
-export FIGURE6_HANDOFF="$FIGURE6_HANDOFF_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-qwen-deepseek"
+export FIGURE6_HANDOFF="$FIGURE6_HANDOFF_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-qwen-gpt-oss-nitro"
 mkdir -p "$FIGURE6_HANDOFF/generations" "$FIGURE6_HANDOFF/judge" \
   "$FIGURE6_HANDOFF/results" "$FIGURE6_HANDOFF/source-identities"
 
@@ -836,7 +837,7 @@ if test "$FIGURE6_JUDGE_PROFILE" = muse-spark-1.1-us-proxy; then
   test -f "$VAST_CONSOLE_EVIDENCE"
   cp -a "$ROUTE_EVIDENCE" "$VAST_CONSOLE_EVIDENCE" \
     "$FIGURE6_HANDOFF/source-identities/"
-elif test "$FIGURE6_JUDGE_PROFILE" != deepseek-v3.2-direct; then
+elif test "$FIGURE6_JUDGE_PROFILE" != gpt-oss-120b-nitro-direct; then
   printf 'Unexpected handoff judge profile: %s\n' "$FIGURE6_JUDGE_PROFILE" >&2
   exit 1
 fi

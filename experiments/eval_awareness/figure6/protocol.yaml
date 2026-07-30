@@ -69,11 +69,11 @@ judge:
   submitted_by_gpu_jobs: false
   approval_required_before_submission: true
   provider: OpenRouter
-  profile: deepseek-v3.2-direct
-  model: deepseek/deepseek-v3.2
+  profile: gpt-oss-120b-nitro-direct
+  model: openai/gpt-oss-120b:nitro
   allowed_response_models:
-    - deepseek/deepseek-v3.2
-    - deepseek/deepseek-v3.2-20251201
+    - openai/gpt-oss-120b
+    - openai/gpt-oss-120b:nitro
   endpoint: https://openrouter.ai/api/v1/chat/completions
   api_shape: /api/v1/chat/completions
   route_mode: direct
@@ -88,7 +88,7 @@ judge:
     allow_fallbacks: false
     data_collection: deny
     require_parameters: true
-    sort: price
+    sort: throughput
   reasoning:
     enabled: false
   response_format:
@@ -135,5 +135,5 @@ judge:
       sanitized_evidence_sha256_in_plan: true
   single_writer_policy: OS flock held across history, requests, attempts, and final output
   strict_analysis_policy: exactly three per-model judgment files and manifests must match reviewed run_completed events for the selected profile; direct mode rejects route evidence
-  plot_label: OpenRouter DeepSeek V3.2 alternative judge
+  plot_label: OpenRouter GPT-OSS 120B Nitro alternative judge
   note: The target generations and paper judge prompt are unchanged; this user-selected judge is not the paper's GPT-5 judge.

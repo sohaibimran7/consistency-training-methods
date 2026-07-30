@@ -53,15 +53,39 @@ from ctm_data.adapters.eval_awareness.figure6_spec import (
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_CHAT_ENDPOINT = "/chat/completions"
+GPT_OSS_120B_NITRO_DIRECT_PROFILE = "gpt-oss-120b-nitro-direct"
 DEEPSEEK_V32_DIRECT_PROFILE = "deepseek-v3.2-direct"
 CLAUDE_SONNET_46_DIRECT_PROFILE = "claude-sonnet-4.6-direct"
 MUSE_US_PROXY_PROFILE = "muse-spark-1.1-us-proxy"
-DEFAULT_JUDGE_PROFILE = DEEPSEEK_V32_DIRECT_PROFILE
+DEFAULT_JUDGE_PROFILE = GPT_OSS_120B_NITRO_DIRECT_PROFILE
+GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL = "openai/gpt-oss-120b:nitro"
+GPT_OSS_120B_OPENROUTER_RESPONSE_MODEL = "openai/gpt-oss-120b"
 DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL = "deepseek/deepseek-v3.2"
 DEEPSEEK_V32_OPENROUTER_RESPONSE_MODEL = "deepseek/deepseek-v3.2-20251201"
 MUSE_OPENROUTER_JUDGE_MODEL = "meta/muse-spark-1.1"
 MUSE_OPENROUTER_RESPONSE_MODEL = "meta/muse-spark-1.1-20260709"
 JUDGE_PROFILES: dict[str, dict[str, Any]] = {
+    GPT_OSS_120B_NITRO_DIRECT_PROFILE: {
+        "label": "OpenRouter GPT-OSS 120B Nitro alternative judge",
+        "model": GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL,
+        "allowed_response_models": (
+            GPT_OSS_120B_NITRO_OPENROUTER_JUDGE_MODEL,
+            GPT_OSS_120B_OPENROUTER_RESPONSE_MODEL,
+        ),
+        "route_mode": "direct",
+        "temperature": 0.0,
+        "max_tokens": MAX_JUDGE_TOKENS,
+        "concurrency": 24,
+        "max_retry_after": 300.0,
+        "provider_routing": {
+            "allow_fallbacks": False,
+            "data_collection": "deny",
+            "require_parameters": True,
+            "sort": "throughput",
+        },
+        "reasoning": {"enabled": False},
+        "response_format": {"type": "json_object"},
+    },
     DEEPSEEK_V32_DIRECT_PROFILE: {
         "label": "OpenRouter DeepSeek V3.2 alternative judge",
         "model": DEEPSEEK_V32_OPENROUTER_JUDGE_MODEL,

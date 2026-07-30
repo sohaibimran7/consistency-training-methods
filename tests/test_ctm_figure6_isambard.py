@@ -157,11 +157,11 @@ def test_protocol_has_exact_workload_and_prompt_pins():
     assert judge["submitted_by_gpu_jobs"] is False
     assert judge["approval_required_before_submission"] is True
     assert judge["provider"] == "OpenRouter"
-    assert judge["profile"] == "deepseek-v3.2-direct"
-    assert judge["model"] == "deepseek/deepseek-v3.2"
+    assert judge["profile"] == "gpt-oss-120b-nitro-direct"
+    assert judge["model"] == "openai/gpt-oss-120b:nitro"
     assert judge["allowed_response_models"] == [
-        "deepseek/deepseek-v3.2",
-        "deepseek/deepseek-v3.2-20251201",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-120b:nitro",
     ]
     assert judge["api_shape"] == "/api/v1/chat/completions"
     assert judge["max_tokens"] == 4096
@@ -177,7 +177,7 @@ def test_protocol_has_exact_workload_and_prompt_pins():
     assert judge["proxy_policy"] == "prohibited; httpx trust_env disabled"
     assert workload["approved_current_scope"]["model_keys"] == ["qwen32", "qwen_mo_mid", "qwen_mo_post"]
     assert workload["approved_current_scope"]["total_generations"] == 16_200
-    assert judge["plot_label"] == "OpenRouter DeepSeek V3.2 alternative judge"
+    assert judge["plot_label"] == "OpenRouter GPT-OSS 120B Nitro alternative judge"
 
 
 def test_openrouter_operator_protocol_uses_shell_variables_and_paid_gates():
@@ -190,9 +190,9 @@ def test_openrouter_operator_protocol_uses_shell_variables_and_paid_gates():
     assert "--expected-plan-sha256" in readme
     assert "--rescore-paid-errors" in readme
     assert "--yes" in readme
-    assert "--judge-profile deepseek-v3.2-direct" in readme
-    assert "--expected-judge-profile deepseek-v3.2-direct" in readme
-    assert "OpenRouter DeepSeek V3.2 alternative judge" in readme
+    assert "--judge-profile gpt-oss-120b-nitro-direct" in readme
+    assert "--expected-judge-profile gpt-oss-120b-nitro-direct" in readme
+    assert "OpenRouter GPT-OSS 120B Nitro alternative judge" in readme
     assert "PASTE_INDEPENDENTLY_REVIEWED_64_HEX_HASH" in readme
 
 

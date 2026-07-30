@@ -42,7 +42,7 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=sorted(JUDGE_PROFILES),
         default=DEFAULT_JUDGE_PROFILE,
         help=(
-            "Exact registered paid judge profile. The default is the direct DeepSeek V3.2 alternative judge; "
+            "Exact registered paid judge profile. The default is the direct GPT-OSS 120B Nitro alternative judge; "
             "models and request settings cannot be overridden independently."
         ),
     )
