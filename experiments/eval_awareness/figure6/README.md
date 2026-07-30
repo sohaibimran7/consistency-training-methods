@@ -375,14 +375,55 @@ read -r -p "Type APPROVE_PAID_JUDGE only after reviewing hashes and cost: " JUDG
 test "$JUDGE_APPROVAL" = APPROVE_PAID_JUDGE
 ```
 
-Only after that check may an authorized operator upload every manifest-listed
-request shard and create the paid external batches using the provider UI or
-approved submission tooling. Record each input file ID, batch ID, price basis,
-approver, and timestamp next to the manifest. The repository intentionally has
-no submission command.
+Only after that check may an authorized operator cross the paid API boundary.
+Make the API key available through the operator's secure environment setup
+(never in an argument or file), then run the separate lifecycle tool with
+`--yes`:
 
-After all batches finish, download their raw output JSONL files, verify their
-provider identities against the recorded batch IDs, and collect them:
+```bash
+test -n "${OPENAI_API_KEY:-}" # must already be securely exported
+export FIGURE6_BATCH_MANIFEST="$FIGURE6_JUDGE_ROOT/openai-batch-lifecycle.json"
+
+python -m ctm_data.adapters.eval_awareness.figure6_batch submit \
+  --request-manifest "$FIGURE6_JUDGE_ROOT/requests.jsonl.manifest.json" \
+  --manifest "$FIGURE6_BATCH_MANIFEST" \
+  --yes
+```
+
+`submit` always prints the exact resolved shard paths, hashes and request
+counts plus `gpt-5`, `/v1/chat/completions`, 4,096 completion tokens, the pinned
+judge-template hash, and the 24-hour completion window before its first paid
+call. `--yes` is the explicit confirmation that this reviewed plan may be
+submitted. Without it, no lifecycle manifest, upload, or Batch is created.
+The atomic lifecycle manifest records the confirmation time, exact request
+manifest and shard identities, upload file IDs, Batch IDs, provider statuses,
+timestamps, counts, and an append-only event trail. Re-running the identical
+command resumes it and does not upload or create Batches for recorded shards.
+
+Check once, or poll read-only until every shard is terminal:
+
+```bash
+python -m ctm_data.adapters.eval_awareness.figure6_batch status \
+  --manifest "$FIGURE6_BATCH_MANIFEST"
+
+python -m ctm_data.adapters.eval_awareness.figure6_batch status \
+  --manifest "$FIGURE6_BATCH_MANIFEST" \
+  --wait \
+  --poll-interval-seconds 60
+```
+
+Download all available output and error files for terminal Batches. This
+refreshes status first, verifies downloaded byte counts and SHA-256 hashes,
+and refuses to overwrite mismatched local content. It exits nonzero with a
+clear error for failed, expired, cancelled, or partially submitted lifecycles:
+
+```bash
+python -m ctm_data.adapters.eval_awareness.figure6_batch download \
+  --manifest "$FIGURE6_BATCH_MANIFEST" \
+  --output-dir "$FIGURE6_JUDGE_ROOT/raw-batch"
+```
+
+After every Batch is completed, collect the verified raw output JSONL files:
 
 ```bash
 python -m ctm_data.adapters.eval_awareness.figure6_judge collect \
@@ -394,7 +435,7 @@ python -m ctm_data.adapters.eval_awareness.figure6_judge collect \
     "$FIGURE6_OUTPUT_ROOT/llama33/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/llama_mo_mid/generations.jsonl" \
     "$FIGURE6_OUTPUT_ROOT/llama_mo_post/generations.jsonl" \
-  --batch-output "$FIGURE6_JUDGE_ROOT"/batch-output-*.jsonl \
+  --batch-output "$FIGURE6_JUDGE_ROOT"/raw-batch/batch-output.part-*.jsonl \
   --judge-template "$FIGURE6_JUDGE_TEMPLATE_PATH" \
   --expected-template-sha256 e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870 \
   --judge-model gpt-5 \

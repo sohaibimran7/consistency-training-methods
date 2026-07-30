@@ -1,0 +1,3 @@
+# Deliberately small: Torch, CUDA, and vLLM come from vllm/vllm-openai:v0.26.0.
+openai==2.45.0
+PyYAML==6.0.2
