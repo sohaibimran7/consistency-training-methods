@@ -15,6 +15,49 @@ Store, copy, and archive each generated JSONL file together with its
 Builders refuse to overwrite existing artifacts; use a new output path when the
 source revision, source rows, seed, factor selection, or variant count changes.
 
+## Irpan et al. (`2510.27062`) paper suite
+
+`ctm_data.adapters.irpan_2510_27062` is the offline, provenance-first data path
+for *Consistency Training Helps Stop Sycophancy and Jailbreaks*. It is distinct
+from the fixed-family WildJailbreak RLCT adapter documented below. The paper
+suite assigns these roles:
+
+| Source | Paper use | Adapter route |
+| --- | --- | --- |
+| ARC | sycophancy training | clean MCQ plus deterministic incorrect user suggestion |
+| OpenBookQA | sycophancy training | clean MCQ plus deterministic incorrect user suggestion |
+| BIG-Bench Hard | sycophancy training | clean MCQ plus deterministic incorrect user suggestion |
+| MMLU | sycophancy/capability evaluation | clean accuracy and wrong-suggestion tasks |
+| HarmBench | jailbreak training and safety validation | local harmful-request export; clean/wrapped vulnerability filter |
+| OR-Bench | helpfulness validation | answered-benign rate |
+| ClearHarm | final safety evaluation | attack success rate |
+| WildGuardTest | final safety evaluation | human-labelled adversarial-harmful rows; attack success rate |
+| XSTest | final helpfulness evaluation | answered-benign rate for this paper |
+| WildJailbreak | final helpfulness evaluation | `adversarial_benign`; answered-benign rate |
+
+The paper does not release exact source revisions, splits, sycophancy prompt
+template, jailbreak wrapper catalogue, judge prompt/parser, or bootstrap seed
+and replicate count. The adapter therefore records each of those as a
+reconstruction choice instead of presenting it as paper-authored. All source
+imports take explicit local files, and every derived JSONL has an immutable
+manifest, stable example IDs, content hashes, parent hashes, configuration
+hashes, and producer-code hashes. Imports, task construction, filtering, and
+dry-runs never acquire data or call a model.
+
+Training manifests are role-bound. A canonical clean/wrapped pair view feeds
+ACT, AttCT, MLPCT, OPCT, and the paper-specific RMCT settings; BCT instead
+requires a separately verified fresh-target artifact. Evaluation-role rows are
+rejected by every training path, and the reconstructed HarmBench training and
+validation partitions must have disjoint stable IDs.
+
+WildGuardMix/WildGuardTest and WildJailbreak are gated by AI2 terms. Accept the
+upstream terms yourself, export the selected rows locally, and keep them under
+`ctm_data/local/` or another gitignored path. The adapter will fail with an
+acquisition URL when a local export is missing; it does not bypass either gate
+or redistribute the rows. See the paper runbook at
+`experiments/paper_reproductions/irpan_2510_27062/README.md` for the artifact
+DAG, selection boundary, and smoke/full experiment plans.
+
 ## Native mcq-bias files
 
 The `mcq_bias` adapter reads native frozen rows without renaming their fields or

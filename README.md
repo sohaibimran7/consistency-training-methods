@@ -6,8 +6,10 @@ to exhibit consistent behaviour across related prompts. It provides:
 - reinforcement-learning consistency training (RLCT);
 - supervised and representation-consistency training (`bct`, `act`, `attct`,
   and `mlpct`);
+- on-policy consistency training (`opct`);
 - Tinker and local PyTorch/PEFT training backends;
-- explicit adapters for `mcq-bias`, WildJailbreak, and EvalAwareBench; and
+- explicit adapters for `mcq-bias`, WildJailbreak, EvalAwareBench, and the
+  Irpan et al. (`2510.27062`) sycophancy/jailbreak dataset suite; and
 - a setting-independent evaluation runner for upstream Inspect tasks.
 
 Training and evaluation are independent. An experiment specifies the training
