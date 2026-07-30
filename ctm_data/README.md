@@ -145,6 +145,29 @@ native frozen file, then round-robin interleaves those files into the explicit
 training output. Interleaving prevents a smaller global training prefix from
 silently containing only the first dataset.
 
+`--datasets` also accepts compact JSON specifications, so heterogeneous
+schemas remain configuration rather than paper-specific Python:
+
+```bash
+uv run python -m ctm_data.adapters.mcq_bias.materialize \
+  --bias-type suggested_answer \
+  --datasets mmlu \
+    '{"dataset":"allenai/ai2_arc","dataset_config":"ARC-Challenge","split":"validation","revision":"<commit>","question_field":"question","choices_field":"choices","answer_field":"answerKey"}' \
+  --n-questions 250 \
+  --dataset-dir artifacts/mcq_bias/train \
+  --output artifacts/data/suggested-answer-pairs.jsonl \
+  --manifest-output artifacts/data/suggested-answer-pairs.manifest.json
+```
+
+The same objects can appear directly in experiment YAML. The canonical
+`DatasetSpec` and validation rules come from `mcq_bias`; CTM only supplies a
+stable adapter import and CLI/YAML routing. Plain dataset strings remain
+backward compatible. Source revisions, schema fields, local paths and
+local-file content participate in the upstream frozen-artifact identity.
+For `suggested_answer`, `--prompt-family {chua,irpan}` selects the prompt
+reconstruction and `--wrong-option-seed` optionally salts the deterministic
+incorrect-option choice.
+
 `mcq_bias` does not generate BCT responses. CTM samples them through its frozen
 base sampler:
 

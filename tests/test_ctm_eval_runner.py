@@ -110,6 +110,10 @@ def test_tinker_checkpoint_adapter_rejects_invalid_modes(monkeypatch):
 
 def test_parse_json_object_inline_or_file(tmp_path):
     assert parse_json_object('{"x": 1}', label="config") == {"x": 1}
+    assert parse_json_object(
+        '{"long": "' + ("x" * 300) + '"}',
+        label="config",
+    ) == {"long": "x" * 300}
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"y": 2}))
     assert parse_json_object(str(path), label="config") == {"y": 2}

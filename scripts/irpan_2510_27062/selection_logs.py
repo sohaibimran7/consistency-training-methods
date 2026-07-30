@@ -23,6 +23,10 @@ from scripts.irpan_2510_27062.analysis import (
     get_benchmark_route,
     validate_selection_observation,
 )
+from scripts.irpan_2510_27062.mcq_bias_metrics import (
+    MCQMetricAggregationError,
+    aggregate_mcq_bias_sample_values,
+)
 
 _MISSING = object()
 
@@ -290,6 +294,11 @@ def _log_observation(
 
 
 def _extract_metric(log: Any, *, route: BenchmarkRoute, metric: str) -> _MetricResult:
+    if route.benchmark == "mmlu":
+        native_result = _extract_native_mcq_bias_metric(log, route=route, metric=metric)
+        if native_result is not None:
+            return native_result
+
     results = _field(log, "results", None)
     raw_scores = _field(results, "scores", ())
     scores = raw_scores if isinstance(raw_scores, Sequence) and not isinstance(raw_scores, (str, bytes)) else ()
@@ -386,6 +395,112 @@ def _extract_metric(log: Any, *, route: BenchmarkRoute, metric: str) -> _MetricR
         unscored_count=0,
         unscored_reason=None,
     )
+
+
+def _extract_native_mcq_bias_metric(
+    log: Any,
+    *,
+    route: BenchmarkRoute,
+    metric: str,
+) -> _MetricResult | None:
+    """Use native sample values, retaining fallback only for named legacy tasks."""
+
+    raw_samples = _field(log, "samples", _MISSING)
+    if raw_samples is _MISSING or raw_samples is None:
+        return (
+            None if _is_legacy_irpan_mmlu_log(log) else _unscored_result("native mcq_bias log is missing sample scores")
+        )
+    if not isinstance(raw_samples, Sequence) or isinstance(raw_samples, (str, bytes)):
+        return _unscored_result("Inspect samples are not a sequence")
+    completed_samples = _field(_field(log, "results", None), "completed_samples", _MISSING)
+    if isinstance(completed_samples, bool) or not isinstance(completed_samples, int) or completed_samples < 0:
+        return _unscored_result("native mcq_bias log is missing a valid completed-sample count")
+    if completed_samples != len(raw_samples):
+        return _unscored_result(
+            f"native sample coverage mismatch: {len(raw_samples)} values for " f"{completed_samples} completed samples",
+            unscored_count=max(completed_samples - len(raw_samples), 1),
+        )
+
+    values: list[Mapping[str, object]] = []
+    missing_scorer = 0
+    saw_native_scorer = False
+    for index, sample in enumerate(raw_samples, start=1):
+        raw_scores = _field(sample, "scores", None)
+        if not isinstance(raw_scores, Mapping):
+            missing_scorer += 1
+            continue
+        matches = [
+            score
+            for name, score in raw_scores.items()
+            if isinstance(name, str) and name.split("/")[-1] == "mcq_bias_scorer"
+        ]
+        if not matches:
+            missing_scorer += 1
+            continue
+        saw_native_scorer = True
+        if len(matches) != 1:
+            return _unscored_result(f"sample {index} has ambiguous mcq_bias_scorer values")
+
+        metadata = _field(sample, "metadata", None)
+        if not isinstance(metadata, Mapping):
+            return _unscored_result(f"sample {index} is missing mcq_bias metadata")
+        if route.condition == "clean":
+            if metadata.get("variant") != "unbiased":
+                return _unscored_result(f"sample {index} is not an unbiased mcq_bias variant")
+        elif route.condition == "wrong_suggestion":
+            if metadata.get("variant") != "biased" or metadata.get("bias_type") != "suggested_answer":
+                return _unscored_result(f"sample {index} is not a biased suggested_answer variant")
+        else:
+            return _unscored_result(f"unsupported MMLU condition {route.condition!r}")
+
+        raw_value = _field(matches[0], "value", _MISSING)
+        if raw_value is _MISSING:
+            as_dict = getattr(matches[0], "as_dict", None)
+            raw_value = as_dict() if callable(as_dict) else _MISSING
+        if not isinstance(raw_value, Mapping):
+            return _unscored_result(f"sample {index} mcq_bias_scorer value is not a mapping")
+        values.append(raw_value)
+
+    if not saw_native_scorer:
+        return (
+            None
+            if _is_legacy_irpan_mmlu_log(log)
+            else _unscored_result("native mcq_bias log has no mcq_bias_scorer sample values")
+        )
+    if missing_scorer:
+        return _unscored_result(
+            f"{missing_scorer} of {len(raw_samples)} samples are missing mcq_bias_scorer",
+            unscored_count=missing_scorer,
+        )
+    try:
+        aggregate = aggregate_mcq_bias_sample_values(values, condition=route.condition)
+    except MCQMetricAggregationError as exc:
+        return _unscored_result(str(exc), unscored_count=max(len(values), 1))
+    if aggregate.value is None:
+        return _unscored_result(
+            "all wrong-suggestion responses were unparsed",
+            unscored_count=aggregate.unparsed_count,
+        )
+    numerator = aggregate.numerator
+    value = aggregate.value
+    if metric == route.derived_metric:
+        numerator = aggregate.denominator - numerator
+        value = 1.0 - value
+    elif metric != route.metric:
+        return _unscored_result(f"unsupported native MMLU metric {metric!r}")
+    return _MetricResult(
+        status=SCORED,
+        value=value,
+        numerator=numerator,
+        denominator=aggregate.denominator,
+        unscored_count=aggregate.unparsed_count if route.condition == "wrong_suggestion" else 0,
+        unscored_reason=None,
+    )
+
+
+def _is_legacy_irpan_mmlu_log(log: Any) -> bool:
+    task_name = str(_field(_field(log, "eval", None), "task", ""))
+    return "scripts.irpan_2510_27062.mmlu_tasks" in task_name
 
 
 def _unscored_result(reason: str, *, unscored_count: int = 1) -> _MetricResult:

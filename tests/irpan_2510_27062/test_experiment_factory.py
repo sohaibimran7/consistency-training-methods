@@ -65,12 +65,17 @@ def test_validation_uses_candidate_checkpoints_but_final_is_explicit() -> None:
 
     sycophancy_validation = [entry for entry in validation if entry["name"].startswith("validation_sycophancy_")]
     assert len(sycophancy_validation) == 14
-    assert {entry["args"]["task_factory"].rsplit(":", 1)[1] for entry in sycophancy_validation} == {
-        "mmlu_clean_validation_task",
-        "mmlu_wrong_suggestion_validation_task",
+    assert {entry["args"]["task_factory"] for entry in sycophancy_validation} == {
+        "mcq_bias.tasks:mcq_bias",
+        "mcq_bias.tasks:mcq_bias_unbiased",
     }
     validation_path = load_experiment_source(FULL)["spec"]["data"]["sycophancy"]["validation"]["mmlu"]
-    assert all(entry["args"]["task_args"]["artifact_path"] == validation_path for entry in sycophancy_validation)
+    assert all(entry["args"]["task_args"]["dataset"] == validation_path for entry in sycophancy_validation)
+    assert all(entry["args"]["task_args"]["n_questions"] is None for entry in sycophancy_validation)
+    assert all(entry["args"]["task_args"]["prompt_family"] == "irpan" for entry in sycophancy_validation)
+    assert all(
+        "scripts.irpan_2510_27062.mmlu_tasks" not in entry["args"]["task_factory"] for entry in plan["evaluation"]
+    )
     assert all(validation_path not in str(entry) for entry in final)
     for entry in validation:
         candidate = entry["args"]["metadata"]["selection_candidate"]

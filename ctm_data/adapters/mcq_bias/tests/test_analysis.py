@@ -12,7 +12,7 @@ from ctm_data.adapters.mcq_bias.analysis import (
 )
 
 
-def _log(*, bias, dataset, created, values, status="success"):
+def _log(*, bias, dataset, created, values, status="success", source_args=None):
     samples = [
         SimpleNamespace(scores={"mcq_bias_scorer": SimpleNamespace(value={"matches_bias": value})}) for value in values
     ]
@@ -26,6 +26,7 @@ def _log(*, bias, dataset, created, values, status="success"):
                 "prompt_style": "none",
                 "seed": "42",
                 "n_questions": len(values),
+                **(source_args or {}),
             },
         ),
         samples=samples,
@@ -103,6 +104,31 @@ def test_aggregate_logs_uses_latest_successful_attempt():
     rows = aggregate_logs({"base": [old, failed, new]}, metric="matches_bias")
     assert rows[0]["mean"] == 0.0
     assert rows[0]["n_total"] == 1
+
+
+def test_task_identity_keeps_distinct_dataset_specs():
+    logs = [
+        _log(
+            bias="suggested_answer",
+            dataset="org/custom",
+            created="1",
+            values=[1.0],
+            source_args={"dataset_config": "a", "split": "validation", "revision": "abc"},
+        ),
+        _log(
+            bias="suggested_answer",
+            dataset="org/custom",
+            created="1",
+            values=[0.0],
+            source_args={"dataset_config": "b", "split": "test", "revision": "def"},
+        ),
+    ]
+
+    rows = aggregate_logs({"base": logs}, metric="matches_bias")
+
+    assert rows[0]["mean"] == 0.5
+    assert rows[0]["n_scored"] == 2
+    assert rows[0]["n_total"] == 2
 
 
 def test_replicate_groups_pool_scientific_runs_but_deduplicate_retries():
@@ -563,3 +589,61 @@ def test_sycophancy_tradeoff_combines_biased_and_clean_tasks():
     assert rows[0]["not_sycophantic"] == pytest.approx(2 / 3)
     assert rows[0]["clean_accuracy"] == pytest.approx(2 / 3)
     assert rows[0]["f1"] == pytest.approx(2 / 3)
+
+
+def test_sycophancy_tradeoff_requires_same_wrong_option_seed_set():
+    biased_a = _metric_log(
+        bias="suggested_answer",
+        dataset="mmlu",
+        created="1",
+        rows=[{"matches_bias": 0.0}],
+    )
+    biased_a.eval.task_args["wrong_option_seed"] = "a"
+    biased_b = _metric_log(
+        bias="suggested_answer",
+        dataset="mmlu",
+        created="1",
+        rows=[{"matches_bias": 0.0}],
+    )
+    biased_b.eval.task_args["wrong_option_seed"] = "b"
+    clean_a = _metric_log(
+        bias="",
+        dataset="mmlu",
+        created="1",
+        rows=[{"correct": 1.0}],
+    )
+    clean_b = _metric_log(
+        bias="",
+        dataset="mmlu",
+        created="1",
+        rows=[{"correct": 1.0}],
+    )
+
+    with pytest.raises(ValueError, match="same biased task set"):
+        aggregate_sycophancy_tradeoff({"first": [biased_a, clean_a], "second": [biased_b, clean_b]})
+
+
+def test_sycophancy_tradeoff_rejects_multiple_seed_variants_for_one_clean_task():
+    biased_a = _metric_log(
+        bias="suggested_answer",
+        dataset="mmlu",
+        created="1",
+        rows=[{"matches_bias": 0.0}],
+    )
+    biased_a.eval.task_args["wrong_option_seed"] = "a"
+    biased_b = _metric_log(
+        bias="suggested_answer",
+        dataset="mmlu",
+        created="1",
+        rows=[{"matches_bias": 1.0}],
+    )
+    biased_b.eval.task_args["wrong_option_seed"] = "b"
+    clean = _metric_log(
+        bias="",
+        dataset="mmlu",
+        created="1",
+        rows=[{"correct": 1.0}],
+    )
+
+    with pytest.raises(ValueError, match="multiple wrong-option seeds"):
+        aggregate_sycophancy_tradeoff({"condition": [biased_a, biased_b, clean]})

@@ -37,6 +37,8 @@ def _log(
     scored_samples: int | None = None,
     unscored_samples: int | None = None,
     completed_samples: int = 10,
+    samples: list | None = None,
+    task: str | None = None,
 ) -> SimpleNamespace:
     task_metadata = {
         "selection_candidate": candidate,
@@ -49,7 +51,11 @@ def _log(
         task_metadata.update({"source": benchmark, "metric": metric})
     return SimpleNamespace(
         status=status,
-        eval=SimpleNamespace(created=created, metadata=task_metadata),
+        eval=SimpleNamespace(
+            created=created,
+            metadata=task_metadata,
+            task=task or ("mcq_bias/mcq_bias" if samples is not None else "scripts.irpan_2510_27062.mmlu_tasks:legacy"),
+        ),
         results=SimpleNamespace(
             completed_samples=completed_samples,
             scores=[
@@ -60,6 +66,7 @@ def _log(
                 )
             ],
         ),
+        samples=samples,
     )
 
 
@@ -76,6 +83,24 @@ def _fake_runtime(monkeypatch, logs: dict[str, SimpleNamespace]) -> None:
     monkeypatch.setattr(
         "scripts.irpan_2510_27062.selection_logs._load_inspect_log_api",
         lambda: (list_eval_logs, read_eval_log),
+    )
+
+
+def _native_mcq_sample(*, variant: str, correct, matches_bias, answer_parsed: int) -> SimpleNamespace:
+    metadata = {"variant": variant}
+    if variant == "biased":
+        metadata["bias_type"] = "suggested_answer"
+    return SimpleNamespace(
+        metadata=metadata,
+        scores={
+            "mcq_bias_scorer": SimpleNamespace(
+                value={
+                    "correct": correct,
+                    "matches_bias": matches_bias,
+                    "answer_parsed": answer_parsed,
+                }
+            )
+        },
     )
 
 
@@ -164,6 +189,110 @@ def test_collects_latest_successful_exact_method_routes_and_sorts(monkeypatch) -
         (2, 10, 0),
     ]
     assert all(validate_selection_observation(row).schema == SELECTION_OBSERVATION_SCHEMA for row in rows)
+
+
+def test_native_clean_scores_count_unparsed_as_incorrect(monkeypatch) -> None:
+    candidate = _candidate("sycophancy", "base", "sycophancy:base:configured")
+    logs = {
+        "clean.eval": _log(
+            candidate=candidate,
+            created="2026-01-01T00:00:00Z",
+            benchmark="mmlu",
+            metric="mmlu_accuracy",
+            condition="clean",
+            metrics={"mmlu_accuracy": {"value": 1.0}},
+            scored_samples=1,
+            unscored_samples=1,
+            completed_samples=2,
+            samples=[
+                _native_mcq_sample(variant="unbiased", correct=1.0, matches_bias=None, answer_parsed=1),
+                _native_mcq_sample(variant="unbiased", correct=None, matches_bias=None, answer_parsed=0),
+            ],
+        )
+    }
+    _fake_runtime(monkeypatch, logs)
+
+    row = collect_validation_observations("fixture-logs", domain="sycophancy", method="base")[0]
+
+    assert row["status"] == "scored"
+    assert (row["numerator"], row["denominator"], row["value"]) == (1, 2, 0.5)
+    assert row["unscored_count"] == 0
+
+
+def test_native_wrong_suggestion_scores_exclude_unparsed(monkeypatch) -> None:
+    candidate = _candidate("sycophancy", "base", "sycophancy:base:configured")
+    logs = {
+        "wrong.eval": _log(
+            candidate=candidate,
+            created="2026-01-01T00:00:00Z",
+            benchmark="mmlu",
+            metric="followed_wrong_suggestion",
+            condition="wrong_suggestion",
+            metrics={"followed_wrong_suggestion": {"value": 0.5}},
+            scored_samples=1,
+            unscored_samples=1,
+            completed_samples=2,
+            samples=[
+                _native_mcq_sample(variant="biased", correct=0.0, matches_bias=1.0, answer_parsed=1),
+                _native_mcq_sample(variant="biased", correct=None, matches_bias=None, answer_parsed=0),
+            ],
+        )
+    }
+    _fake_runtime(monkeypatch, logs)
+
+    row = collect_validation_observations("fixture-logs", domain="sycophancy", method="base")[0]
+
+    assert row["status"] == "scored"
+    assert (row["numerator"], row["denominator"], row["value"]) == (1, 1, 1.0)
+    assert row["unscored_count"] == 1
+    validate_selection_observation(row)
+
+
+def test_native_wrong_suggestion_can_emit_non_sycophancy(monkeypatch) -> None:
+    candidate = _candidate("sycophancy", "base", "sycophancy:base:configured")
+    logs = {
+        "wrong.eval": _log(
+            candidate=candidate,
+            created="2026-01-01T00:00:00Z",
+            benchmark="mmlu",
+            metric="non_sycophancy",
+            condition="wrong_suggestion",
+            metrics={"non_sycophancy": {"value": 0.0}},
+            completed_samples=2,
+            samples=[
+                _native_mcq_sample(variant="biased", correct=0.0, matches_bias=1.0, answer_parsed=1),
+                _native_mcq_sample(variant="biased", correct=1.0, matches_bias=0.0, answer_parsed=1),
+            ],
+        )
+    }
+    _fake_runtime(monkeypatch, logs)
+
+    row = collect_validation_observations("fixture-logs", domain="sycophancy", method="base")[0]
+
+    assert row["metric"] == "non_sycophancy"
+    assert (row["numerator"], row["denominator"], row["value"]) == (1, 2, 0.5)
+
+
+def test_native_sample_coverage_mismatch_fails_closed(monkeypatch) -> None:
+    candidate = _candidate("sycophancy", "base", "sycophancy:base:configured")
+    logs = {
+        "clean.eval": _log(
+            candidate=candidate,
+            created="2026-01-01T00:00:00Z",
+            benchmark="mmlu",
+            metric="mmlu_accuracy",
+            condition="clean",
+            metrics={"mmlu_accuracy": {"value": 1.0}},
+            completed_samples=2,
+            samples=[_native_mcq_sample(variant="unbiased", correct=1.0, matches_bias=None, answer_parsed=1)],
+        )
+    }
+    _fake_runtime(monkeypatch, logs)
+
+    row = collect_validation_observations("fixture-logs", domain="sycophancy", method="base")[0]
+
+    assert row["status"] == "unscored"
+    assert "coverage mismatch" in row["unscored_reason"]
 
 
 def test_safety_uses_named_mean_and_marks_any_unscored_coverage(monkeypatch) -> None:

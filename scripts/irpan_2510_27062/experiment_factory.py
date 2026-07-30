@@ -635,6 +635,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     log_root = f"logs/evals/{name}"
+    mcq_dataset_dir = f"{root}/data/mcq-bias"
     evaluations: list[dict[str, Any]] = []
     for method in METHODS:
         training_name = f"sycophancy_{method}"
@@ -643,28 +644,52 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         for condition, factory in (
             (
                 "clean",
-                "scripts.irpan_2510_27062.mmlu_tasks:mmlu_clean_validation_task",
+                "mcq_bias.tasks:mcq_bias_unbiased",
             ),
             (
                 "wrong_suggestion",
-                "scripts.irpan_2510_27062.mmlu_tasks:mmlu_wrong_suggestion_validation_task",
+                "mcq_bias.tasks:mcq_bias",
             ),
         ):
+            task_args = {
+                "dataset": data["sycophancy"]["validation"]["mmlu"],
+                "n_questions": None,
+                "seed": str(seed),
+                "dataset_dir": mcq_dataset_dir,
+                "question_field": "payload.question",
+                "choices_field": "payload.choices",
+                "answer_field": "payload.correct_label",
+                "prompt_family": "irpan",
+            }
+            if condition == "wrong_suggestion":
+                task_args.update(
+                    {
+                        "bias_type": "suggested_answer",
+                        "wrong_option_seed": str(seed),
+                        "include_bias_acknowledged": False,
+                    }
+                )
             evaluations.append(
                 _eval_entry(
                     name=f"validation_sycophancy_{method}_{condition}",
                     target="validation",
                     task_factory=factory,
-                    task_args={"artifact_path": data["sycophancy"]["validation"]["mmlu"]},
+                    task_args=task_args,
                     model_args=model_args,
                     generation=generation,
                     log_dir=f"{log_root}/validation/{metadata_suffix}/{condition}",
                     smoke=smoke,
-                    metadata=_selection_metadata(
-                        domain="sycophancy",
-                        method=method,
-                        model_args=model_args,
-                    ),
+                    metadata={
+                        **_selection_metadata(
+                            domain="sycophancy",
+                            method=method,
+                            model_args=model_args,
+                        ),
+                        "benchmark": "mmlu",
+                        "stage": "validation",
+                        "condition": condition,
+                        "primary_metric": ("mmlu_accuracy" if condition == "clean" else "followed_wrong_suggestion"),
+                    },
                 )
             )
 
@@ -699,22 +724,46 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     for method in METHODS:
         metadata_suffix = f"{_method_status(method)}/sycophancy/{method}"
         for condition, factory in (
-            ("clean", "scripts.irpan_2510_27062.mmlu_tasks:mmlu_clean_task"),
+            ("clean", "mcq_bias.tasks:mcq_bias_unbiased"),
             (
                 "wrong_suggestion",
-                "scripts.irpan_2510_27062.mmlu_tasks:mmlu_wrong_suggestion_task",
+                "mcq_bias.tasks:mcq_bias",
             ),
         ):
+            task_args = {
+                "dataset": data["sycophancy"]["final"]["mmlu"],
+                "n_questions": None,
+                "seed": str(seed),
+                "dataset_dir": mcq_dataset_dir,
+                "question_field": "payload.question",
+                "choices_field": "payload.choices",
+                "answer_field": "payload.correct_label",
+                "prompt_family": "irpan",
+            }
+            if condition == "wrong_suggestion":
+                task_args.update(
+                    {
+                        "bias_type": "suggested_answer",
+                        "wrong_option_seed": str(seed),
+                        "include_bias_acknowledged": False,
+                    }
+                )
             evaluations.append(
                 _eval_entry(
                     name=f"final_sycophancy_{method}_{condition}",
                     target="final",
                     task_factory=factory,
-                    task_args={"artifact_path": data["sycophancy"]["final"]["mmlu"]},
+                    task_args=task_args,
                     model_args=selected["sycophancy"][method],
                     generation=generation,
                     log_dir=f"{log_root}/final/{metadata_suffix}/{condition}",
                     smoke=smoke,
+                    metadata={
+                        "benchmark": "mmlu",
+                        "stage": "final",
+                        "condition": condition,
+                        "primary_metric": ("mmlu_accuracy" if condition == "clean" else "followed_wrong_suggestion"),
+                    },
                 )
             )
         metadata_suffix = f"{_method_status(method)}/jailbreak/{method}"

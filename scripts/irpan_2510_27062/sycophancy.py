@@ -15,6 +15,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from mcq_bias.pipeline.injectors import SuggestedAnswerInjector
+from mcq_bias.pipeline.records import MCQRecord
+
 from scripts.irpan_2510_27062.artifacts import (
     producer_identity,
     read_artifact,
@@ -190,14 +193,24 @@ def build_sycophancy_pairs(
             raise MCQNormalizationError(f"normalized input contains duplicate example_id {record['example_id']!r}")
         seen_ids.add(record["example_id"])
         question, choices, correct_label = _validated_mcq_payload(record["payload"], location=f"record {index}")
-        suggested_wrong_label = select_wrong_label(
-            example_id=record["example_id"],
-            correct_label=correct_label,
-            choice_labels=[choice["label"] for choice in choices],
-            seed=seed,
+        choice_labels = [choice["label"] for choice in choices]
+        mcq_record = MCQRecord(
+            question=question,
+            options=[choice["text"] for choice in choices],
+            ground_truth_idx=choice_labels.index(correct_label),
+            dataset=record["source"],
         )
-        clean_prompt = render_clean_prompt(question, choices)
-        wrapped_prompt = render_wrong_suggestion_prompt(clean_prompt, suggested_wrong_label)
+        injection = SuggestedAnswerInjector(
+            prompt_family="irpan",
+            wrong_option_seed=str(seed),
+        ).inject(mcq_record)
+        if injection is None:  # pragma: no cover - this injector is total
+            raise MCQNormalizationError("mcq_bias could not construct a suggested-answer prompt")
+        # Store the canonical label shown in the generated prompt. Source labels
+        # (for example ARC's numeric labels) remain available on the clean row.
+        suggested_wrong_label = injection.biased_option
+        clean_prompt = mcq_record.unbiased_user_content(prompt_family="irpan")
+        wrapped_prompt = injection.messages[0]["content"]
         pair = make_derived_record(
             record_type=PROMPT_PAIR_RECORD_TYPE,
             example_id=record["example_id"],
