@@ -222,7 +222,7 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     data_generation = [
         {
             "name": "hle-source",
-            "command": ["${python}", "-m", "ctm_data.sources.hle"],
+            "command": ["${python}", "-m", "scripts.rmct_paper_vast_more_methods.hle_source"],
             "args": {
                 "output": paths["hle"],
                 "manifest_output": paths["hle_manifest"],
@@ -250,7 +250,11 @@ def compile_experiment(*, name: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         },
         {
             "name": "cleaned-alpaca-prompts",
-            "command": ["${python}", "-m", "ctm_data.sources.cleaned_alpaca"],
+            "command": [
+                "${python}",
+                "-m",
+                "scripts.rmct_paper_vast_more_methods.cleaned_alpaca_source",
+            ],
             "args": {
                 "output": paths["prompts"],
                 "manifest_output": paths["prompts_manifest"],

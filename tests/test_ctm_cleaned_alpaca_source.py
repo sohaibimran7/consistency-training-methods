@@ -1,6 +1,6 @@
 import pytest
 
-from ctm_data.sources.cleaned_alpaca import select_prompt_rows
+from scripts.rmct_paper_vast_more_methods.cleaned_alpaca_source import select_prompt_rows
 
 
 def test_cleaned_alpaca_selection_is_deterministic_and_ignores_original_outputs():

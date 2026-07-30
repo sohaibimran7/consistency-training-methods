@@ -1,5 +1,82 @@
 # Training data and adapters
 
+## Generic data interfaces
+
+`ctm_data` keeps data transport separate from benchmark and experiment policy.
+The generic layer decodes rows, records the exact source selection, validates
+the shared paired-prompt shape, and constructs Inspect objects from policy that
+the caller has already chosen. Source adapters remain responsible for column
+interpretation, filtering, prompt construction, splits, scorers, and solvers.
+
+Use an explicit local serialization format; file suffixes are not guessed:
+
+```python
+from ctm_data.sources import load_local_rows
+
+loaded = load_local_rows("exports/train.jsonl", format="jsonl")
+rows = loaded.rows
+source_identity = loaded.source.as_dict()
+```
+
+JSON must contain an array of objects. JSONL is read by physical newline (so
+U+2028 and U+2029 inside JSON strings are preserved), while CSV and TSV require
+a unique, non-empty header and an exact value count on every record.
+
+Hugging Face access requires all four selection fields. `datasets` is imported
+only when `load()` is called, and the selected rows are copied to plain
+dictionaries without filtering or column conversion:
+
+```python
+from ctm_data.sources import HuggingFaceSource
+
+loaded = HuggingFaceSource(
+    dataset="owner/dataset",
+    config="configuration",
+    split="train",
+    revision="full-immutable-revision",
+).load()
+```
+
+Adapters can emit the training-wide pair contract while retaining their own
+flat metadata fields:
+
+```python
+from ctm_data.pairs import make_pair_row
+
+pair = make_pair_row(
+    reference_messages=[{"role": "user", "content": clean_prompt}],
+    variant_messages=[{"role": "user", "content": changed_prompt}],
+    metadata={"source_id": source_id, "split": split},
+)
+```
+
+`canonical_pair_row()` and `canonical_pair_rows()` validate existing rows.
+Both message lists must be non-empty sequences of mappings; all other fields
+are preserved. Training entry points can consume these canonical rows through
+their existing `reference_messages` and `variant_messages` field options.
+
+Inspect task factories should create their benchmark-specific `Sample`, scorer,
+and solver values first, then use the policy-free constructor. `inspect_ai` is
+also imported only when construction occurs:
+
+```python
+from ctm_data.inspect import build_inspect_task
+
+task = build_inspect_task(
+    samples,
+    scorer=scorer,
+    solver=solver,
+    task_name="explicit-task-name",
+    dataset_name="explicit-dataset-name",
+    dataset_location="exports/eval.jsonl",
+    task_options={"metadata": task_metadata, "tags": task_tags},
+)
+```
+
+The intended wiring is: source loaders at acquisition boundaries, adapter code
+for schema/prompt policy, pair validation immediately before training artifact
+output, and the Inspect helper at the final task-factory boundary.
+
 `ctm_data/adapters/` contains benchmark-specific training adapters. Each adapter
 translates an external or local dataset schema into CTM's generic `Setting`
 protocol or fixed prompt-family schema. The generic `ctm/` package does not
@@ -14,49 +91,6 @@ Store, copy, and archive each generated JSONL file together with its
 `.manifest.json` sidecar. The loader verifies both files before training.
 Builders refuse to overwrite existing artifacts; use a new output path when the
 source revision, source rows, seed, factor selection, or variant count changes.
-
-## Irpan et al. (`2510.27062`) paper suite
-
-`ctm_data.adapters.irpan_2510_27062` is the offline, provenance-first data path
-for *Consistency Training Helps Stop Sycophancy and Jailbreaks*. It is distinct
-from the fixed-family WildJailbreak RLCT adapter documented below. The paper
-suite assigns these roles:
-
-| Source | Paper use | Adapter route |
-| --- | --- | --- |
-| ARC | sycophancy training | clean MCQ plus deterministic incorrect user suggestion |
-| OpenBookQA | sycophancy training | clean MCQ plus deterministic incorrect user suggestion |
-| BIG-Bench Hard | sycophancy training | clean MCQ plus deterministic incorrect user suggestion |
-| MMLU | sycophancy/capability evaluation | clean accuracy and wrong-suggestion tasks |
-| HarmBench | jailbreak training and safety validation | local harmful-request export; clean/wrapped vulnerability filter |
-| OR-Bench | helpfulness validation | answered-benign rate |
-| ClearHarm | final safety evaluation | attack success rate |
-| WildGuardTest | final safety evaluation | human-labelled adversarial-harmful rows; attack success rate |
-| XSTest | final helpfulness evaluation | answered-benign rate for this paper |
-| WildJailbreak | final helpfulness evaluation | `adversarial_benign`; answered-benign rate |
-
-The paper does not release exact source revisions, splits, sycophancy prompt
-template, jailbreak wrapper catalogue, judge prompt/parser, or bootstrap seed
-and replicate count. The adapter therefore records each of those as a
-reconstruction choice instead of presenting it as paper-authored. All source
-imports take explicit local files, and every derived JSONL has an immutable
-manifest, stable example IDs, content hashes, parent hashes, configuration
-hashes, and producer-code hashes. Imports, task construction, filtering, and
-dry-runs never acquire data or call a model.
-
-Training manifests are role-bound. A canonical clean/wrapped pair view feeds
-ACT, AttCT, MLPCT, OPCT, and the paper-specific RMCT settings; BCT instead
-requires a separately verified fresh-target artifact. Evaluation-role rows are
-rejected by every training path, and the reconstructed HarmBench training and
-validation partitions must have disjoint stable IDs.
-
-WildGuardMix/WildGuardTest and WildJailbreak are gated by AI2 terms. Accept the
-upstream terms yourself, export the selected rows locally, and keep them under
-`ctm_data/local/` or another gitignored path. The adapter will fail with an
-acquisition URL when a local export is missing; it does not bypass either gate
-or redistribute the rows. See the paper runbook at
-`experiments/paper_reproductions/irpan_2510_27062/README.md` for the artifact
-DAG, selection boundary, and smoke/full experiment plans.
 
 ## Native mcq-bias files
 
@@ -130,41 +164,6 @@ uv run python scripts/prepare_bct_targets.py \
 Every source row is validated before the backend is initialized. CTM samples
 one reference completion per row and reuses it in both output files. Existing
 outputs are never overwritten.
-
-### Pinned HLE export
-
-The RMCT paper evaluates on the text-only multiple-choice subset of Humanity's
-Last Exam. Export that gated source to the local JSONL schema accepted by
-`mcq_bias`:
-
-```bash
-uv run python -m ctm_data.sources.hle \
-  --output ctm_data/local/hle-text-mc.jsonl \
-  --manifest-output ctm_data/local/hle-text-mc.manifest.json
-```
-
-The exporter pins the upstream revision, excludes image-dependent questions,
-requires exactly 513 rows, and records the output hash. The generated benchmark
-file is gitignored and must not be redistributed. Pass its JSONL path as a
-normal `mcq_bias` dataset value.
-
-### Cleaned Alpaca prompts
-
-The RMCT paper mixes fresh base-model instruction responses into bias-augmented
-consistency training. Export a deterministic prompt-only subset with:
-
-```bash
-uv run python -m ctm_data.sources.cleaned_alpaca \
-  --output artifacts/data/cleaned-alpaca-prompts.jsonl \
-  --manifest-output artifacts/data/cleaned-alpaca-prompts.manifest.json \
-  --count 2048 \
-  --seed 42
-```
-
-The exporter downloads one pinned Cleaned Alpaca revision, verifies its
-SHA-256 digest, and ignores every source response. Pass the resulting prompts
-to `scripts/prepare_bct_targets.py`; CTM then samples responses through the
-same frozen base model selected by the experiment.
 
 The analysis command accepts repeated condition names to pool independent
 replicates while retaining only the latest task retry inside each directory.

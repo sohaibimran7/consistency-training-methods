@@ -6,7 +6,10 @@ from types import SimpleNamespace
 import pytest
 from inspect_ai.model import GenerateConfig, ModelAPI
 
+from ctm.evals import local_model as local_model_module
 from ctm.evals import runner as runner_module
+from ctm.evals import tinker_model as tinker_model_module
+from ctm.evals.local_model import read_local_checkpoint
 from ctm.evals.runner import (
     build_tasks,
     load_task_factory,
@@ -16,10 +19,7 @@ from ctm.evals.runner import (
     run_task_evals,
     validate_tinker_generation_config,
 )
-from ctm.evals import tinker_model as tinker_model_module
 from ctm.evals.tinker_model import tinker_base_model, tinker_checkpoint_model
-from ctm.evals import local_model as local_model_module
-from ctm.evals.local_model import read_local_checkpoint
 
 
 class _Future:
@@ -202,7 +202,10 @@ def test_eval_runner_records_canonical_provenance(monkeypatch):
             "max_tokens": 12,
             "extra_headers": {"Authorization": "must-redact"},
         },
-        metadata={"task_factory": "spoofed"},
+        metadata={
+            "task_factory": "spoofed",
+            "selection_candidate": {"domain": "sycophancy", "candidate_id": "unit"},
+        },
     )
     assert logs[0].status == "success"
     metadata = captured["metadata"]
@@ -213,6 +216,7 @@ def test_eval_runner_records_canonical_provenance(monkeypatch):
     assert metadata["generation_config"]["max_tokens"] == 12
     assert metadata["generation_config"]["extra_headers"] == "<redacted>"
     assert metadata["include_reasoning"] is False
+    assert metadata["selection_candidate"] == {"domain": "sycophancy", "candidate_id": "unit"}
 
 
 def test_eval_runner_records_tinker_reasoning_mode(monkeypatch):
@@ -258,6 +262,7 @@ def test_eval_cli_rejects_inline_api_keys_before_confirmation():
     [
         ("--task-args", '{"headers":{"X-Custom":"ultra-secret"}}'),
         ("--model-args", '{"proxy-authorization":"ultra-secret"}'),
+        ("--metadata", '{"credentials":{"token":"ultra-secret"}}'),
         ("--generation-config", '{"extra_headers":{"Authorization":"ultra-secret"}}'),
     ],
 )

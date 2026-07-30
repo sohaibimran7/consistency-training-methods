@@ -134,6 +134,21 @@ The data and result writers refuse to overwrite existing files. To repeat a
 run, retain the old artifacts under an archive directory and use new output
 paths or a new experiment name.
 
+The two source-selection executables are paper-owned because they pin this
+reproduction's exact revisions, filters, and counts. The experiment runner
+invokes them automatically; they can also be inspected independently:
+
+```bash
+uv run python -m scripts.rmct_paper_vast_more_methods.hle_source --help
+uv run python -m scripts.rmct_paper_vast_more_methods.cleaned_alpaca_source --help
+```
+
+The HLE command excludes image-dependent rows and requires the configured
+text-only multiple-choice count. Its generated data remains local under the
+upstream distribution terms. The Cleaned Alpaca command verifies the pinned
+source hash, ignores source responses, and selects only prompts; CTM generates
+fresh targets with the experiment's frozen base model.
+
 ### Integration smoke test
 
 Before submitting the full matrix on a new machine image, run the explicit

@@ -232,7 +232,7 @@ def test_rmct_hle_yaml_routes_six_methods_controls_and_verbalisation_locally():
     assert [len(by_stage[stage]) for stage in stages] == [3, 3, 22, 23, 7, 7]
     assert all("ctm_data.adapters.mcq_bias.plot" in command for _, command in by_stage["rendering"])
     assert not any("render_flint" in " ".join(command) for _, command in by_stage["rendering"])
-    assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
+    assert "scripts.rmct_paper_vast_more_methods.cleaned_alpaca_source" in by_stage["data_generation"][2][1]
     materialize_eval = dict(by_stage["data_preparation"])["evaluation-suite"]
     assert "ctm_data.adapters.mcq_bias.materialize_eval" in materialize_eval
     base_eval = by_stage["evaluation"][0][1]

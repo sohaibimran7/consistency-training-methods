@@ -1,5 +1,5 @@
 name: irpan-2510-27062-smoke
-experiment_factory: ctm_data.adapters.irpan_2510_27062.experiment_factory:compile_experiment
+experiment_factory: scripts.irpan_2510_27062.experiment_factory:compile_experiment
 
 # All generated training and evaluation commands are themselves dry-runs.
 spec:
@@ -13,6 +13,8 @@ spec:
     sycophancy:
       training_artifact: artifacts/irpan-2510-27062/smoke/fixtures/sycophancy-training.jsonl
       bct_result_export: artifacts/irpan-2510-27062/smoke/fixtures/sycophancy-bct-results.jsonl
+      validation:
+        mmlu: artifacts/irpan-2510-27062/smoke/fixtures/mmlu-validation.jsonl
       final:
         mmlu: artifacts/irpan-2510-27062/smoke/fixtures/mmlu-final.jsonl
     jailbreak:
@@ -62,7 +64,7 @@ spec:
               distance_metric: cosine, normalize: false}
     target_generation:
       generator_identity:
-        {generator_id: smoke-fixture, provider: fixture, model: smoke-model,
+        {generator_id: smoke-fixture, provider: fixture, model: mock-model/irpan-smoke,
          model_revision: fixture-v1, model_immutable_date: null}
       decoding_parameters: {temperature: 0.0, max_tokens: 16}
     rmct:

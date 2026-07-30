@@ -1,5 +1,5 @@
 name: irpan-2510-27062-full
-experiment_factory: ctm_data.adapters.irpan_2510_27062.experiment_factory:compile_experiment
+experiment_factory: scripts.irpan_2510_27062.experiment_factory:compile_experiment
 
 # This is an executable reconstruction boundary, not a claim that the paper's
 # omitted revisions, splits, wrappers, checkpoints, or hyperparameters are known.
@@ -14,6 +14,8 @@ spec:
     sycophancy:
       training_artifact: ctm_data/local/irpan-2510-27062/sycophancy-training-pairs.jsonl
       bct_result_export: ctm_data/local/irpan-2510-27062/sycophancy-bct-results.jsonl
+      validation:
+        mmlu: ctm_data/local/irpan-2510-27062/mmlu-validation.jsonl
       final:
         mmlu: ctm_data/local/irpan-2510-27062/mmlu-final.jsonl
     jailbreak:
