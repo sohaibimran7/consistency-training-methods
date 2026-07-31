@@ -800,6 +800,35 @@ CSV, PNG, and PDF together. Direct-mode strict analysis rejects route evidence.
 Omitting all three `--expected-model-key` options preserves the original strict
 seven-model default: 37,800 judgments and 126 aggregate cells.
 
+### Post-hoc Inspect logs for direct runs
+
+The scalable Figure 6 path above uses direct vLLM generation and a separate
+paid judge, so it does not natively emit Inspect `.eval` files. A completed,
+hash-bound diagnostic snapshot can be converted without making any model or
+judge calls:
+
+```bash
+python -m ctm_data.adapters.eval_awareness.figure6_inspect_export \
+  --waiver-manifest /absolute/path/to/diagnostic-partial/waiver-manifest.json \
+  --system-prompt /absolute/path/to/chat_prompt_realistic.txt \
+  --output-dir /absolute/new/path/to/inspect-logs \
+  --dry-run
+
+python -m ctm_data.adapters.eval_awareness.figure6_inspect_export \
+  --waiver-manifest /absolute/path/to/diagnostic-partial/waiver-manifest.json \
+  --system-prompt /absolute/path/to/chat_prompt_realistic.txt \
+  --output-dir /absolute/new/path/to/inspect-logs
+```
+
+The exporter writes one log per model, valence, and condition. Every log is
+labelled `posthoc_import`, `diagnostic_partial`, and
+`publication_complete=false`. It retains all 300 target generations per cell;
+waived judge outcomes remain present but unscored. The exporter verifies all
+source hashes, deterministic generation/judgment joins, waiver IDs, and
+analysis-cell counts, then reads every written log back through Inspect. These
+containers must not be represented as evaluations originally executed by
+Inspect.
+
 ## 9. Archive and hand off without deleting audit material
 
 Create a new handoff directory; never reuse or clean an older handoff. Copy,
