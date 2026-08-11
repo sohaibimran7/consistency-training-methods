@@ -816,6 +816,63 @@ after one slow outlier, and the DeepSeek system-role probe produced
 response-validation failures. They are retained as non-decisive diagnostics;
 they do not alter the conclusion above.
 
+#### Awareness-side request-contract gate
+
+The remaining baseline-awareness difference is generation-side: Igor's frozen
+outputs score 1% awareness with both judges, while our first replicate scores
+6--7%. The smallest next experiment keeps our pinned checkpoint, prompts,
+vLLM 0.26, TP=1, dtype, and 8,192-token server context fixed, but sends the
+target request shape recorded in Igor's logs. Its allow-listed body contains
+only `model`, the system/user `messages`, and `reasoning_effort=medium`;
+`temperature`, `top_p`, `max_tokens`, and `seed` are absent rather than null.
+
+The serving process must first be described by a sanitized JSON attestation
+under `artifacts/`. It contains exactly the schema
+`ctm.eval_awareness.figure6_request_contract_server.v1`, the pinned model ID
+and revision, vLLM version, tensor-parallel size, dtype, maximum model length,
+reasoning parser, generation-config source, and the SHA-256 of the reviewed
+launch command. It contains no command text, credential, prompt, or response.
+This is a reviewed operator attestation: the OpenAI-compatible `/models`
+endpoint confirms the served ID/alias, but cannot independently expose the
+checkpoint revision.
+
+```bash
+export REQUEST_GATE_ROOT=artifacts/figure6-qwen-full/midtrained-request-contract
+export REQUEST_GATE_OUTPUT="$REQUEST_GATE_ROOT/generations.jsonl"
+export REQUEST_GATE_ATTESTATION="$REQUEST_GATE_ROOT/server-attestation.json"
+export FIGURE6_LOCAL_ENDPOINT_TOKEN=vast-local-vllm-dummy
+
+python scripts/generate_figure6_request_contract.py \
+  --artifact experiments/eval_awareness/figure6/inputs/prompts.jsonl \
+  --prompt-path experiments/eval_awareness/figure6/inputs/chat_prompt_realistic.txt \
+  --server-attestation "$REQUEST_GATE_ATTESTATION" \
+  --output "$REQUEST_GATE_OUTPUT" \
+  --scope wire-smoke \
+  --base-url http://127.0.0.1:8000/v1 \
+  --api-key-env FIGURE6_LOCAL_ENDPOINT_TOKEN \
+  --max-concurrency 10 \
+  --dry-run
+```
+
+Review the emitted plan and run the identical command with `--dry-run`
+replaced by `--expected-plan-sha256 REVIEWED_64_HEX_HASH --yes`. The program
+requires all 20 smoke generations to finish successfully before it will even
+plan `--scope baseline`; that second scope appends only the remaining 80 rows.
+Every dispatched target request receives one attempt. An uncertain transport,
+validation, cancellation, or durable-write outcome is quarantined and blocks
+resume instead of being silently resent. The endpoint model identity and each
+response model are checked, raw outputs are confined to ignored `artifacts/`,
+and all state is recomputed while holding a single-writer lock. A content-free
+dispatch intent is fsynced before each network send, so a process kill or
+post-response disk failure also blocks that ID from automatic resend.
+
+Judge the resulting 100 outputs with the already isolated minimal judge
+recipe, DeepSeek V4 Pro in a user message with k=1. If awareness moves toward
+1%, the omitted sampling defaults are load-bearing. If it remains near 6--7%,
+the next tie-breaker is Igor's vLLM 0.23 / TP=4 serving stack; do not expand to
+F2/F5/F6/F8 first. The 100-row gate is directional. Use three independent
+100-row epochs before claiming replication of the awareness rate.
+
 ## 8. Strict aggregation and plotting
 
 The approved current scope is exactly `qwen32`, `qwen_mo_mid`, and
