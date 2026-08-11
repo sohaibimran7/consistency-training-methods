@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -243,7 +244,7 @@ def test_manifest_detects_artifact_tampering(tmp_path):
         verify_figure6_artifact(artifact)
 
 
-def test_prompt_hash_is_explicit_and_prompt_bodies_are_not_in_the_registry(tmp_path):
+def test_prompt_hash_is_explicit_and_mismatches_fail_closed(tmp_path):
     prompt = tmp_path / "synthetic-prompt.txt"
     prompt.write_text("A harmless synthetic system prompt.\n", encoding="utf-8")
     expected = hashlib.sha256(prompt.read_bytes()).hexdigest()
@@ -252,6 +253,23 @@ def test_prompt_hash_is_explicit_and_prompt_bodies_are_not_in_the_registry(tmp_p
         load_verified_prompt(prompt, "0" * 64)
     assert PAPER_NATURAL_PROMPT_SHA256 == "8d46fa8eee79ba7372088d0bd138a463cc5255c8043a77f468bed937f609d735"
     assert EXPLICIT_SCRATCHPAD_PROMPT_SHA256 == ("c7c16141e424217e334f4166fb34a5302ea880bddb67598297e7ed38dc103b33")
+
+
+def test_tracked_qwen_inputs_match_the_pinned_run() -> None:
+    root = Path(__file__).resolve().parents[4]
+    inputs = root / "experiments" / "eval_awareness" / "figure6" / "inputs"
+    artifact = inputs / "prompts.jsonl"
+    manifest = verify_figure6_artifact(artifact)
+
+    assert manifest["content_sha256"] == "eae540adca34bdab00ad0fab200fa6d615e69fe87e7abfa8431324a59e1ac47a"
+    assert manifest["row_count"] == FIGURE6_ROW_COUNT
+    assert manifest["provenance"]["dataset_license"] == DATASET_LICENSE
+    assert hashlib.sha256((inputs / "chat_prompt_realistic.txt").read_bytes()).hexdigest() == (
+        PAPER_NATURAL_PROMPT_SHA256
+    )
+    assert hashlib.sha256((inputs / "judgePromptEvidenceBoth.txt").read_bytes()).hexdigest() == (
+        "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870"
+    )
 
 
 def test_reasoning_extraction_prefers_native_then_supports_both_paper_tag_styles():

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Create and collect offline OpenAI Batch files for Figure 6 judging.
 
-This module intentionally has no batch-submission command.  It turns an
+This module intentionally has no batch-submission command. It turns an
 already-materialized generation JSONL into deterministic request JSONL and
-normalizes a downloaded Batch result JSONL.  The paper's judge prompt remains
-an external, hash-pinned input.
+normalizes a downloaded Batch result JSONL. The paper's judge prompt is a
+tracked, hash-pinned experiment input.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ def _require_new_path(path: str | Path) -> Path:
 
 
 def load_judge_template(path: str | Path, *, expected_sha256: str) -> str:
-    """Load the external paper prompt only when its exact bytes match the pin."""
+    """Load the tracked paper prompt only when its exact bytes match the pin."""
 
     if not isinstance(expected_sha256, str) or _SHA256_RE.fullmatch(expected_sha256.lower()) is None:
         raise ValueError("expected judge template SHA256 must be 64 lowercase hexadecimal characters")
@@ -641,7 +641,7 @@ def collect_batch_jsonl(
     judge_model: str = DEFAULT_JUDGE_MODEL,
     max_completion_tokens: int = MAX_JUDGE_TOKENS,
 ) -> dict[str, Any]:
-    """Verify the external prompt and write normalized judgment JSONL."""
+    """Verify the tracked prompt and write normalized judgment JSONL."""
 
     load_judge_template(template_path, expected_sha256=expected_template_sha256)
     normalized = collect_batch_outputs(

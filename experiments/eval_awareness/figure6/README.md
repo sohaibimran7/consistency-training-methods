@@ -77,9 +77,12 @@ export ISAMBARD_ACCOUNT=brics.a5v
 export HF_HOME="$SCRATCHDIR/ctm/huggingface-figure6"
 export FIGURE6_CACHE_CAPACITY_GB=1300
 export FIGURE6_SOURCE_ROOT="$PROJECTDIR/$USER/evalawarebench-figure6-source"
-export FIGURE6_ARTIFACT="$PROJECTDIR/$USER/evalawarebench-figure6-artifacts/prompts.jsonl"
+export FIGURE6_INPUT_ROOT="$REPO_DIR/experiments/eval_awareness/figure6/inputs"
+export FIGURE6_ARTIFACT="$FIGURE6_INPUT_ROOT/prompts.jsonl"
+export PAPER_NATURAL_PROMPT_PATH="$FIGURE6_INPUT_ROOT/chat_prompt_realistic.txt"
+export FIGURE6_JUDGE_TEMPLATE_PATH="$FIGURE6_INPUT_ROOT/judgePromptEvidenceBoth.txt"
 export FIGURE6_OUTPUT_ROOT="$PROJECTDIR/$USER/evalawarebench-figure6-generations"
-mkdir -p "$HF_HOME" "$FIGURE6_SOURCE_ROOT" "$(dirname "$FIGURE6_ARTIFACT")" "$FIGURE6_OUTPUT_ROOT"
+mkdir -p "$HF_HOME" "$FIGURE6_SOURCE_ROOT" "$FIGURE6_OUTPUT_ROOT"
 ```
 
 On 2026-07-29, the proposed scratch cache path reported a 5.0 TB filesystem
@@ -90,55 +93,28 @@ capacity guarantee. Setting `FIGURE6_CACHE_CAPACITY_GB=1300` is an explicit
 acknowledgement that at least that much usable allocation has been verified
 with the project owner.
 
-## 2. Download and materialize the pinned prompt artifact
+## 2. Verify the tracked Qwen inputs
 
-Download only the two dataset files directly from the immutable Hugging Face
-dataset revision:
+The exact inputs used by the completed Qwen-only run are tracked separately
+from generated outputs:
 
 ```bash
 source "$REPO_DIR/.venv/bin/activate"
-hf download aisa-group/EvalAwareBench \
-  data/prompts_safety.jsonl data/prompts_capability.jsonl \
-  --repo-type dataset \
-  --revision 736bda484525041972fa214eaf72f3beba492666 \
-  --local-dir "$FIGURE6_SOURCE_ROOT/evalawarebench"
-
-python -m ctm_data.adapters.eval_awareness.figure6_materialize \
-  --prompts-safety "$FIGURE6_SOURCE_ROOT/evalawarebench/data/prompts_safety.jsonl" \
-  --prompts-capability "$FIGURE6_SOURCE_ROOT/evalawarebench/data/prompts_capability.jsonl" \
-  --output "$FIGURE6_ARTIFACT"
-```
-
-The materializer requires the exact 100-task × 2-valence × 9-condition matrix
-and writes a hash/provenance manifest beside the JSONL. Preserve both files.
-
-The three paper prompt bodies remain external. Obtain them from the pinned
-upstream code revision and record their local paths:
-
-```bash
-export FIGURE6_UPSTREAM_CODE="$FIGURE6_SOURCE_ROOT/decomposing-eval-awareness"
-git clone https://github.com/aisa-group/decomposing-eval-awareness.git \
-  "$FIGURE6_UPSTREAM_CODE"
-git -C "$FIGURE6_UPSTREAM_CODE" checkout --detach 446be5c605b56a60d4efe2526f0cbf55522c523a
-
-find "$FIGURE6_UPSTREAM_CODE" -type f \
-  \( -name chat_prompt_realistic.txt -o -name chat_prompt_realistic_scratchpad.txt \) -print
-```
-
-Export the two paths printed above, then verify their exact bytes:
-
-```bash
-export PAPER_NATURAL_PROMPT_PATH=/absolute/path/to/chat_prompt_realistic.txt
-export EXPLICIT_SCRATCHPAD_PROMPT_PATH=/absolute/path/to/chat_prompt_realistic_scratchpad.txt
-
+python -c 'from ctm_data.adapters.eval_awareness.figure6_materialize import verify_figure6_artifact; import os; verify_figure6_artifact(os.environ["FIGURE6_ARTIFACT"])'
 test "$(sha256sum "$PAPER_NATURAL_PROMPT_PATH" | awk '{print $1}')" = \
   8d46fa8eee79ba7372088d0bd138a463cc5255c8043a77f468bed937f609d735
-test "$(sha256sum "$EXPLICIT_SCRATCHPAD_PROMPT_PATH" | awk '{print $1}')" = \
-  c7c16141e424217e334f4166fb34a5302ea880bddb67598297e7ed38dc103b33
+test "$(sha256sum "$FIGURE6_JUDGE_TEMPLATE_PATH" | awk '{print $1}')" = \
+  e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
 ```
 
-The generator independently repeats these hash checks. Do not copy the prompt
-bodies into this repository.
+The adjacent manifest records the pinned EvalAwareBench revision, source-file
+hashes, CC-BY-NC-4.0 license, and deterministic 1,800-row selection. The
+generator independently repeats the artifact and system-prompt checks.
+
+The deferred Llama models use the separate
+`chat_prompt_realistic_scratchpad.txt`. It was not used by the completed
+Qwen-only run and remains an external hash-pinned input; obtain it from the
+upstream revision recorded in `protocol.yaml` before enabling those models.
 
 ## 3. Validate the GPU environment and prefetch the three selected snapshots
 
@@ -366,9 +342,7 @@ for MODEL_KEY in qwen32 qwen_mo_mid qwen_mo_post; do
   done
 done
 
-find "$FIGURE6_UPSTREAM_CODE_LOCAL" -type f -exec sha256sum {} + | \
-  awk '$1 == "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870" {print}'
-export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/path/printed/by/the/command
+export FIGURE6_JUDGE_TEMPLATE_PATH="$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt"
 export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
 test "$(sha256sum "$FIGURE6_JUDGE_TEMPLATE_PATH" | awk '{print $1}')" = \
   e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
@@ -463,7 +437,7 @@ client:
 
 ```bash
 export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
-export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_TEMPLATE_PATH="$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt"
 export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
 export FIGURE6_MAX_ATTEMPTS=5
 mkdir -p "$FIGURE6_JUDGE_ROOT"
@@ -501,7 +475,7 @@ same shell block that performs payment:
 
 ```bash
 export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
-export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_TEMPLATE_PATH="$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt"
 export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
 export FIGURE6_MAX_ATTEMPTS=5
 export MODEL_KEY=qwen32
@@ -543,7 +517,7 @@ amendment while preserving all old successes and attempts:
 
 ```bash
 export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
-export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_TEMPLATE_PATH="$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt"
 export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
 export MODEL_KEY=qwen32
 export NEW_MAX_ATTEMPTS=7
@@ -568,7 +542,7 @@ reviewed amended hash and authorize only the ceiling increase:
 
 ```bash
 export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
-export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_TEMPLATE_PATH="$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt"
 export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
 export MODEL_KEY=qwen32
 export NEW_MAX_ATTEMPTS=7
@@ -598,7 +572,7 @@ authorizations on the amended paid command:
 
 ```bash
 export FIGURE6_LOCAL_GENERATION_ROOT=/absolute/local/path/figure6-generations
-export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/local/path/to/the/verified/template
+export FIGURE6_JUDGE_TEMPLATE_PATH="$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt"
 export FIGURE6_JUDGE_ROOT=/absolute/local/path/evalawarebench-figure6-judge
 export MODEL_KEY=qwen32
 export NEW_MAX_ATTEMPTS=7
@@ -633,14 +607,11 @@ acceptance remains a small unavoidable duplicate-charge risk.
 ### Legacy paper-judge OpenAI Batch path
 
 This stage is deliberately outside Slurm. The generation jobs contain no paid
-judge submission and do not need `OPENAI_API_KEY`. Obtain the paper judge
-template separately from the pinned upstream revision. Locate the file by its
-SHA-256 and export its absolute path:
+judge submission and do not need `OPENAI_API_KEY`. Use the tracked, hash-pinned
+paper judge template:
 
 ```bash
-find "$FIGURE6_UPSTREAM_CODE" -type f -exec sha256sum {} + | \
-  awk '$1 == "e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870" {print}'
-export FIGURE6_JUDGE_TEMPLATE_PATH=/absolute/path/printed/by/the/command
+export FIGURE6_JUDGE_TEMPLATE_PATH="$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt"
 test "$(sha256sum "$FIGURE6_JUDGE_TEMPLATE_PATH" | awk '{print $1}')" = \
   e6158c9dba2466519450f4234e5dc0f9b4c97717b759ba6a133e2233f6dc3870
 ```
@@ -810,13 +781,15 @@ judge calls:
 ```bash
 python -m ctm_data.adapters.eval_awareness.figure6_inspect_export \
   --waiver-manifest /absolute/path/to/diagnostic-partial/waiver-manifest.json \
-  --system-prompt /absolute/path/to/chat_prompt_realistic.txt \
+  --system-prompt "$REPO_DIR/experiments/eval_awareness/figure6/inputs/chat_prompt_realistic.txt" \
+  --judge-template "$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt" \
   --output-dir /absolute/new/path/to/inspect-logs \
   --dry-run
 
 python -m ctm_data.adapters.eval_awareness.figure6_inspect_export \
   --waiver-manifest /absolute/path/to/diagnostic-partial/waiver-manifest.json \
-  --system-prompt /absolute/path/to/chat_prompt_realistic.txt \
+  --system-prompt "$REPO_DIR/experiments/eval_awareness/figure6/inputs/chat_prompt_realistic.txt" \
+  --judge-template "$REPO_DIR/experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt" \
   --output-dir /absolute/new/path/to/inspect-logs
 ```
 
@@ -828,6 +801,23 @@ source hashes, deterministic generation/judgment joins, waiver IDs, and
 analysis-cell counts, then reads every written log back through Inspect. These
 containers must not be represented as evaluations originally executed by
 Inspect.
+
+### Diagnostic Inspect handoff
+
+The local, output-only handoff is
+`artifacts/figure6-qwen-full/figure6-qwen-inspect-posthoc-diagnostic-partial-20260731.zip`.
+It contains only the Inspect manifest, `SHA256SUMS`, and 54 `.eval` files. It
+does not contain source prompts, normalized judgment JSONL, plots, archives, or
+macOS metadata as separate files. The `.eval` containers themselves do embed
+the evaluated prompts, target reasoning/answers, and raw judge material.
+
+The archive SHA-256 is
+`e04f1183b4aec4f610a0c09a899f95071197a63b0215d95f95ddfc7ea9f72a94`.
+Its manifest was created with Inspect `0.3.246` and the exporter at commit
+`42a8fe971a8985785eb4c180893e7f540564fc27`. Readback verifies 54 unique
+model/valence/condition cells, 16,200 target samples, 16,182 scored samples,
+and 18 explicit waivers. This is a diagnostic-partial handoff, not a
+publication-complete reproduction.
 
 ## 9. Archive and hand off without deleting audit material
 

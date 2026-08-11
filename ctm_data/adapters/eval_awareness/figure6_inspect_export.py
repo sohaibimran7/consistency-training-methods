@@ -152,6 +152,27 @@ def _resolve_hash_bound_path(base: Path, value: Any, expected_sha256: Any, *, la
     return path
 
 
+def _resolve_judge_template(
+    waiver_root: Path,
+    waiver: Mapping[str, Any],
+    override_path: str | Path | None,
+) -> Path:
+    """Resolve the current template while preserving the historical manifest path."""
+
+    if override_path is None:
+        base = waiver_root
+        value: Any = waiver.get("judge_template")
+    else:
+        base = Path()
+        value = str(Path(override_path).resolve())
+    return _resolve_hash_bound_path(
+        base,
+        value,
+        waiver.get("judge_template_sha256"),
+        label="judge template",
+    )
+
+
 def _stable_id(prefix: str, value: Mapping[str, Any]) -> str:
     digest = _sha256_bytes(_canonical_json(dict(value)).encode("utf-8"))[:32]
     return f"{prefix}-{digest}"
@@ -842,6 +863,7 @@ def export_figure6_inspect_logs(
     system_prompt_path: str | Path,
     output_dir: str | Path,
     *,
+    judge_template_path: str | Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Validate the diagnostic snapshot and write 54 post-hoc ``.eval`` logs."""
@@ -872,12 +894,7 @@ def export_figure6_inspect_logs(
         waiver.get("analysis_summary_sha256"),
         label="Figure 6 analysis summary",
     )
-    _resolve_hash_bound_path(
-        waiver_root,
-        waiver.get("judge_template"),
-        waiver.get("judge_template_sha256"),
-        label="judge template",
-    )
+    _resolve_judge_template(waiver_root, waiver, judge_template_path)
     missing = _read_json(missing_path, label="missing-samples sidecar")
     if missing.get("schema") != "ctm.eval_awareness.figure6.diagnostic_missing_samples.v1":
         raise ValueError("unsupported missing-samples schema")
@@ -1090,6 +1107,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--waiver-manifest", type=Path, required=True)
     parser.add_argument("--system-prompt", type=Path, required=True)
+    parser.add_argument(
+        "--judge-template",
+        type=Path,
+        help="Current location of the hash-pinned template; overrides the historical manifest path.",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -1097,6 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
         args.waiver_manifest,
         args.system_prompt,
         args.output_dir,
+        judge_template_path=args.judge_template,
         dry_run=args.dry_run,
     )
     print(json.dumps(result, sort_keys=True))

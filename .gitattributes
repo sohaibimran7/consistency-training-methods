@@ -1,0 +1,3 @@
+# The pinned judge prompt intentionally preserves upstream trailing spaces;
+# changing any byte would invalidate its scientific provenance hash.
+experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt whitespace=-blank-at-eol

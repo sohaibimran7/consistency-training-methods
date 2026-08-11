@@ -7,7 +7,8 @@ node_modules/
 logs/
 artifacts/
 figures/
-# Dataset/artifact payloads stay local; adapter code is tracked.
+# Generated experiment outputs stay local; canonical experiment inputs and
+# adapter code are tracked explicitly below.
 ctm_data/*
 !ctm_data/__init__.py
 !ctm_data/README.md

@@ -51,18 +51,22 @@ OpenAI-compatible client, PyYAML, and this repository without dependencies, and
 asserts that Torch and vLLM still come from the image. Provisioning stops unless
 vLLM is exactly 0.26.0, CUDA is available, and the GPU supports bfloat16.
 
-## 2. Put immutable inputs on each host
+## 2. Verify immutable inputs on each host
 
-Each host needs the verified 1,800-row artifact and its adjacent manifest:
+The completed Qwen run's 1,800-row artifact, adjacent manifest, and natural
+system prompt are tracked with the repository:
 
 ```text
-/workspace/figure6-inputs/prompts.jsonl
-/workspace/figure6-inputs/prompts.jsonl.manifest.json
+/workspace/consistency-training-methods/experiments/eval_awareness/figure6/inputs/prompts.jsonl
+/workspace/consistency-training-methods/experiments/eval_awareness/figure6/inputs/prompts.jsonl.manifest.json
+/workspace/consistency-training-methods/experiments/eval_awareness/figure6/inputs/chat_prompt_realistic.txt
 ```
 
-Host A needs both pinned upstream prompt files. Host B needs the explicit
-scratchpad prompt. The generator verifies their SHA-256 identities before any
-request, so copying a wrong prompt fails closed.
+The deferred Llama models still require the separate upstream
+`chat_prompt_realistic_scratchpad.txt`; place that hash-pinned file under
+`/workspace/figure6-external-inputs/` on hosts that run Llama. The generator
+verifies every input's SHA-256 identity before any request, so a wrong file
+fails closed.
 
 Prefer a token file for Hugging Face access. Create it without putting the token
 on a command line, then make its permissions exactly 600:
@@ -87,10 +91,11 @@ On host A:
 
 ```bash
 export HF_HOME=/workspace/huggingface
-export FIGURE6_ARTIFACT=/workspace/figure6-inputs/prompts.jsonl
+export FIGURE6_INPUT_ROOT=/workspace/consistency-training-methods/experiments/eval_awareness/figure6/inputs
+export FIGURE6_ARTIFACT="$FIGURE6_INPUT_ROOT/prompts.jsonl"
 export FIGURE6_OUTPUT_ROOT=/workspace/figure6-output
-export PAPER_NATURAL_PROMPT_PATH=/workspace/figure6-inputs/chat_prompt_realistic.txt
-export EXPLICIT_SCRATCHPAD_PROMPT_PATH=/workspace/figure6-inputs/chat_prompt_realistic_scratchpad.txt
+export PAPER_NATURAL_PROMPT_PATH="$FIGURE6_INPUT_ROOT/chat_prompt_realistic.txt"
+export EXPLICIT_SCRATCHPAD_PROMPT_PATH=/workspace/figure6-external-inputs/chat_prompt_realistic_scratchpad.txt
 export HF_TOKEN_FILE=/workspace/private/hf_token
 ```
 
@@ -99,9 +104,10 @@ scratchpad prompt is required:
 
 ```bash
 export HF_HOME=/workspace/huggingface
-export FIGURE6_ARTIFACT=/workspace/figure6-inputs/prompts.jsonl
+export FIGURE6_INPUT_ROOT=/workspace/consistency-training-methods/experiments/eval_awareness/figure6/inputs
+export FIGURE6_ARTIFACT="$FIGURE6_INPUT_ROOT/prompts.jsonl"
 export FIGURE6_OUTPUT_ROOT=/workspace/figure6-output
-export EXPLICIT_SCRATCHPAD_PROMPT_PATH=/workspace/figure6-inputs/chat_prompt_realistic_scratchpad.txt
+export EXPLICIT_SCRATCHPAD_PROMPT_PATH=/workspace/figure6-external-inputs/chat_prompt_realistic_scratchpad.txt
 export HF_TOKEN_FILE=/workspace/private/hf_token
 ```
 

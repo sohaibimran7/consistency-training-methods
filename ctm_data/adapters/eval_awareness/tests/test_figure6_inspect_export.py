@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from inspect_ai.model import ContentReasoning
 from ctm_data.adapters.eval_awareness.figure6_inspect_export import (
     SCORE_NAME,
     _generation_record_sha256,
+    _resolve_judge_template,
     build_cell_log,
 )
 from ctm_data.adapters.eval_awareness.figure6_judge import custom_id_for_generation
@@ -210,3 +212,15 @@ def test_build_cell_log_rejects_tampered_generation_hash() -> None:
             source_metadata=_source_metadata(),
             expected_samples=1,
         )
+
+
+def test_judge_template_override_preserves_historical_manifest_path(tmp_path: Path) -> None:
+    template = tmp_path / "tracked-judge.txt"
+    template.write_text("tracked judge", encoding="utf-8")
+    waiver = {
+        "judge_template": "missing/historical-judge.txt",
+        "judge_template_sha256": hashlib.sha256(template.read_bytes()).hexdigest(),
+    }
+    assert _resolve_judge_template(tmp_path, waiver, template) == template.resolve()
+    with pytest.raises(FileNotFoundError, match="judge template does not exist"):
+        _resolve_judge_template(tmp_path, waiver, None)

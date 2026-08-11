@@ -129,7 +129,8 @@ The seven-model target-generation run has dedicated manifests and launchers:
   size.
 - `experiments/eval_awareness/figure6/protocol.yaml` pins the 1,800 conditions,
   three samples per condition, generation settings, dataset revision, and
-  external prompt hashes.
+  prompt hashes. The completed Qwen inputs are tracked under the adjacent
+  `inputs/` directory; the deferred Llama scratchpad prompt remains external.
 - `experiments/eval_awareness/figure6/README.md` is the end-to-end runbook.
 
 The cached model snapshots are approximately 1,088.8 GB. Verify at least

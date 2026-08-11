@@ -1,8 +1,9 @@
 """Pinned model and prompt specification for the EvalAwareBench Figure 6 run.
 
-This module deliberately contains prompt identities, not prompt bodies.  A caller must
-provide a local copy of the appropriate upstream prompt and it is accepted only when
-its SHA-256 digest matches the pinned value below.
+Canonical Qwen experiment inputs are tracked under
+``experiments/eval_awareness/figure6/inputs``. Callers still supply the selected
+prompt path explicitly, and it is accepted only when its SHA-256 digest matches
+the pinned value below.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 @dataclass(frozen=True, slots=True)
 class PromptSpec:
-    """Identity of one upstream system prompt, without its copyrighted body."""
+    """Pinned identity of one upstream system prompt."""
 
     key: str
     upstream_filename: str
