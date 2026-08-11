@@ -2031,3 +2031,53 @@ async def judge_generations(
         _enforce_exact_paid_matrix=True,
         _enforce_registered_profile=True,
     )
+
+
+async def _judge_diagnostic_generations(
+    generations: Sequence[Mapping[str, Any]],
+    *,
+    template: str,
+    attempt_log_path: str | Path,
+    output_path: str | Path,
+    api_key: str | None,
+    manifest_path: str | Path | None = None,
+    judge_template_sha256: str = PAPER_JUDGE_TEMPLATE_SHA256,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    confirm_paid: bool = False,
+    expected_plan_sha256: str | None = None,
+    amend_attempt_ceiling: bool = False,
+    rescore_paid_errors: bool = False,
+    dry_run: bool = False,
+    client: httpx.AsyncClient | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> dict[str, Any]:
+    """Judge a bounded diagnostic cohort with the immutable Luna protocol.
+
+    This deliberately exposes none of the production matrix's model or request
+    knobs.  It is for provenance-bound crossover diagnostics only: every
+    record is still validated, paid calls still require a reviewed plan hash
+    and ``--yes``, and the normal append-only lifecycle is retained.  Unlike
+    :func:`judge_generations`, it does not require the 5,400-row registered
+    Qwen production matrix.
+    """
+
+    return await _judge_generations(
+        generations,
+        template=template,
+        attempt_log_path=attempt_log_path,
+        output_path=output_path,
+        api_key=api_key,
+        manifest_path=manifest_path,
+        judge_template_sha256=judge_template_sha256,
+        judge_profile=OPENROUTER_GPT_56_LUNA_DIRECT_PROFILE,
+        max_attempts=max_attempts,
+        confirm_paid=confirm_paid,
+        expected_plan_sha256=expected_plan_sha256,
+        amend_attempt_ceiling=amend_attempt_ceiling,
+        rescore_paid_errors=rescore_paid_errors,
+        dry_run=dry_run,
+        client=client,
+        sleep=sleep,
+        _enforce_exact_paid_matrix=False,
+        _enforce_registered_profile=True,
+    )

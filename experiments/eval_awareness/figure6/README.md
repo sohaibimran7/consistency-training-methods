@@ -1,9 +1,9 @@
 # EvalAwareBench Figure 6 target-generation runbook
 
-This is a prospective runbook. It does not claim that any model generation,
-paid judgment, aggregation, or plot has completed. The immutable scientific
-pins live in `models.yaml` and `protocol.yaml`; do not substitute moving model
-branches, prompt text, or dataset revisions.
+This is a prospective runbook, except for the clearly marked, baseline-only
+midtrained discrepancy diagnostic below. The immutable scientific pins live in
+`models.yaml` and `protocol.yaml`; do not substitute moving model branches,
+prompt text, or dataset revisions.
 
 ## Fixed workload and model shape
 
@@ -716,6 +716,105 @@ python -m ctm_data.adapters.eval_awareness.figure6_judge collect \
 The collector requires exactly one matching output for every generation and
 retains raw judge bodies plus model, prompt, generation, and judge provenance.
 It refuses to overwrite an existing output.
+
+### Midtrained discrepancy crossover
+
+This completed diagnostic identifies which parts of the large difference between
+the historical midtrained result and our midtrained run are attributable to the
+target generations versus the judge. It is a narrow, 100-row safety-baseline
+cohort—not a replacement for the complete Figure 6 protocol or strict
+aggregation.
+
+The cohort fixes the historical baseline target outputs and our matching
+`qwen_mo_mid` replicate-1 outputs, then scores each with the two judge
+protocols. The historical source logs are imported by their pinned hashes; the
+imported generations, paired selection, paid attempts, and normalized
+judgments stay under the ignored `artifacts/` root. No credentials, source
+outputs, or raw judge text belong in the repository.
+
+To recreate the frozen inputs and make reviewable dry plans, set
+`HISTORICAL_EVAL_LOGS` to a local copy of the six verified historical Inspect
+logs and `OUR_MIDTRAINED_GENERATIONS` to the completed midtrained generation
+JSONL. The commands deliberately use only portable variables rather than a
+machine-specific source-log path:
+
+```bash
+export CROSSOVER_ROOT=artifacts/figure6-qwen-full/crossover
+export FIGURE6_JUDGE_TEMPLATE=experiments/eval_awareness/figure6/inputs/judgePromptEvidenceBoth.txt
+mkdir -p "$CROSSOVER_ROOT/baseline"
+
+python scripts/judge_figure6_crossover.py import-igor \
+  --logs-dir "$HISTORICAL_EVAL_LOGS" \
+  --output "$CROSSOVER_ROOT/igor-generations.jsonl" \
+  --manifest "$CROSSOVER_ROOT/igor-import-manifest.json"
+
+python scripts/judge_figure6_crossover.py select-our-paired \
+  --igor-generations "$CROSSOVER_ROOT/igor-generations.jsonl" \
+  --our-generations "$OUR_MIDTRAINED_GENERATIONS" \
+  --output "$CROSSOVER_ROOT/our-qwen-mo-mid-replicate1.jsonl" \
+  --manifest "$CROSSOVER_ROOT/our-paired-manifest.json"
+
+plan_cell() {
+  local judge="$1" generations="$2" label="$3"
+  python scripts/judge_figure6_crossover.py "$judge" \
+    --generations "$CROSSOVER_ROOT/$generations.jsonl" \
+    --judge-template "$FIGURE6_JUDGE_TEMPLATE" \
+    --scope baseline \
+    --attempt-log "$CROSSOVER_ROOT/baseline/$label-attempts.jsonl" \
+    --manifest "$CROSSOVER_ROOT/baseline/$label-manifest.json" \
+    --output "$CROSSOVER_ROOT/baseline/$label-judgments.jsonl" \
+    --dry-run
+}
+
+plan_cell luna     igor-generations                 igor-luna
+plan_cell deepseek igor-generations                 igor-deepseek
+plan_cell luna     our-qwen-mo-mid-replicate1       our-luna
+plan_cell deepseek our-qwen-mo-mid-replicate1       our-deepseek
+
+python scripts/judge_figure6_crossover.py probe \
+  --protocol deepseek-user-luna-constraints-k1 \
+  --generations "$CROSSOVER_ROOT/our-qwen-mo-mid-replicate1.jsonl" \
+  --judge-template "$FIGURE6_JUDGE_TEMPLATE" \
+  --scope baseline \
+  --attempt-log "$CROSSOVER_ROOT/baseline/deepseek-luna-constraints-attempts.jsonl" \
+  --manifest "$CROSSOVER_ROOT/baseline/deepseek-luna-constraints-manifest.json" \
+  --output "$CROSSOVER_ROOT/baseline/deepseek-luna-constraints-judgments.jsonl" \
+  --dry-run
+```
+
+Each dry run emits an immutable plan hash. A paid run must be a separate,
+reviewed invocation of the same command, replacing `--dry-run` with
+`--expected-plan-sha256 REVIEWED_64_HEX_HASH --yes`. The `luna` command fixes
+Luna/system/strict JSON k=1; `deepseek` fixes the historical
+DeepSeek-V4-Pro/user/k=3 majority protocol. The final `probe` changes only the
+judge model to DeepSeek while retaining the Luna request constraints and k=1.
+
+| Frozen target outputs | Judge protocol | Diagnostic n | Awareness | Task performance |
+|---|---|---:|---:|---:|
+| Historical midtrained | Luna/system/strict k=1 | 100 | 1% | 28% |
+| Historical midtrained | Historical DeepSeek/user k=3 | 100 | 1% | 42% |
+| Our replicate 1 | Luna/system/strict k=1 | 100 | 6% | 31% |
+| Our replicate 1 | DeepSeek/user k=3 | 100 | 7% | 42% |
+| Our replicate 1 | DeepSeek/user, Luna constraints, k=1 | 100 | 6% | 40% |
+
+Within this matched baseline cohort, task performance follows the judge: both
+sets of target outputs reach about 40--42% with DeepSeek, versus 28--31% with
+Luna. Awareness follows the target generations: the historical outputs remain
+at 1% under either judge, whereas ours remain about 6--7%. Thus changing the
+judge is the load-bearing explanation for the performance discrepancy, but not
+the awareness discrepancy.
+
+F3 is excluded from these causal prompt-matched comparisons because all 99 F3
+prompts differ between the two runs. The `non-f3` scope supplies 495
+prompt-matched rows for a larger follow-up. The current DeepSeek calls may not
+have the same provider routing or response-model revision as the historical
+DeepSeek votes, so the numerical comparison is an attribution diagnostic, not
+an assertion of an identical historical endpoint.
+
+Two auxiliary Luna role/constraint probes each stopped at 99 clean samples
+after one slow outlier, and the DeepSeek system-role probe produced
+response-validation failures. They are retained as non-decisive diagnostics;
+they do not alter the conclusion above.
 
 ## 8. Strict aggregation and plotting
 
