@@ -105,16 +105,42 @@ def _jsonl_bytes(rows: Sequence[Mapping[str, Any]]) -> bytes:
 
 
 def require_artifact_path(path: str | Path) -> Path:
-    """Keep paid judge data and its private verdicts below ignored artifacts."""
+    """Keep paid judge data below artifacts without following substitutions.
 
-    resolved = Path(path).resolve()
+    Target outputs can be copied from a remote worker before screening, so
+    their paths cannot be bound to one machine's absolute location.  They do
+    remain artifact-confined, however: accept only a *lexically* normalized
+    path below ``ARTIFACT_ROOT`` and reject a symbolic link at every extant
+    component.  Resolving first would erase the very symlink substitution we
+    need to detect (for example, ``current/`` redirected to another round).
+    """
+
+    lexical = Path(os.path.abspath(os.fspath(path)))
     try:
-        relative = resolved.relative_to(ARTIFACT_ROOT)
+        relative = lexical.relative_to(ARTIFACT_ROOT)
     except ValueError as exc:
         raise TargetedJudgeError(f"targeted-judge output must stay below {ARTIFACT_ROOT}") from exc
     if not relative.parts:
         raise TargetedJudgeError("targeted-judge output must be a file below artifact root")
-    return resolved
+    try:
+        ARTIFACT_ROOT.lstat()
+    except FileNotFoundError as exc:
+        raise TargetedJudgeError(f"targeted-judge artifact root is missing: {ARTIFACT_ROOT}") from exc
+    if os.path.islink(ARTIFACT_ROOT) or not os.path.isdir(ARTIFACT_ROOT):
+        raise TargetedJudgeError("targeted-judge artifact root must be a regular non-symlink directory")
+    current = ARTIFACT_ROOT
+    for index, part in enumerate(relative.parts):
+        current = current / part
+        try:
+            current.lstat()
+        except FileNotFoundError:
+            # No deeper component can exist if this lexical parent is absent.
+            break
+        if os.path.islink(current):
+            raise TargetedJudgeError(f"targeted-judge artifact path must not contain a symlink: {current}")
+        if index < len(relative.parts) - 1 and not os.path.isdir(current):
+            raise TargetedJudgeError(f"targeted-judge artifact parent must be a directory: {current}")
+    return lexical
 
 
 def _nonempty_text(value: Any, *, field: str, index: int | None = None) -> str:
@@ -262,8 +288,8 @@ def _load_one_immutable_records(
     generator-specific schema name.
     """
 
-    records_target = Path(records_path).resolve()
-    source_target = Path(source_manifest_path).resolve()
+    records_target = require_artifact_path(records_path)
+    source_target = require_artifact_path(source_manifest_path)
     try:
         raw_manifest = json.loads(source_target.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -306,6 +332,61 @@ def _load_verified_mapping(path: Path, *, label: str) -> dict[str, Any]:
     return value
 
 
+def _local_paired_outputs_from_plan(
+    plan: Mapping[str, Any],
+    *,
+    variants: Sequence[str],
+    local_round_root: Path,
+) -> dict[str, Path]:
+    """Rebind a sealed paired plan's arm identities at a copied round root.
+
+    A v2 target-generation plan intentionally seals absolute output paths.
+    That is useful provenance at generation time, but must not prevent an
+    intact sealed round from being copied off a remote worker before it is
+    screened.  The only portable identity is the plan-relative arm layout:
+    ``<variant>/generations.jsonl`` below the round root.
+
+    This never trusts a caller-provided path as an identity.  It first checks
+    every immutable planned output has the canonical relative form and a
+    common *reference* root, then derives the only allowed local paths below
+    the supplied local round manifest.  All content/WAL/manifest digest
+    validation remains against the newly derived files.
+    """
+
+    outputs = plan.get("outputs")
+    if not isinstance(outputs, Mapping) or set(outputs) != set(variants):
+        raise TargetedJudgeError("paired round plan lacks exactly the two planned arm outputs")
+
+    reference_root: Path | None = None
+    local_outputs: dict[str, Path] = {}
+    for variant in variants:
+        if (
+            not isinstance(variant, str)
+            or not variant
+            or variant in {".", ".."}
+            or Path(variant).name != variant
+        ):
+            raise TargetedJudgeError("paired round plan has an unsafe arm variant identity")
+        planned_value = outputs.get(variant)
+        if not isinstance(planned_value, str) or not planned_value:
+            raise TargetedJudgeError("paired round plan has an invalid planned arm output")
+        planned = Path(planned_value)
+        if not planned.is_absolute() or ".." in planned.parts:
+            raise TargetedJudgeError("paired round plan output path must be an absolute normalized path")
+        relative = Path(variant) / "generations.jsonl"
+        if planned.name != relative.name or planned.parent.name != variant:
+            raise TargetedJudgeError("paired round plan output does not match its arm identity")
+        candidate_reference_root = planned.parent.parent
+        if planned != candidate_reference_root / relative:
+            raise TargetedJudgeError("paired round plan output has a non-canonical arm layout")
+        if reference_root is None:
+            reference_root = candidate_reference_root
+        elif candidate_reference_root != reference_root:
+            raise TargetedJudgeError("paired round plan arm outputs do not share one round root")
+        local_outputs[variant] = require_artifact_path(local_round_root / relative)
+    return local_outputs
+
+
 def _revalidate_paired_source_cross_files(source: Mapping[str, Any]) -> None:
     """Recheck every generator seal recorded by a paired source freeze.
 
@@ -323,6 +404,12 @@ def _revalidate_paired_source_cross_files(source: Mapping[str, Any]) -> None:
         raise TargetedJudgeError("paired immutable sentinel source lacks round lifecycle paths")
     round_path = require_artifact_path(round_path_value)
     round_wal_path = require_artifact_path(round_wal_value)
+    if round_path.name != "round-manifest.json":
+        raise TargetedJudgeError("paired frozen round manifest has an incompatible local layout")
+    local_round_root = round_path.parent
+    expected_round_wal_path = require_artifact_path(local_round_root / "round-wal.jsonl")
+    if round_wal_path != expected_round_wal_path:
+        raise TargetedJudgeError("paired frozen round WAL path is incompatible with its round manifest")
     if _file_sha256(round_path, label="paired frozen round manifest") != _require_sha256(
         round_hash, label="paired frozen round manifest digest"
     ):
@@ -331,8 +418,6 @@ def _revalidate_paired_source_cross_files(source: Mapping[str, Any]) -> None:
         round_wal_hash, label="paired frozen round WAL digest"
     ):
         raise TargetedJudgeError("paired frozen round WAL digest changed")
-    if round_wal_path != round_path.with_name("round-wal.jsonl"):
-        raise TargetedJudgeError("paired frozen round WAL path is incompatible with its round manifest")
     round_manifest = _load_verified_mapping(round_path, label="paired frozen round manifest")
     if (
         round_manifest.get("schema") != PAIRED_ROUND_MANIFEST_SCHEMA
@@ -350,6 +435,11 @@ def _revalidate_paired_source_cross_files(source: Mapping[str, Any]) -> None:
         raise TargetedJudgeError("paired immutable sentinel source has invalid arm commitments")
     if plan.get("ordered_variants") != variants:
         raise TargetedJudgeError("paired frozen round variants changed")
+    local_outputs = _local_paired_outputs_from_plan(
+        plan,
+        variants=variants,
+        local_round_root=local_round_root,
+    )
     if source.get("panel") != plan.get("panel"):
         raise TargetedJudgeError("paired frozen panel/provenance commitment changed")
     if _file_sha256(round_wal_path, label="paired frozen round WAL") != round_manifest.get("round_wal_sha256"):
@@ -373,6 +463,21 @@ def _revalidate_paired_source_cross_files(source: Mapping[str, Any]) -> None:
         records_path = require_artifact_path(records_value)
         arm_manifest_path = require_artifact_path(arm_manifest_value)
         arm_wal_path = require_artifact_path(arm_wal_value)
+        expected_records_path = local_outputs.get(variant)
+        if expected_records_path is None:
+            raise TargetedJudgeError("paired immutable sentinel arm has an unknown variant")
+        expected_arm_manifest_path = require_artifact_path(
+            expected_records_path.with_suffix(expected_records_path.suffix + ".sentinel-arm-manifest.json")
+        )
+        expected_arm_wal_path = require_artifact_path(
+            expected_records_path.with_suffix(expected_records_path.suffix + ".sentinel-arm-wal.jsonl")
+        )
+        if (
+            records_path != expected_records_path
+            or arm_manifest_path != expected_arm_manifest_path
+            or arm_wal_path != expected_arm_wal_path
+        ):
+            raise TargetedJudgeError("paired immutable sentinel arm paths are incompatible with its local round layout")
         expected_records_hash = _require_sha256(arm.get("content_sha256"), label=f"{variant} frozen output digest")
         expected_manifest_hash = _require_sha256(arm.get("arm_manifest_sha256"), label=f"{variant} frozen arm-manifest digest")
         expected_wal_hash = _require_sha256(arm.get("arm_wal_sha256"), label=f"{variant} frozen arm-WAL digest")
@@ -420,7 +525,7 @@ def load_immutable_sentinels(
     creates a combined raw-content copy.
     """
 
-    source_target = Path(source_manifest_path).resolve()
+    source_target = require_artifact_path(source_manifest_path)
     try:
         raw_manifest = json.loads(source_target.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -430,9 +535,9 @@ def load_immutable_sentinels(
     if isinstance(raw_manifest, Mapping) and raw_manifest.get("schema") == PAIRED_SOURCE_FREEZE_SCHEMA:
         _revalidate_paired_source_cross_files(raw_manifest)
         if isinstance(records_path, (str, Path)):
-            supplied_paths = [Path(records_path).resolve()]
+            supplied_paths = [require_artifact_path(records_path)]
         elif isinstance(records_path, Sequence):
-            supplied_paths = [Path(path).resolve() for path in records_path]
+            supplied_paths = [require_artifact_path(path) for path in records_path]
         else:
             raise TargetedJudgeError("paired immutable sentinel source requires two record paths")
         arms = raw_manifest.get("arms")
@@ -441,7 +546,8 @@ def load_immutable_sentinels(
         if len(supplied_paths) != 2 or len(set(supplied_paths)) != 2:
             raise TargetedJudgeError("paired immutable sentinel source requires exactly two distinct record paths")
         expected_paths = [
-            Path(arm.get("records_path", "")).resolve() if isinstance(arm, Mapping) else None for arm in arms
+            require_artifact_path(arm.get("records_path", "")) if isinstance(arm, Mapping) else None
+            for arm in arms
         ]
         if any(path is None for path in expected_paths) or set(supplied_paths) != set(expected_paths):
             raise TargetedJudgeError("paired immutable sentinel source is bound to different records")
@@ -662,6 +768,14 @@ def freeze_immutable_paired_sentinel_source(
         raise TargetedJudgeError("paired round plan must have exactly two ordered variants")
     if round_manifest.get("comparison_round_id") != plan.get("comparison_round_id"):
         raise TargetedJudgeError("paired round manifest comparison identity does not match its plan")
+    if round_target.name != "round-manifest.json":
+        raise TargetedJudgeError("paired source freeze round manifest has an incompatible local layout")
+    local_round_root = round_target.parent
+    local_outputs = _local_paired_outputs_from_plan(
+        plan,
+        variants=variants,
+        local_round_root=local_round_root,
+    )
     completed_blocks = round_manifest.get("completed_blocks")
     required_blocks = plan.get("required_blocks")
     if completed_blocks != required_blocks or not isinstance(required_blocks, int) or required_blocks != PAIRED_ARM_COUNT:
@@ -679,7 +793,7 @@ def freeze_immutable_paired_sentinel_source(
         or not isinstance(round_arm_manifest_hashes, Mapping)
     ):
         raise TargetedJudgeError("paired completed round lacks per-arm output digest commitments")
-    round_wal_path = round_target.with_name("round-wal.jsonl")
+    round_wal_path = require_artifact_path(local_round_root / "round-wal.jsonl")
     actual_round_wal_digest = _file_sha256(round_wal_path, label="paired round WAL")
     if round_manifest.get("round_wal_sha256") != actual_round_wal_digest:
         raise TargetedJudgeError("paired round WAL digest does not match its completed round manifest")
@@ -729,7 +843,7 @@ def freeze_immutable_paired_sentinel_source(
         if not isinstance(variant_value, str) or variant_value in parsed_arms:
             raise TargetedJudgeError("paired source freeze has duplicate or invalid arm manifest variants")
         parsed_arms[variant_value] = (arm_manifest_path, arm_manifest_value)
-    records_by_variant = {variant: Path(str(outputs[variant])).resolve() for variant in variants}
+    records_by_variant = local_outputs
     if set(records) != set(records_by_variant.values()) or set(parsed_arms) != set(variants):
         raise TargetedJudgeError("paired source freeze paths do not match the round's planned arms")
 
@@ -745,8 +859,11 @@ def freeze_immutable_paired_sentinel_source(
             raise TargetedJudgeError("paired arm manifest is not completed for this round")
         if arm_manifest.get("round_plan_sha256") != plan_hash:
             raise TargetedJudgeError("paired arm manifest is not bound to this round plan")
-        if outputs.get(variant) != str(records_path):
-            raise TargetedJudgeError("paired arm manifest records path does not match the round plan")
+        expected_arm_manifest_path = require_artifact_path(
+            records_path.with_suffix(records_path.suffix + ".sentinel-arm-manifest.json")
+        )
+        if arm_manifest_path != expected_arm_manifest_path:
+            raise TargetedJudgeError("paired arm manifest path does not match its local arm output")
         payload = records_path.read_bytes()
         actual_digest = _sha256_bytes(payload)
         digest, count = _paired_arm_seal(arm_manifest, label=f"{variant} arm manifest")

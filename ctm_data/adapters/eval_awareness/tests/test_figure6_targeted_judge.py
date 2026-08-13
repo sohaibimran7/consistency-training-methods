@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import stat
 from pathlib import Path
 from typing import Any
@@ -760,6 +761,102 @@ def test_paired_loader_uses_committed_arm_order_not_lexical_input_order(rooted: 
     assert frozen["ordered_variants"] == ["current", "cap-only"]
     loaded, _ = judge.load_immutable_sentinels(records_paths[::-1], frozen_path)
     assert [row["diagnostic_variant"] for row in loaded[:30]] == ["current"] * 30
+
+
+def test_paired_round_can_be_copied_then_frozen_and_loaded_at_its_new_root(rooted: Path) -> None:
+    """A remote sealed round may be transferred without rewriting its plan.
+
+    The generator's plan correctly retains the remote absolute paths as part
+    of its byte-sealed provenance.  The judge must nevertheless derive local
+    arm files from the committed ``<variant>/generations.jsonl`` layout under
+    the copied local round root; it must not trust either remote paths or
+    arbitrary caller-selected replacements.
+    """
+
+    remote_root = rooted / "isambard-artifacts"
+    remote_records, remote_round_manifest, _remote_arm_manifests, _ = _write_paired_v2_source(remote_root)
+    local_round_root = rooted / "transferred-artifacts" / "initial"
+    shutil.copytree(remote_round_manifest.parent, local_round_root)
+    local_records = [
+        local_round_root / record_path.relative_to(remote_round_manifest.parent)
+        for record_path in remote_records
+    ]
+    local_arm_manifests = [
+        record_path.with_suffix(".jsonl.sentinel-arm-manifest.json") for record_path in local_records
+    ]
+    local_round_manifest = local_round_root / "round-manifest.json"
+    local_freeze = rooted / "local-judge" / "source-manifest.json"
+
+    frozen = judge.freeze_immutable_paired_sentinel_source(
+        local_records[::-1],
+        local_round_manifest,
+        local_arm_manifests[::-1],
+        local_freeze,
+    )
+    assert frozen["round_manifest_path"] == str(local_round_manifest)
+    loaded, source = judge.load_immutable_sentinels(local_records[::-1], local_freeze)
+    assert len(loaded) == 60
+    assert source["records_paths"] == [str(path) for path in local_records]
+
+    # The source freeze is local-root-specific: the untouched source round is
+    # not silently accepted just because its bytes happen to be identical.
+    with pytest.raises(judge.TargetedJudgeError, match="bound to different records"):
+        judge.load_immutable_sentinels(remote_records, local_freeze)
+
+    # Copying did not turn the freeze into a trust-once assertion.  A later
+    # content mutation must still break the round/arm digest chain at B.
+    local_records[0].write_bytes(local_records[0].read_bytes() + b"\n")
+    with pytest.raises(judge.TargetedJudgeError, match="output digest changed"):
+        judge.load_immutable_sentinels(local_records, local_freeze)
+
+
+def test_paired_freeze_and_loader_reject_parent_symlink_substitution(rooted: Path) -> None:
+    records_paths, round_manifest, arm_manifest_paths, _ = _write_paired_v2_source(rooted)
+    source_freeze = rooted / "paired" / "source-freeze.json"
+    judge.freeze_immutable_paired_sentinel_source(records_paths, round_manifest, arm_manifest_paths, source_freeze)
+
+    arm_directory = records_paths[0].parent
+    diverted_directory = arm_directory.with_name(f"{arm_directory.name}-diverted")
+    arm_directory.rename(diverted_directory)
+    arm_directory.symlink_to(diverted_directory, target_is_directory=True)
+
+    with pytest.raises(judge.TargetedJudgeError, match="must not contain a symlink"):
+        judge.load_immutable_sentinels(records_paths, source_freeze)
+    with pytest.raises(judge.TargetedJudgeError, match="must not contain a symlink"):
+        judge.freeze_immutable_paired_sentinel_source(
+            records_paths, round_manifest, arm_manifest_paths, rooted / "paired" / "parent-symlink-freeze.json"
+        )
+
+
+def test_paired_freeze_and_loader_reject_leaf_symlink_substitution(rooted: Path) -> None:
+    records_paths, round_manifest, arm_manifest_paths, _ = _write_paired_v2_source(rooted)
+    source_freeze = rooted / "paired" / "source-freeze.json"
+    judge.freeze_immutable_paired_sentinel_source(records_paths, round_manifest, arm_manifest_paths, source_freeze)
+
+    output = records_paths[0]
+    diverted_output = output.with_name("sealed-generations.jsonl")
+    output.rename(diverted_output)
+    output.symlink_to(diverted_output)
+
+    with pytest.raises(judge.TargetedJudgeError, match="must not contain a symlink"):
+        judge.load_immutable_sentinels(records_paths, source_freeze)
+    with pytest.raises(judge.TargetedJudgeError, match="must not contain a symlink"):
+        judge.freeze_immutable_paired_sentinel_source(
+            records_paths, round_manifest, arm_manifest_paths, rooted / "paired" / "leaf-symlink-freeze.json"
+        )
+
+
+def test_artifact_root_symlink_is_rejected_before_descendant_validation(
+    rooted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_root = rooted / "real-artifacts"
+    real_root.mkdir()
+    symlink_root = rooted / "artifact-root-link"
+    symlink_root.symlink_to(real_root, target_is_directory=True)
+    monkeypatch.setattr(judge, "ARTIFACT_ROOT", symlink_root)
+
+    with pytest.raises(judge.TargetedJudgeError, match="artifact root must be a regular non-symlink directory"):
+        judge.require_artifact_path(symlink_root / "copied-round" / "round-manifest.json")
 
 
 def test_paired_freeze_rejects_success_key_commitment_not_equal_to_dispatch(rooted: Path) -> None:
