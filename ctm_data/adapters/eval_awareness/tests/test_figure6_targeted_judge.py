@@ -355,6 +355,7 @@ def test_dry_plan_uses_exact_paper_deepseek_user_k1_and_makes_no_call(rooted: Pa
     assert plan["judge"]["message_role"] == "user"
     assert plan["judge"]["judge_k"] == 1
     assert plan["judge"]["request_body_keys"] == ["messages", "model"]
+    assert plan["judge"]["response_provider_policy"] == judge.DEEPSEEK_RESPONSE_PROVIDER_POLICY
     assert plan["judge_template_sha256"] == PAPER_JUDGE_TEMPLATE_SHA256
     rendered = json.dumps(result, sort_keys=True)
     assert "synthetic task" not in rendered
@@ -491,8 +492,9 @@ def test_paid_validation_error_blocks_resume_and_does_not_send_other_sentinels(r
     ("mutation", "value"),
     [
         ("model", "another/provider"),
-        ("provider", "Another Provider"),
         ("provider_missing", None),
+        ("provider", ""),
+        ("provider", "   "),
         ("finish_reason", "length"),
     ],
 )
@@ -550,6 +552,37 @@ def test_wrong_paid_response_identity_is_quarantined_without_resend(
     finally:
         asyncio.run(resume_client.aclose())
     assert resumed.requests == []
+
+
+def test_non_vendor_downstream_provider_is_accepted_and_retained(rooted: Path) -> None:
+    """OpenRouter may infer the pinned model through a non-DeepSeek host."""
+
+    records, source_manifest, template = _write_source(rooted, [_record(1)])
+    paths = _paths(rooted)
+    dry = _run(records, source_manifest, template, paths, dry_run=True)
+    response = _response()
+    response["provider"] = "Independent Host"
+    transport = _Transport([response])
+    client = httpx.AsyncClient(transport=transport)
+    try:
+        result = _run(
+            records,
+            source_manifest,
+            template,
+            paths,
+            api_key="unit-key",
+            confirm_paid=True,
+            expected_plan_sha256=dry["plan_sha256"],
+            client=client,
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert result["completed"] == 1
+    attempts = [json.loads(line) for line in paths["attempt_log_path"].read_text(encoding="utf-8").splitlines()]
+    terminal = next(row for row in attempts if row["record_type"] == "terminal")
+    assert terminal["status"] == "success"
+    assert terminal["provider"] == "Independent Host"
 
 
 @pytest.mark.parametrize("write_before_failure", [True, False])

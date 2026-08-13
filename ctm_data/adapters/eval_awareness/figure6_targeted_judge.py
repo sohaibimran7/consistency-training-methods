@@ -44,7 +44,12 @@ DEEPSEEK_MODEL = "deepseek/deepseek-v4-pro"
 DEEPSEEK_ALLOWED_RESPONSE_MODELS = frozenset(
     {DEEPSEEK_MODEL, "deepseek/deepseek-v4-pro-20260423"}
 )
-DEEPSEEK_PROVIDER = "DeepSeek"
+# OpenRouter's top-level ``provider`` is the downstream inference host, not
+# the requested model vendor.  The exact model identity remains pinned above;
+# a successful response must additionally disclose a non-blank downstream
+# provider so the host can be retained for audit.  Do not freeze a historical
+# host allowlist here: OpenRouter can add legitimate hosts between requests.
+DEEPSEEK_RESPONSE_PROVIDER_POLICY = "nonempty_downstream_provider_recorded"
 INITIAL_PROTOCOL_ID = "figure6-targeted-deepseek-v4-pro-user-k1-v1"
 K3_CONFIRMATION_PROTOCOL_ID = "figure6-targeted-deepseek-v4-pro-user-k3-confirmation-v1"
 INITIAL_JUDGE_K = 1
@@ -1076,6 +1081,7 @@ def _plan_document(
             "endpoint": OPENROUTER_ENDPOINT,
             "model": DEEPSEEK_MODEL,
             "allowed_response_models": sorted(DEEPSEEK_ALLOWED_RESPONSE_MODELS),
+            "response_provider_policy": DEEPSEEK_RESPONSE_PROVIDER_POLICY,
             "message_role": "user",
             "judge_k": INITIAL_JUDGE_K,
             "request_body_keys": ["messages", "model"],
@@ -1218,8 +1224,8 @@ def _response_metadata(response: httpx.Response) -> tuple[dict[str, Any], str, d
     if finish_reason != "stop":
         raise TargetedJudgeError("paid judge response has an unexpected finish reason")
     provider = body.get("provider")
-    if provider != DEEPSEEK_PROVIDER:
-        raise TargetedJudgeError("paid judge response provider is not DeepSeek")
+    if not isinstance(provider, str) or not provider.strip():
+        raise TargetedJudgeError("paid judge response is missing a downstream provider")
     usage = body.get("usage") or {}
     if not isinstance(usage, Mapping):
         raise TargetedJudgeError("paid judge response usage is invalid")
@@ -1380,8 +1386,10 @@ def _validate_attempt_history(
                 if row.get("response_model") not in DEEPSEEK_ALLOWED_RESPONSE_MODELS:
                     raise TargetedJudgeError(f"attempt {index} successful terminal has an unapproved response model")
                 provider = row.get("provider")
-                if provider != DEEPSEEK_PROVIDER:
-                    raise TargetedJudgeError(f"attempt {index} successful terminal provider is not DeepSeek")
+                if not isinstance(provider, str) or not provider.strip():
+                    raise TargetedJudgeError(
+                        f"attempt {index} successful terminal is missing a downstream provider"
+                    )
                 if row.get("finish_reason") != "stop":
                     raise TargetedJudgeError(f"attempt {index} successful terminal has an unexpected finish reason")
                 if not isinstance(row.get("usage"), Mapping):
