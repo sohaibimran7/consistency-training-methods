@@ -7,6 +7,7 @@ Real-engine behaviour is validated on a GPU box (tests there carry @pytest.mark.
 """
 
 import asyncio
+import math
 import weakref
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,11 +64,93 @@ class FakeEngine:
         return [SimpleNamespace(outputs=completions) for _ in prompts]
 
 
+class FakeScoringEngine:
+    """Returns one prompt logprob mapping per supplied token position."""
+
+    def __init__(self, *, malformed=None):
+        self.calls = []
+        self.malformed = malformed
+
+    def generate(self, prompts, params, lora_request=None, use_tqdm=False):
+        self.calls.append(SimpleNamespace(prompts=prompts, params=params, lora_request=lora_request))
+        outputs = []
+        for prompt in prompts:
+            tokens = list(prompt.prompt_token_ids)
+            prompt_logprobs = [
+                {token: SimpleNamespace(logprob=-(position + token / 100.0))} for position, token in enumerate(tokens)
+            ]
+            returned_tokens = list(tokens)
+            if self.malformed == "tokens":
+                returned_tokens[-1] += 1
+            elif self.malformed == "missing_prompt_logprobs":
+                prompt_logprobs = None
+            elif self.malformed == "length":
+                prompt_logprobs = prompt_logprobs[:-1]
+            elif self.malformed == "missing_token":
+                prompt_logprobs[-1] = {}
+            elif self.malformed == "nonfinite":
+                prompt_logprobs[-1][tokens[-1]].logprob = math.inf
+            outputs.append(
+                SimpleNamespace(
+                    outputs=[],
+                    prompt_token_ids=returned_tokens,
+                    prompt_logprobs=prompt_logprobs,
+                )
+            )
+        return outputs
+
+
 def make_sampler(engine=None):
     return VLLMSampler(model="some/base", engine=engine or FakeEngine(), api=fake_api())
 
 
 class TestVLLMSampler:
+    def test_qwen35_lora_sampling_fails_before_a_noop_policy_can_be_used(self):
+        sampler = VLLMSampler(model="Qwen/Qwen3.5-9B", engine=FakeEngine(), api=fake_api())
+        with pytest.raises(ValueError, match="maps no `model.layers"):
+            sampler.advance_policy("/tmp/qwen35-adapter")
+
+    def test_qwen35_base_only_sampling_is_not_blocked(self):
+        sampler = VLLMSampler(model="Qwen/Qwen3.5-9B", engine=FakeEngine(), api=fake_api())
+        sampler.sample([1], max_tokens=1, temperature=0.0, stop=[], num_samples=1, use_base=True)
+
+    def test_qwen35_policy_sampling_requires_a_published_compatibility_snapshot(self):
+        sampler = VLLMSampler(model="Qwen/Qwen3.5-9B", engine=FakeEngine(), api=fake_api())
+        with pytest.raises(RuntimeError, match="refusing to silently sample the frozen base"):
+            sampler.sample([1], max_tokens=1, temperature=0.7, stop=[], num_samples=1, use_base=False)
+
+    def test_engine_is_constructed_with_processed_logprobs_mode_pinned(self):
+        constructed = []
+
+        class RecordingLLM:
+            def __init__(self, **kwargs):
+                constructed.append(kwargs)
+
+        api = fake_api()
+        api.LLM = RecordingLLM
+        sampler = VLLMSampler(model="some/base", api=api, gpu_memory_utilization=0.8)
+
+        assert constructed == [
+            {
+                "model": "some/base",
+                "enable_lora": True,
+                "gpu_memory_utilization": 0.8,
+                "max_lora_rank": 64,
+                "logprobs_mode": "processed_logprobs",
+            }
+        ]
+        sampler.shutdown()
+
+    @pytest.mark.parametrize("mode", ["raw_logprobs", "raw_logits", None])
+    def test_incompatible_logprobs_mode_fails_closed(self, mode):
+        with pytest.raises(ValueError, match="requires logprobs_mode='processed_logprobs'"):
+            VLLMSampler(
+                model="some/base",
+                engine=FakeEngine(),
+                api=fake_api(),
+                logprobs_mode=mode,
+            )
+
     def test_policy_before_any_snapshot_uses_base(self):
         engine = FakeEngine()
         s = make_sampler(engine)
@@ -86,6 +169,17 @@ class TestVLLMSampler:
         assert (second.lora_int_id, second.path) == (2, "/tmp/adapters/v2")
         assert first.name != second.name  # unique id+name defeats vLLM's adapter cache
 
+    def test_explicit_distributed_policy_version_is_used_and_must_increase(self):
+        engine = FakeEngine()
+        sampler = make_sampler(engine)
+        sampler.advance_policy("/tmp/adapters/v7", version=7)
+        sampler.sample([1], max_tokens=4, temperature=1.0, stop=[], num_samples=1, use_base=False)
+
+        request = engine.calls[0].lora_request
+        assert (request.lora_int_id, request.path) == (7, "/tmp/adapters/v7")
+        with pytest.raises(ValueError, match="must increase"):
+            sampler.advance_policy("/tmp/adapters/stale", version=7)
+
     def test_base_sampling_never_attaches_adapter(self):
         engine = FakeEngine()
         s = make_sampler(engine)
@@ -103,7 +197,22 @@ class TestVLLMSampler:
         assert call.params.kwargs["max_tokens"] == 32
         assert call.params.kwargs["temperature"] == 0.7
         assert call.params.kwargs["stop_token_ids"] == [2, 3]  # non-int stops filtered
+        assert call.params.kwargs["ignore_eos"] is False
         assert call.params.kwargs["logprobs"] == 0
+
+    def test_ignore_eos_is_explicit_opt_in(self):
+        engine = FakeEngine()
+        sampler = make_sampler(engine)
+        sampler.sample(
+            [5],
+            max_tokens=32,
+            temperature=0.7,
+            stop=[],
+            num_samples=1,
+            use_base=False,
+            ignore_eos=True,
+        )
+        assert engine.calls[0].params.kwargs["ignore_eos"] is True
 
     def test_token_and_logprob_extraction(self):
         s = make_sampler()
@@ -131,6 +240,62 @@ class TestVLLMSampler:
             [[7, 8], [9]],
             [[7, 8], [9]],
         ]
+
+    def test_completion_scoring_uses_prompt_logprobs_and_exact_combined_tokens(self):
+        engine = FakeScoringEngine()
+        sampler = make_sampler(engine)
+        sampler.advance_policy("/tmp/adapters/v3", version=3)
+
+        scores = sampler.score_completions(
+            [[10, 11], [20]],
+            [[7, 8], [9, 10, 11]],
+            use_base=False,
+        )
+
+        call = engine.calls[0]
+        assert [prompt.prompt_token_ids for prompt in call.prompts] == [
+            [10, 11, 7, 8],
+            [20, 9, 10, 11],
+        ]
+        assert call.params.kwargs == {
+            "n": 1,
+            "max_tokens": 1,
+            "temperature": 0.0,
+            "prompt_logprobs": 0,
+        }
+        assert call.lora_request.lora_int_id == 3
+        assert scores[0] == pytest.approx([-2.07, -3.08])
+        assert scores[1] == pytest.approx([-1.09, -2.1, -3.11])
+
+        sampler.score_completions([[10]], [[7]], use_base=True)
+        assert engine.calls[1].lora_request is None
+
+    @pytest.mark.parametrize(
+        ("malformed", "message"),
+        [
+            ("tokens", "misaligned"),
+            ("missing_prompt_logprobs", "omitted prompt_logprobs"),
+            ("length", "prompt-logprob position"),
+            ("missing_token", "omitted token"),
+            ("nonfinite", "non-finite logprob"),
+        ],
+    )
+    def test_completion_scoring_rejects_malformed_or_nonfinite_engine_results(self, malformed, message):
+        sampler = make_sampler(FakeScoringEngine(malformed=malformed))
+        with pytest.raises(RuntimeError, match=message):
+            sampler.score_completions([[1, 2]], [[3]], use_base=True)
+
+    def test_completion_scoring_validates_batch_and_nonempty_sequences(self):
+        sampler = make_sampler(FakeScoringEngine())
+        with pytest.raises(ValueError, match="same length"):
+            sampler.score_completions([[1]], [], use_base=True)
+        with pytest.raises(ValueError, match="prompt 0 is empty"):
+            sampler.score_completions([[]], [[1]], use_base=True)
+        with pytest.raises(ValueError, match="completion 0 is empty"):
+            sampler.score_completions([[1]], [[]], use_base=True)
+
+        assert sampler.score_completions([], [], use_base=True) == []
+        assert sampler.engine.calls == []
 
     def test_missing_sampled_logprob_marks_sequence_logprobless(self):
         s = make_sampler(FakeEngine(drop_logprob_for_token=8))

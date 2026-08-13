@@ -19,22 +19,131 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+from ctm.backends.cli import (
+    PhaseSharedCLIConfig,
+    add_backend_args,
+    build_backend,
+    describe_backend,
+    resolve_phase_shared_args,
+    resolve_rollout_parallel_args,
+)
+from ctm.cli_safety import parse_json_object, reject_inline_secrets
+from ctm.core.config import AdamConfig, CheckpointConfig, resolve_lora_config
+from ctm.settings.runtime import prepare_setting, setting_run_metadata
+from ctm.training.resume_state import RLResumeState, load_strict_local_rl_resume_state
 from ctm.training.rl import (
+    GenerationConfig,
+    RateEstimationConfig,
     RLConfig,
     RLTrainer,
-    RateEstimationConfig,
-    TrainingSamplingConfig,
     TrainingLoopConfig,
-    GenerationConfig,
+    TrainingSamplingConfig,
 )
-from ctm.core.config import CheckpointConfig, AdamConfig, resolve_lora_config
-from ctm.backends.cli import add_backend_args, build_backend, describe_backend
-from ctm.cli_safety import parse_json_object, reject_inline_secrets
-from ctm.settings.runtime import prepare_setting, setting_run_metadata
 
 
 def _exact_command(argv: list[str]) -> str:
     return "python scripts/train_rlct.py " + " ".join(shlex.quote(value) for value in argv)
+
+
+def _phase_shared_run_metadata(phase_shared: PhaseSharedCLIConfig | None) -> dict[str, object]:
+    """Return reproducible runtime provenance for an opt-in shared-GPU run.
+
+    The placement is deliberately recorded separately from scientific settings:
+    phase sharing changes how the configured update is executed, rather than
+    which data, objective, rollout budgets, or optimizer hyperparameters the
+    experiment uses.
+    """
+
+    if phase_shared is None:
+        return {}
+    topology = phase_shared.topology
+    return {
+        "phase_shared": {
+            "schema_version": "local_phase_shared_v1",
+            "execution_only": True,
+            "execution_semantics": (
+                "runtime topology only; configured objective, data selection, rollout budgets, "
+                "and optimizer hyperparameters are unchanged"
+            ),
+            "visible_devices": list(topology.visible_devices),
+            "training_world_size": topology.world_size,
+            "training_ranks": [
+                {
+                    "rank": rank.rank,
+                    "logical_index": rank.gpu.logical_index,
+                    "device_token": rank.gpu.device_token,
+                    "publisher": rank.is_publisher,
+                }
+                for rank in topology.training_ranks
+            ],
+            "rollout_workers": [
+                {
+                    "worker_id": worker_id,
+                    "logical_index": gpu.logical_index,
+                    "device_token": gpu.device_token,
+                }
+                for worker_id, gpu in enumerate(topology.rollout_gpus)
+            ],
+            "overlap": [
+                {"logical_index": gpu.logical_index, "device_token": gpu.device_token} for gpu in topology.overlap
+            ],
+            "coordinator": {
+                "rank": 0,
+                "logical_index": topology.coordinator.logical_index,
+                "device_token": topology.coordinator.device_token,
+                "device": phase_shared.coordinator_device,
+                "canonical_adapter_publisher": True,
+            },
+            "vllm_sleep_lifecycle": {
+                "enabled": True,
+                "sleep_level": 1,
+                "rollout_phase": "workers awake; sampling and scoring permitted",
+                "training_phase": "workers sleep before replicated trainer work; sampling and scoring prohibited",
+                "publication": "rank 0 verifies replica state, publishes the adapter, then all workers acknowledge before rollout resumes",
+                "transition_failure_policy": "fail_closed",
+            },
+            "rollout_worker_timeouts_seconds": {
+                "startup": phase_shared.rollout.start_timeout_seconds,
+                "request": phase_shared.rollout.request_timeout_seconds,
+            },
+            "replica_timeouts_seconds": {
+                "startup": phase_shared.replica_start_timeout_seconds,
+                "command": phase_shared.replica_command_timeout_seconds,
+                "shutdown": phase_shared.replica_shutdown_timeout_seconds,
+            },
+        }
+    }
+
+
+def _print_phase_shared_runtime(phase_shared: PhaseSharedCLIConfig | None) -> None:
+    """Print a compact, topology-independent execution provenance summary."""
+
+    if phase_shared is None:
+        return
+    topology = phase_shared.topology
+    ranks = ", ".join(
+        f"rank {rank.rank} -> logical {rank.gpu.logical_index} ({rank.gpu.device_token})"
+        for rank in topology.training_ranks
+    )
+    rollouts = ", ".join(
+        f"worker {worker_id} -> logical {gpu.logical_index} ({gpu.device_token})"
+        for worker_id, gpu in enumerate(topology.rollout_gpus)
+    )
+    overlap = ", ".join(str(gpu.logical_index) for gpu in topology.overlap) or "none"
+    print("  Phase-shared:      execution-only; configured objective/data/budgets/hyperparameters unchanged")
+    print(
+        f"  Phase topology:    world={topology.world_size}; rank 0/coordinator="
+        f"{phase_shared.coordinator_device}; overlap logical GPUs=[{overlap}]"
+    )
+    print(f"  Training ranks:    {ranks}")
+    print(f"  Rollout workers:   {rollouts}")
+    print("  vLLM lifecycle:    awake for rollout; level-1 sleep for training; rank-0 publish + worker ACK")
+    print(
+        "  Replica timeouts:  "
+        f"start={phase_shared.replica_start_timeout_seconds:g}s, "
+        f"command={phase_shared.replica_command_timeout_seconds:g}s, "
+        f"shutdown={phase_shared.replica_shutdown_timeout_seconds:g}s"
+    )
 
 
 def _validate_numeric_args(args: argparse.Namespace) -> None:
@@ -219,7 +328,12 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--n-epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=1, help="Datapoints per gradient step")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
-    parser.add_argument("--refresh-every", type=int, default=1, help="Refresh policy every N steps")
+    parser.add_argument(
+        "--refresh-every",
+        type=int,
+        default=1,
+        help="Refresh the rollout policy every N completed optimizer updates",
+    )
     parser.add_argument(
         "--normalization",
         default="per_item",
@@ -229,26 +343,54 @@ def main(argv: list[str] | None = None):
 
     # === Checkpointing ===
     parser.add_argument("--checkpoint-every", type=int, default=50, help="Save checkpoint every N steps")
-    parser.add_argument("--save-state", action="store_true", help="Save full optimizer state (for resuming)")
+    parser.add_argument(
+        "--save-state",
+        action="store_true",
+        help=(
+            "Save optimizer state alongside checkpoints. This is necessary for an optimizer restore, "
+            "but does not by itself make an on-policy continuation exact."
+        ),
+    )
 
     # === Backend ===
-    add_backend_args(parser)
+    # This loop implements the serialized rollout/training lifecycle required
+    # by the opt-in phase-shared backend. Other training entrypoints leave the
+    # phase-shared CLI disabled until they implement equivalent boundaries.
+    add_backend_args(parser, enable_phase_shared=True)
 
     # === Run modes ===
-    parser.add_argument("--resume-from", default=None, help="Tinker checkpoint path to resume from")
+    parser.add_argument("--resume-from", default=None, help="Checkpoint URI/path to resume from")
     parser.add_argument(
         "--resume-with-optimizer",
         action="store_true",
-        help="Also restore optimizer state when resuming (for exact continuation)",
+        help=(
+            "Also restore optimizer state when resuming. Exact on-policy continuation additionally "
+            "requires compatible rollout/RNG state."
+        ),
+    )
+    parser.add_argument(
+        "--resume-state-required",
+        action="store_true",
+        help=(
+            "Require the local checkpoint's strict RL loop/coordinator-RNG state and continue its absolute "
+            "global/optimizer counters. This does not claim to restore a vLLM worker's private sampling RNG."
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Load data and print config, don't train")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     args = parser.parse_args(argv)
+    strict_resume_state: RLResumeState | None = None
 
     try:
         if args.n_datapoints <= 0:
             raise ValueError("--n-datapoints must be positive")
+        if args.resume_state_required:
+            if args.backend != "local":
+                raise ValueError("--resume-state-required requires --backend local")
+            if not args.resume_from or not args.resume_with_optimizer:
+                raise ValueError("--resume-state-required requires --resume-from together with --resume-with-optimizer")
+            strict_resume_state = load_strict_local_rl_resume_state(args.resume_from)
         _validate_numeric_args(args)
         setting_config = parse_json_object(args.setting_config, label="--setting-config")
         load_config = parse_json_object(args.load_config, label="--load-config")
@@ -257,6 +399,8 @@ def main(argv: list[str] | None = None):
         reject_inline_secrets(load_config, path="load_config")
         reject_inline_secrets(raw_lora_config, path="lora_config")
         lora_config = resolve_lora_config(raw_lora_config, rank=args.lora_rank, seed=args.seed)
+        phase_shared = resolve_phase_shared_args(args)
+        rollout_parallel = phase_shared.rollout if phase_shared is not None else resolve_rollout_parallel_args(args)
         load_config.setdefault("n_datapoints", args.n_datapoints)
         prepared = prepare_setting(
             args.setting_factory,
@@ -332,6 +476,38 @@ def main(argv: list[str] | None = None):
             ),
             "setting_factory": args.setting_factory,
             "backend": args.backend,
+            **_phase_shared_run_metadata(phase_shared),
+            **(
+                {
+                    "continuation": {
+                        "mode": "optimizer_data_segment",
+                        "parent_checkpoint": str(strict_resume_state.checkpoint_dir),
+                        "parent_global_step": strict_resume_state.global_step,
+                        "parent_optimizer_step": strict_resume_state.optimizer_step,
+                        "parent_completed_epochs": strict_resume_state.completed_epochs,
+                        "vllm_worker_rng_restored": False,
+                    }
+                }
+                if strict_resume_state is not None
+                else {}
+            ),
+            **(
+                {
+                    "rollout_parallel": {
+                        "coordinator_device": args.local_device,
+                        "workers": [gpu.as_dict() for gpu in rollout_parallel.gpus],
+                        "status_dir": str(rollout_parallel.status_dir),
+                        "adapter_barrier": "all_workers_acknowledge_before_policy_sampling",
+                        "engine_seed_base": args.local_rollout_seed_base,
+                        "engine_seed_policy": "base_plus_worker_id_v1",
+                        "engine_seed_fallback": (
+                            None if args.local_rollout_seed_base is not None else "os_entropy_once_per_pool"
+                        ),
+                    }
+                }
+                if rollout_parallel is not None
+                else {}
+            ),
         },
     )
 
@@ -344,6 +520,14 @@ def main(argv: list[str] | None = None):
     print(f"  Setting:            {setting.name}")
     print(f"  Model:              {args.model}")
     print(f"  Backend:            {describe_backend(args)}")
+    if rollout_parallel is not None:
+        if phase_shared is None:
+            mapping = ", ".join(f"logical {gpu.logical_index} -> {gpu.device_token}" for gpu in rollout_parallel.gpus)
+            print(f"  Rollout workers:    {len(rollout_parallel.gpus)} ({mapping})")
+        print(f"  Worker status:      {rollout_parallel.status_dir}")
+        seed_text = args.local_rollout_seed_base if args.local_rollout_seed_base is not None else "recorded entropy"
+        print(f"  Sampling RNG:       vLLM engine seeds {seed_text}+worker_id")
+    _print_phase_shared_runtime(phase_shared)
     print(f"  Experiment:         {args.experiment_name}/{args.run_name}")
     print(f"  Total datapoints:   {len(datapoints)}")
     print(f"  Perturbations:      {pert_desc}")
@@ -403,6 +587,13 @@ def main(argv: list[str] | None = None):
     if args.resume_from:
         print(f"  Resume from:        {args.resume_from}")
         print(f"  With optimizer:     {args.resume_with_optimizer}")
+    if strict_resume_state is not None:
+        print(
+            "  Strict loop state:  "
+            f"global={strict_resume_state.global_step}, optimizer={strict_resume_state.optimizer_step}, "
+            f"epochs={strict_resume_state.completed_epochs}"
+        )
+        print("  vLLM RNG resume:    unavailable (new, explicitly non-exact worker stream)")
     print(f"{'='*60}")
 
     if args.dry_run:
@@ -422,6 +613,7 @@ def main(argv: list[str] | None = None):
         config=config,
         resume_from=args.resume_from,
         resume_with_optimizer=args.resume_with_optimizer,
+        resume_state=strict_resume_state,
         backend=build_backend(args),
     )
     trainer.setup()
