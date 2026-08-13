@@ -16,9 +16,8 @@ from ctm_data.adapters.eval_awareness import figure6_sentinel as sentinel
 from ctm_data.adapters.eval_awareness.figure6_generate import read_generation_records
 from ctm_data.adapters.eval_awareness.figure6_materialize import FIGURE6_ARTIFACT_SCHEMA
 from ctm_data.adapters.eval_awareness.figure6_request_contract import (
-    EXPECTED_GENERATION_CONFIG,
-    EXPECTED_MAX_MODEL_LEN,
-    EXPECTED_VLLM_VERSION,
+    REQUEST_ONLY_RUNTIME_PROFILE,
+    RUNTIME_ABLATION_V023_TP4_PROFILE,
     SERVER_ATTESTATION_SCHEMA,
 )
 from ctm_data.adapters.eval_awareness.figure6_spec import DATASET_ID, DATASET_REVISION, get_model_spec
@@ -59,18 +58,17 @@ class _Paths:
     attestation: Path
 
 
-def _write_attestation(path: Path) -> Path:
+def _write_attestation(
+    path: Path,
+    *,
+    runtime_profile: Any = REQUEST_ONLY_RUNTIME_PROFILE,
+) -> Path:
     model = get_model_spec(sentinel.MODEL_KEY)
     value = {
         "schema": SERVER_ATTESTATION_SCHEMA,
         "model_id": model.model_id,
         "model_revision": model.revision,
-        "vllm_version": EXPECTED_VLLM_VERSION,
-        "tensor_parallel_size": model.tensor_parallel_size,
-        "dtype": model.dtype,
-        "max_model_len": EXPECTED_MAX_MODEL_LEN,
-        "reasoning_parser": model.reasoning_parser,
-        "generation_config": EXPECTED_GENERATION_CONFIG,
+        **runtime_profile.attestation_fields(),
         "launch_command_sha256": "b" * 64,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,6 +274,10 @@ def test_rounds_are_enumerated_and_each_uses_fresh_current_identity(paths: _Path
     assert sentinel.COMPARISON_ROUNDS["round-temperature"].variants == ("current", "temp-only")
     assert sentinel.COMPARISON_ROUNDS["round-cap"].variants == ("current", "cap-only")
     assert sentinel.COMPARISON_ROUNDS["round-reasoning"].variants == ("current", "reasoning-only")
+    runtime = sentinel.COMPARISON_ROUNDS["runtime-v023"]
+    assert runtime.variants == ("current", "igor-shaped")
+    assert runtime.runtime_profile_key == RUNTIME_ABLATION_V023_TP4_PROFILE.key
+    assert runtime.protocol_id == sentinel.RUNTIME_ABLATION_PROTOCOL_ID
     condition = sentinel.SENTINEL_PANEL[0].condition_id
     keys = {
         sentinel.sentinel_generation_key(round_id, "current", condition, 1)
@@ -286,6 +288,55 @@ def test_rounds_are_enumerated_and_each_uses_fresh_current_identity(paths: _Path
         for round_id in sentinel.COMPARISON_ROUNDS
     }
     assert len(keys) == len(outputs) == len(sentinel.COMPARISON_ROUNDS)
+
+
+def test_runtime_v023_plan_explicitly_binds_the_runtime_and_cross_runtime_rule(paths: _Paths) -> None:
+    paths = _Paths(
+        paths.root,
+        paths.artifact,
+        paths.prompt,
+        paths.output_root,
+        _write_attestation(paths.root / "attestations" / "server-v023.json", runtime_profile=RUNTIME_ABLATION_V023_TP4_PROFILE),
+    )
+    review = _review(paths, "runtime-v023")
+    plan = review["plan"]
+    assert plan["protocol_id"] == sentinel.RUNTIME_ABLATION_PROTOCOL_ID
+    assert plan["runtime_profile"] == {
+        "key": RUNTIME_ABLATION_V023_TP4_PROFILE.key,
+        **RUNTIME_ABLATION_V023_TP4_PROFILE.attestation_fields(),
+    }
+    assert plan["cross_runtime_comparison"] == {
+        "label": "v023-tp4-igor-shaped-versus-frozen-v026-tp1-igor-shaped",
+        "candidate_round_id": "runtime-v023",
+        "candidate_variant": "igor-shaped",
+        "reference_round_id": "initial",
+        "reference_variant": "igor-shaped",
+        "aware_reduction_threshold": "at_least_4_of_21_forward_signal_events",
+        "task_direction_threshold": "at_least_4_of_7_forward_signal_tasks",
+    }
+    assert review["planned_api_calls"] == 60
+
+
+def test_runtime_v023_rejects_the_request_only_stack_and_existing_rounds_reject_v023(
+    paths: _Paths,
+) -> None:
+    v023 = _write_attestation(
+        paths.root / "attestations" / "server-v023.json", runtime_profile=RUNTIME_ABLATION_V023_TP4_PROFILE
+    )
+    with pytest.raises(ValueError, match="vllm_version must remain fixed"):
+        asyncio.run(
+            sentinel.run_comparison_round(
+                paths.artifact,
+                paths.output_root,
+                round_id="initial",
+                prompt_path=paths.prompt,
+                server_attestation_path=v023,
+                client=_Client([]),
+                dry_run=True,
+            )
+        )
+    with pytest.raises(ValueError, match="vllm_version must remain fixed"):
+        _review(paths, "runtime-v023")
 
 
 def test_dry_run_is_deterministic_content_free_and_persists_only_review(paths: _Paths) -> None:

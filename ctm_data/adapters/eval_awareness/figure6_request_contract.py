@@ -24,6 +24,7 @@ import time
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Iterator
@@ -73,6 +74,67 @@ PROTOCOL_ID = "igor-target-openai-chat-medium-omitted-sampling-v1"
 OMITTED_REQUEST_FIELDS = ("temperature", "top_p", "max_tokens", "seed")
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 ARTIFACT_ROOT = (REPOSITORY_ROOT / "artifacts").resolve()
+
+
+@dataclass(frozen=True, slots=True)
+class ServerRuntimeProfile:
+    """One reviewed, exact local-serving runtime for a diagnostic round."""
+
+    key: str
+    vllm_version: str
+    tensor_parallel_size: int
+    dtype: str
+    max_model_len: int
+    reasoning_parser: str
+    generation_config: str
+
+    def attestation_fields(self) -> dict[str, Any]:
+        return {
+            "vllm_version": self.vllm_version,
+            "tensor_parallel_size": self.tensor_parallel_size,
+            "dtype": self.dtype,
+            "max_model_len": self.max_model_len,
+            "reasoning_parser": self.reasoning_parser,
+            "generation_config": self.generation_config,
+        }
+
+
+# The request-only diagnostic remains fixed to this profile.  The second
+# profile is opt-in and exists solely for the separate runtime ablation.
+REQUEST_ONLY_RUNTIME_PROFILE = ServerRuntimeProfile(
+    key="vllm-0.26.0-tp1-bf16-ctx8192-qwen3-auto",
+    vllm_version=EXPECTED_VLLM_VERSION,
+    tensor_parallel_size=1,
+    dtype="bfloat16",
+    max_model_len=EXPECTED_MAX_MODEL_LEN,
+    reasoning_parser="qwen3",
+    generation_config=EXPECTED_GENERATION_CONFIG,
+)
+RUNTIME_ABLATION_V023_TP4_PROFILE = ServerRuntimeProfile(
+    key="vllm-0.23.0-tp4-bf16-ctx8192-qwen3-auto",
+    vllm_version="0.23.0",
+    tensor_parallel_size=4,
+    dtype="bfloat16",
+    max_model_len=8192,
+    reasoning_parser="qwen3",
+    generation_config="auto",
+)
+SERVER_RUNTIME_PROFILES: dict[str, ServerRuntimeProfile] = {
+    profile.key: profile
+    for profile in (
+        REQUEST_ONLY_RUNTIME_PROFILE,
+        RUNTIME_ABLATION_V023_TP4_PROFILE,
+    )
+}
+
+
+def get_server_runtime_profile(key: str) -> ServerRuntimeProfile:
+    """Return a registered exact runtime profile, rejecting unreviewed stacks."""
+
+    try:
+        return SERVER_RUNTIME_PROFILES[key]
+    except KeyError as exc:
+        raise RequestContractError(f"unknown server runtime profile {key!r}") from exc
 
 
 class RequestContractError(ValueError):
@@ -126,8 +188,18 @@ def require_artifact_path(path: str | Path) -> Path:
     return resolved
 
 
-def load_server_attestation(path: str | Path, model: ModelSpec) -> tuple[dict[str, Any], str]:
-    """Load a sanitized, reviewed description of the exact serving stack."""
+def load_server_attestation(
+    path: str | Path,
+    model: ModelSpec,
+    *,
+    runtime_profile: ServerRuntimeProfile | None = None,
+) -> tuple[dict[str, Any], str]:
+    """Load a sanitized attestation for the selected exact serving stack.
+
+    Leaving ``runtime_profile`` unset deliberately preserves the v0.26/TP1
+    request-only gate.  Runtime experiments must pass a registered profile
+    explicitly, making a stack change visible in their reviewed plan.
+    """
 
     target = require_artifact_path(path)
     try:
@@ -165,18 +237,23 @@ def load_server_attestation(path: str | Path, model: ModelSpec) -> tuple[dict[st
     command_hash = value["launch_command_sha256"]
     if len(command_hash) != 64 or any(character not in "0123456789abcdef" for character in command_hash):
         raise RequestContractError("server attestation launch_command_sha256 must be lowercase SHA-256")
-    fixed_stack = {
-        "vllm_version": EXPECTED_VLLM_VERSION,
-        "tensor_parallel_size": model.tensor_parallel_size,
-        "dtype": model.dtype,
-        "max_model_len": EXPECTED_MAX_MODEL_LEN,
-        "reasoning_parser": model.reasoning_parser,
-        "generation_config": EXPECTED_GENERATION_CONFIG,
-    }
+    fixed_stack = (
+        runtime_profile.attestation_fields()
+        if runtime_profile is not None
+        else {
+            "vllm_version": EXPECTED_VLLM_VERSION,
+            "tensor_parallel_size": model.tensor_parallel_size,
+            "dtype": model.dtype,
+            "max_model_len": EXPECTED_MAX_MODEL_LEN,
+            "reasoning_parser": model.reasoning_parser,
+            "generation_config": EXPECTED_GENERATION_CONFIG,
+        }
+    )
+    profile_label = runtime_profile.key if runtime_profile is not None else "the request-only gate"
     for field, expected_value in fixed_stack.items():
         if value[field] != expected_value:
             raise RequestContractError(
-                f"server attestation {field} must remain fixed at {expected_value!r} for the request-only gate"
+                f"server attestation {field} must remain fixed at {expected_value!r} for {profile_label}"
             )
     canonical = dict(value)
     return canonical, _sha256_json(canonical)
@@ -1236,6 +1313,10 @@ __all__ = [
     "EXPECTED_GENERATION_CONFIG",
     "EXPECTED_MAX_MODEL_LEN",
     "EXPECTED_VLLM_VERSION",
+    "REQUEST_ONLY_RUNTIME_PROFILE",
+    "RUNTIME_ABLATION_V023_TP4_PROFILE",
+    "SERVER_RUNTIME_PROFILES",
+    "ServerRuntimeProfile",
     "MODEL_KEY",
     "OMITTED_REQUEST_FIELDS",
     "PROTOCOL_ID",
@@ -1245,6 +1326,7 @@ __all__ = [
     "WIRE_SMOKE_COUNT",
     "RequestContractError",
     "build_target_request",
+    "get_server_runtime_profile",
     "load_server_attestation",
     "require_artifact_path",
     "request_contract_manifest_path",
