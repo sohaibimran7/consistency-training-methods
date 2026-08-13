@@ -62,6 +62,7 @@ def _write_attestation(
     path: Path,
     *,
     runtime_profile: Any = REQUEST_ONLY_RUNTIME_PROFILE,
+    sampling_backend: str | None = None,
 ) -> Path:
     model = get_model_spec(sentinel.MODEL_KEY)
     value = {
@@ -71,6 +72,8 @@ def _write_attestation(
         **runtime_profile.attestation_fields(),
         "launch_command_sha256": "b" * 64,
     }
+    if sampling_backend is not None:
+        value["sampling_backend"] = sampling_backend
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, sort_keys=True))
     return path
@@ -306,7 +309,7 @@ def test_runtime_v023_plan_explicitly_binds_the_runtime_and_cross_runtime_rule(p
         **RUNTIME_ABLATION_V023_TP4_PROFILE.attestation_fields(),
     }
     assert plan["cross_runtime_comparison"] == {
-        "label": "v023-tp4-igor-shaped-versus-frozen-v026-tp1-igor-shaped",
+        "label": "v023-tp4-native-sampler-igor-shaped-versus-frozen-v026-tp1-igor-shaped",
         "candidate_round_id": "runtime-v023",
         "candidate_variant": "igor-shaped",
         "reference_round_id": "initial",
@@ -323,7 +326,7 @@ def test_runtime_v023_rejects_the_request_only_stack_and_existing_rounds_reject_
     v023 = _write_attestation(
         paths.root / "attestations" / "server-v023.json", runtime_profile=RUNTIME_ABLATION_V023_TP4_PROFILE
     )
-    with pytest.raises(ValueError, match="vllm_version must remain fixed"):
+    with pytest.raises(ValueError, match="unsupported fields.*sampling_backend"):
         asyncio.run(
             sentinel.run_comparison_round(
                 paths.artifact,
@@ -337,6 +340,50 @@ def test_runtime_v023_rejects_the_request_only_stack_and_existing_rounds_reject_
         )
     with pytest.raises(ValueError, match="vllm_version must remain fixed"):
         _review(paths, "runtime-v023")
+
+
+def test_runtime_v023_requires_the_native_sampling_backend_and_request_only_rejects_it(
+    paths: _Paths,
+) -> None:
+    v023_without_backend = paths.root / "attestations" / "server-v023-without-backend.json"
+    model = get_model_spec(sentinel.MODEL_KEY)
+    v023_without_backend.parent.mkdir(parents=True, exist_ok=True)
+    v023_without_backend.write_text(
+        json.dumps(
+            {
+                "schema": SERVER_ATTESTATION_SCHEMA,
+                "model_id": model.model_id,
+                "model_revision": model.revision,
+                **{
+                    key: value
+                    for key, value in RUNTIME_ABLATION_V023_TP4_PROFILE.attestation_fields().items()
+                    if key != "sampling_backend"
+                },
+                "launch_command_sha256": "b" * 64,
+            },
+            sort_keys=True,
+        )
+    )
+    missing_backend = _Paths(
+        paths.root, paths.artifact, paths.prompt, paths.output_root, v023_without_backend
+    )
+    with pytest.raises(ValueError, match="invalid sampling_backend"):
+        _review(missing_backend, "runtime-v023")
+
+    wrong_backend = _write_attestation(
+        paths.root / "attestations" / "server-v023-wrong-backend.json",
+        runtime_profile=RUNTIME_ABLATION_V023_TP4_PROFILE,
+        sampling_backend="flashinfer",
+    )
+    with pytest.raises(ValueError, match="sampling_backend must remain fixed"):
+        _review(_Paths(paths.root, paths.artifact, paths.prompt, paths.output_root, wrong_backend), "runtime-v023")
+
+    v026_with_backend = _write_attestation(
+        paths.root / "attestations" / "server-v026-with-backend.json",
+        sampling_backend="pytorch_native_vllm_use_flashinfer_sampler_0",
+    )
+    with pytest.raises(ValueError, match="unsupported fields"):
+        _review(_Paths(paths.root, paths.artifact, paths.prompt, paths.output_root, v026_with_backend), "initial")
 
 
 def test_dry_run_is_deterministic_content_free_and_persists_only_review(paths: _Paths) -> None:

@@ -87,9 +87,10 @@ class ServerRuntimeProfile:
     max_model_len: int
     reasoning_parser: str
     generation_config: str
+    sampling_backend: str | None = None
 
     def attestation_fields(self) -> dict[str, Any]:
-        return {
+        fields: dict[str, Any] = {
             "vllm_version": self.vllm_version,
             "tensor_parallel_size": self.tensor_parallel_size,
             "dtype": self.dtype,
@@ -97,6 +98,9 @@ class ServerRuntimeProfile:
             "reasoning_parser": self.reasoning_parser,
             "generation_config": self.generation_config,
         }
+        if self.sampling_backend is not None:
+            fields["sampling_backend"] = self.sampling_backend
+        return fields
 
 
 # The request-only diagnostic remains fixed to this profile.  The second
@@ -111,13 +115,14 @@ REQUEST_ONLY_RUNTIME_PROFILE = ServerRuntimeProfile(
     generation_config=EXPECTED_GENERATION_CONFIG,
 )
 RUNTIME_ABLATION_V023_TP4_PROFILE = ServerRuntimeProfile(
-    key="vllm-0.23.0-tp4-bf16-ctx8192-qwen3-auto",
+    key="vllm-0.23.0-tp4-bf16-ctx8192-qwen3-auto-native-sampler",
     vllm_version="0.23.0",
     tensor_parallel_size=4,
     dtype="bfloat16",
     max_model_len=8192,
     reasoning_parser="qwen3",
     generation_config="auto",
+    sampling_backend="pytorch_native_vllm_use_flashinfer_sampler_0",
 )
 SERVER_RUNTIME_PROFILES: dict[str, ServerRuntimeProfile] = {
     profile.key: profile
@@ -223,7 +228,10 @@ def load_server_attestation(
         "generation_config": str,
         "launch_command_sha256": str,
     }
+    expected_sampling_backend = runtime_profile.sampling_backend if runtime_profile is not None else None
     allowed_fields = {"schema", *expected, *required_fields}
+    if expected_sampling_backend is not None:
+        allowed_fields.add("sampling_backend")
     unexpected_fields = sorted(set(value) - allowed_fields)
     if unexpected_fields:
         raise RequestContractError(
@@ -251,9 +259,19 @@ def load_server_attestation(
     )
     profile_label = runtime_profile.key if runtime_profile is not None else "the request-only gate"
     for field, expected_value in fixed_stack.items():
+        if field == "sampling_backend":
+            continue
         if value[field] != expected_value:
             raise RequestContractError(
                 f"server attestation {field} must remain fixed at {expected_value!r} for {profile_label}"
+            )
+    if expected_sampling_backend is not None:
+        sampling_backend = value.get("sampling_backend")
+        if not isinstance(sampling_backend, str) or not sampling_backend:
+            raise RequestContractError("server attestation has invalid sampling_backend")
+        if sampling_backend != expected_sampling_backend:
+            raise RequestContractError(
+                f"server attestation sampling_backend must remain fixed at {expected_sampling_backend!r} for {profile_label}"
             )
     canonical = dict(value)
     return canonical, _sha256_json(canonical)

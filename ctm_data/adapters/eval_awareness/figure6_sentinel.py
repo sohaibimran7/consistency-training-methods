@@ -304,7 +304,7 @@ def _runtime_plan_fields(round_spec: ComparisonRoundSpec) -> dict[str, Any]:
             **profile.attestation_fields(),
         },
         "cross_runtime_comparison": {
-            "label": "v023-tp4-igor-shaped-versus-frozen-v026-tp1-igor-shaped",
+            "label": "v023-tp4-native-sampler-igor-shaped-versus-frozen-v026-tp1-igor-shaped",
             "candidate_round_id": round_spec.key,
             "candidate_variant": "igor-shaped",
             "reference_round_id": "initial",
