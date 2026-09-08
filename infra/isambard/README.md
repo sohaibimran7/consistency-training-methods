@@ -3,6 +3,38 @@
 Isambard and Vast.ai use the same `LocalBackend` implementation in
 `ctm/backends/local/`. Isambard jobs are submitted through SLURM.
 
+## Laptop authentication
+
+Before remote work, use the local helper to check the SSH route and certificate:
+
+```bash
+python3 infra/isambard/auth.py status              # local metadata only
+python3 infra/isambard/auth.py check               # fresh SSH, runs only true
+python3 infra/isambard/auth.py renew               # explicit Clifton device flow
+```
+
+The default project alias is `a5v.aip2.isambard`; pass another Clifton alias as
+the final argument when needed. Plain `isambard` is not a configured alias on
+the shared laptop. On that laptop, the installed `isambard-auth` command exposes
+the same subcommands from any checkout.
+
+See [Authentication and renewal](AUTHENTICATION.md) for the browser flow,
+failure diagnosis, and the current restriction on automated Lancaster sign-in.
+
+## Shared laptop job coordination
+
+Use the installed `isambard-jobs` controller for new agent-owned submissions
+on the shared laptop. It queues interactive requests across worktrees, reserves
+experiment output locations, and provides one cached scheduler view. Start with
+`isambard-jobs status`; the [job controller guide](JOBS.md) documents preparing
+RMCT/Gemma manifests, submitting them, registering existing jobs, and recovery.
+
+Install independent copies with `python3 infra/isambard/install_jobs.py`.
+State lives in `~/.local/share/ctm-isambard/jobs`. Keep that shared state path
+for normal work. Existing Slurm jobs continue in place during installation.
+The raw Slurm examples below describe the underlying cluster commands; agents
+on the shared laptop should express new work through the controller.
+
 ## One-time setup
 
 ```bash
