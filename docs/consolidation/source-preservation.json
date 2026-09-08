@@ -1,0 +1,407 @@
+{
+  "schema": "ctm-consolidation-preservation-record-v1",
+  "observed_on": "2026-09-08",
+  "package": {
+    "archive": "ctm-source-preservation-20260908-initial.tar.gz",
+    "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+    "bytes": 26948474,
+    "members": 2165,
+    "contents": "Git bundle and verified source snapshots, restore helper and environment metadata; excludes model/data/results and archived overbroad capture.",
+    "local_path": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/ctm-source-preservation-20260908-initial.tar.gz",
+    "isambard_path": "/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+    "verification": "Local SHA-256 equals digest independently computed by receiver after fsync on 2026-09-08. Source tree/file identity and representative local/remote restoration verified separately."
+  },
+  "snapshots": [
+    {
+      "root": "/Users/work/consistency-training-methods",
+      "label": "primary",
+      "head": "3984e08d6caa156754bff7303ed630a48bf827bd",
+      "tree_sha256": "50c87adea18488cc6fe49120ec8d462186db4bdbce702d7c2ce89c2ae812b7e7",
+      "file_count": 216,
+      "snapshot": "snapshots/primary.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/primary.json"
+    },
+    {
+      "root": "/private/tmp/figure6-judge-6c71f5f",
+      "head": "6c71f5f30a04fc73e22ef97a7ee42b2a4ff07c81",
+      "availability": "missing",
+      "host": "laptop"
+    },
+    {
+      "root": "/private/tmp/figure6-judge-8f6d2b0",
+      "head": "8f6d2b09fb5103265a6dada0010bcae54ac23700",
+      "availability": "missing",
+      "host": "laptop"
+    },
+    {
+      "root": "/private/tmp/figure6-judge-bde28e4",
+      "head": "bde28e4301f6a5a551bfd5186914a14d1fb1bbaf",
+      "availability": "missing",
+      "host": "laptop"
+    },
+    {
+      "root": "/private/tmp/figure6-judge-daa354e",
+      "head": "daa354ec4a4b8e595a9058c5744369bcc18d9843",
+      "availability": "missing",
+      "host": "laptop"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/1a9b/consistency-training-methods",
+      "label": "1a9b",
+      "head": "ce5052cf5d5a85baeab97bcb5fb73ab22bf53f8d",
+      "tree_sha256": "0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+      "file_count": 220,
+      "snapshot": "snapshots/1a9b.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/1a9b.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/2b9f/consistency-training-methods",
+      "label": "2b9f",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "97f3749479e27df51800bf3d38a30d9e0c3b58b6b4660f0be9c5060d23659bf6",
+      "file_count": 164,
+      "snapshot": "snapshots/2b9f.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/2b9f.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/3a39/consistency-training-methods",
+      "label": "3a39",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "67c0bb1af9e22c7dffe1bf8b14c45f461124eb2f43fd967ba1b96dadb30dd178",
+      "file_count": 166,
+      "snapshot": "snapshots/3a39.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/3a39.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/3be0/consistency-training-methods",
+      "label": "3be0",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "169b6ba75dd7d3a986ebfc4246c748d205c9c9cd1c9f2e53fd0c22e103aa9fa2",
+      "file_count": 163,
+      "snapshot": "snapshots/3be0.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/3be0.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/3f19/consistency-training-methods",
+      "label": "3f19",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "8e2ca2c593504d5dfcebaf77e588b5f68363f9165a4e843e4deeacafd90e81b2",
+      "file_count": 373,
+      "snapshot": "snapshots/3f19.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/3f19.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+      "label": "9e79",
+      "head": "d21b9bd9519e028bdb101126923ab8e84944d785",
+      "tree_sha256": "a1257c8611434c3a78a6a61bea8d7a4cd435c6f2de6e246a54bdce168a7f07a6",
+      "file_count": 192,
+      "snapshot": "snapshots/9e79.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/9e79.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/a253/consistency-training-methods",
+      "label": "a253",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "169b6ba75dd7d3a986ebfc4246c748d205c9c9cd1c9f2e53fd0c22e103aa9fa2",
+      "file_count": 163,
+      "snapshot": "snapshots/a253.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/a253.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/a295/consistency-training-methods",
+      "label": "a295",
+      "head": "9d574e8e448d4c8bf32373600bb5050cbfb1368f",
+      "tree_sha256": "bef8c4c594f5fc27a54f0f5061c9246ac2bff48a77a9e42b5dbfbc197197860f",
+      "file_count": 224,
+      "snapshot": "snapshots/a295.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/a295.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/a3ce/consistency-training-methods",
+      "label": "a3ce",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "43abbba389c5164a24c7c9bb9ff0a24768a36c40d22d35c698e41bfe893fc200",
+      "file_count": 260,
+      "snapshot": "snapshots/a3ce.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/a3ce.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/ad75/consistency-training-methods",
+      "label": "ad75",
+      "head": "9d574e8e448d4c8bf32373600bb5050cbfb1368f",
+      "tree_sha256": "0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+      "file_count": 220,
+      "snapshot": "snapshots/ad75.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/ad75.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+      "label": "c9b7",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "88439bad820dc9c1c4937baf94c52dfa6861918f29ee0ae4c968a77e5e75c75c",
+      "file_count": 245,
+      "snapshot": "snapshots/c9b7.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/c9b7.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+      "label": "d6d6",
+      "head": "bc6828e7eaf868a7073b2975bd9ad2d59b7ca536",
+      "tree_sha256": "2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+      "file_count": 616,
+      "snapshot": "snapshots/d6d6.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/d6d6.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/db11/consistency-training-methods",
+      "label": "db11",
+      "head": "9d574e8e448d4c8bf32373600bb5050cbfb1368f",
+      "tree_sha256": "0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+      "file_count": 220,
+      "snapshot": "snapshots/db11.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/db11.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/e368/consistency-training-methods",
+      "label": "e368",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "169b6ba75dd7d3a986ebfc4246c748d205c9c9cd1c9f2e53fd0c22e103aa9fa2",
+      "file_count": 163,
+      "snapshot": "snapshots/e368.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/e368.json"
+    },
+    {
+      "root": "/Users/work/.codex/worktrees/phase-shared-pr",
+      "label": "phase-shared-pr",
+      "head": "5d9aa7bfc28e0f4b8109f33502b1ba1f650500dc",
+      "tree_sha256": "6c3c405c3f084b97d98bc3011089160c579e6762279078b7464262d67d29fa5f",
+      "file_count": 241,
+      "snapshot": "snapshots/phase-shared-pr.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/phase-shared-pr.json"
+    },
+    {
+      "root": "/Users/work/consistency-training-methods/.claude/worktrees/consistency-training-datasets-pr-cd60ca",
+      "label": "consistency-training-datasets-pr-cd60ca",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "169b6ba75dd7d3a986ebfc4246c748d205c9c9cd1c9f2e53fd0c22e103aa9fa2",
+      "file_count": 163,
+      "snapshot": "snapshots/consistency-training-datasets-pr-cd60ca.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/consistency-training-datasets-pr-cd60ca.json"
+    },
+    {
+      "root": "/Users/work/consistency-training-methods/.claude/worktrees/eloquent-torvalds-dcb313",
+      "label": "eloquent-torvalds-dcb313",
+      "head": "dbe4a46e2b56886216650803cca27d431d0a2b37",
+      "tree_sha256": "728829f628b55bf9625ef6293186e9cb8c08fdd2242d7bef6a7f846c3427f4cd",
+      "file_count": 61,
+      "snapshot": "snapshots/eloquent-torvalds-dcb313.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/eloquent-torvalds-dcb313.json"
+    },
+    {
+      "root": "/Users/work/consistency-training-methods/.claude/worktrees/mcq-bias-experiment-configs-44649a",
+      "label": "mcq-bias-experiment-configs-44649a",
+      "head": "4a6db30ccb788155fb5ff0783d585bad0fcf07dc",
+      "tree_sha256": "b311a3c9a96a0eee9cd36de1e7f9f0c9ed209f3bce80a014d788fa4c0b1835ed",
+      "file_count": 65,
+      "snapshot": "snapshots/mcq-bias-experiment-configs-44649a.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/mcq-bias-experiment-configs-44649a.json"
+    },
+    {
+      "root": "/Users/work/consistency-training-methods/.claude/worktrees/paper-replication-support-81aaae",
+      "label": "paper-replication-support-81aaae",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "tree_sha256": "169b6ba75dd7d3a986ebfc4246c748d205c9c9cd1c9f2e53fd0c22e103aa9fa2",
+      "file_count": 163,
+      "snapshot": "snapshots/paper-replication-support-81aaae.json",
+      "availability": "preserved_source",
+      "host": "laptop",
+      "snapshot_in_archive": "20260908-initial/snapshots/paper-replication-support-81aaae.json"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "consistency-training-methods-figure6",
+      "root": "/projects/a5v/sohaib.a5v/consistency-training-methods-figure6",
+      "captured_at": "2026-09-08T13:12:59.258005Z",
+      "tree_sha256": "f35393dea1b4ccaa7e134c0acbcafbfb200a184a3a91335a180ab3d04c43871d",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "consistency-training-methods",
+      "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+      "captured_at": "2026-09-08T13:12:58.992914Z",
+      "tree_sha256": "81ae409ed2168bd110994a8c344104d0b48cd7f0af131ce9b11d02b662c301c1",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-gemma4-12b-base-eval-20260825",
+      "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260825/repo",
+      "captured_at": "2026-09-08T13:13:00.048158Z",
+      "tree_sha256": "b896ef604abf644e17c13f16fdf6845da30a90dc22929bfb5edc4b5e977e9e26",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-gemma4-12b-base-eval-20260908",
+      "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260908/repo",
+      "captured_at": "2026-09-08T13:13:00.966095Z",
+      "tree_sha256": "bb2babfe4fa729c5718c781f7caecd09bb5ac56f73a91de90c9069aae7a0aa30",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-gemma4-12b-base-eval-repaired-20260908",
+      "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-repaired-20260908/repo",
+      "captured_at": "2026-09-08T13:13:01.919422Z",
+      "tree_sha256": "55b7abc1408709787c675de5ea7ccbe81fa1d00cfd028c4a6281ff0e94192e10",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-methods-aita-ntaflip-r001-20260824",
+      "root": "/projects/a5v/sohaib.a5v/ctm-methods-aita-ntaflip-r001-20260824/repo",
+      "captured_at": "2026-09-08T13:13:02.541978Z",
+      "tree_sha256": "d1639a327d87ab8bb27faa8aeebd8403faffd2ca49dd9d32d8f965c3bb1aab47",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-phase-shared-20260811",
+      "root": "/projects/a5v/sohaib.a5v/ctm-phase-shared-20260811/repo",
+      "captured_at": "2026-09-08T13:13:03.134288Z",
+      "tree_sha256": "5f1a7f5ce05141ccf1e287a03297bbd6b121a6dd7f3ff1cbbfb2450fa9627444",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-qwen35-recovery-20260803",
+      "root": "/projects/a5v/sohaib.a5v/ctm-qwen35-recovery-20260803/repo",
+      "captured_at": "2026-09-08T13:13:03.687091Z",
+      "tree_sha256": "1fd8fb89bb832114e1fde909bba4dc0a83fe74c1f785d535006c0c30760c6bbc",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-rmct-20260724",
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-20260724",
+      "captured_at": "2026-09-08T13:13:03.901365Z",
+      "tree_sha256": "92a6c066f91d00a2dba6bf8b490a9389331a4302bad335726d2710493ce9fa48",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-rmct-aita-ntaflip-r005-20260821",
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-aita-ntaflip-r005-20260821/repo",
+      "captured_at": "2026-09-08T13:13:04.456449Z",
+      "tree_sha256": "668751453be52bc0757d62a5a9a6b7d033d6fa2b99fa1d8f6bdd8a72dce7ec53",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-rmct-aita-ntaflip-r006-20260821",
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-aita-ntaflip-r006-20260821/repo",
+      "captured_at": "2026-09-08T13:13:04.999440Z",
+      "tree_sha256": "98bf580a2f3ba74f3be3de03e5319ea0d0678e2295c6a1e3c6a30806f194d457",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-rmct-convergence-20260813",
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-20260813/repo",
+      "captured_at": "2026-09-08T13:13:05.429861Z",
+      "tree_sha256": "b34c87b8457e13de30d8afa868ca71c9209c96009e5a513a87d54306d303ab31",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-rmct-convergence-gcall-r2-20260814",
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+      "captured_at": "2026-09-08T13:13:05.819507Z",
+      "tree_sha256": "ce3e011d194950ad6d06d66e3f30d24dde8a3795cc857420d30f3c41f6744a55",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-rmct-full-20260725",
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-full-20260725",
+      "captured_at": "2026-09-08T13:13:54.486444Z",
+      "tree_sha256": "91e03def5374c197ff42e3e6628092a33a12d2818622de1ffe0916aa49fdf8de",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "selection_correction": {
+        "excluded_prefix": "_archive/environments/",
+        "excluded_files": 29513,
+        "original_tree_sha256": "05be6dc0abd1eb0bda8484e0eaa56c7a0c2504c06356fdf4419090db686fb18e",
+        "reason": "Archived installed environments are not repository source; initial capture retained locally under _archive."
+      },
+      "host": "isambard"
+    },
+    {
+      "schema": "ctm-preserved-source-v1",
+      "label": "ctm-rmct-two-bias-eval-20260820",
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-two-bias-eval-20260820/repo",
+      "captured_at": "2026-09-08T13:13:55.250269Z",
+      "tree_sha256": "09154d2623411b7fef8a58662381aef1a348d1f87adaaa96d7299bf72eedd387",
+      "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
+      "host": "isambard"
+    }
+  ],
+  "limitations": [
+    "Source snapshots are point-in-time; active tasks can add later work.",
+    "Model, dataset, checkpoint and result retention is separate.",
+    "A second copy on Isambard is verified; filesystem backup policy and long-term retention are unverified.",
+    "Four already-missing worktree directories have referenced Git commits preserved, but unavailable dirty contents cannot be reconstructed."
+  ]
+}

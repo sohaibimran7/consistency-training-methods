@@ -100,7 +100,18 @@ def test_renderer_auto_facets_distinct_training_bias_sets(tmp_path: Path):
     assert output.stat().st_size > 20_000
 
 
-def test_renderer_handles_negative_percent_change_and_zero_line(tmp_path: Path):
+def test_renderer_handles_negative_percent_change_and_zero_line(tmp_path: Path, monkeypatch):
+    from matplotlib.axes import Axes
+
+    rendered_bars = []
+    original_bar = Axes.bar
+
+    def capture_bars(axis, *args, **kwargs):
+        bars = original_bar(axis, *args, **kwargs)
+        rendered_bars.extend((axis, bar) for bar in bars)
+        return bars
+
+    monkeypatch.setattr(Axes, "bar", capture_bars)
     rows = [
         {
             **row,
@@ -118,7 +129,13 @@ def test_renderer_handles_negative_percent_change_and_zero_line(tmp_path: Path):
     render_publication_plot(rows, {"sample_labels": True}, output)
 
     content = output.read_text()
-    assert "−25%" in content or "-25%" in content
+    # Tick locations vary with Matplotlib versions; assert the plotted values
+    # and percent formatter rather than requiring a tick at one bar's height.
+    assert sorted(bar.get_height() for _, bar in rendered_bars) == pytest.approx([-25.0, 40.0, 40.0])
+    axis = rendered_bars[0][0]
+    assert axis.get_ylim()[0] < -25.0 < 0 < 40.0 < axis.get_ylim()[1]
+    assert axis.yaxis.get_major_formatter()(-25.0, 0).replace("−", "-") == "-25%"
+    assert any(list(line.get_ydata()) == [0.0, 0.0] for line in axis.lines)
     assert "n=100" in content
 
 

@@ -25,7 +25,9 @@ Parent task owns preservation, catalogue population, integration, environment/CI
 - Consolidation branch created from current GitHub main `9d574e8e448d4c8bf32373600bb5050cbfb1368f`.
 - Initial Git bundle created and verified, preserving 89 refs and complete referenced history.
 - Source snapshots captured from all 20 existing local worktrees. Shared blob storage holds 1,080 distinct contents (19,219,078 bytes). Snapshot identities include new/modified source and executable modes; omitted non-source paths are listed.
-- Remote source capture started; restoration validation and catalogue references still pending.
+- Captured source snapshots from 15 remote campaign copies; independently verified all blob/tree hashes. Source-only capture has 1,038 distinct contents (16,426,291 bytes). An initial capture that also included an archived environment was retained under the preservation `_archive/`, then narrowed explicitly.
+- Independently restored all 616 selected `d6d6` files to a new temporary directory and verified their hashes and modes. Local source snapshots from all 20 worktrees passed identity verification.
+- Merged PR #9 into the isolated consolidation branch; full offline baseline suite is running. GitHub main and the open PR remain unchanged.
 - Catalogue API/CLI and shared manifest provenance implementation delegated; not yet integrated or verified.
 - Coordination requests sent to active Gemma, RMCT and Figure 6 tasks. No experiment code/jobs changed by consolidation.
 
