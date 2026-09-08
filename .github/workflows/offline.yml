@@ -46,11 +46,11 @@ jobs:
       - name: Install the repository package without changing dependencies
         run: uv pip install --python .venv/bin/python --editable . --no-deps
 
+      - name: Validate the experiment catalogue
+        run: .venv/bin/python scripts/experiment_catalog.py validate experiments/catalog.json
+
       - name: Check the installed environment contract
         run: .venv/bin/python scripts/check_environment.py
 
       - name: Run the full default offline suite
         run: .venv/bin/python -m pytest
-
-      - name: Run source-boundary tests explicitly
-        run: .venv/bin/python -m pytest tests/test_ctm_architecture.py
