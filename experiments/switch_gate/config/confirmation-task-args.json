@@ -1,0 +1,5 @@
+{
+  "manifest": "artifacts/switch-gate/split-manifest.json",
+  "split": "confirmation-n600",
+  "unbiased_log": "logs/switch-gate/20260729/training-confirmation"
+}

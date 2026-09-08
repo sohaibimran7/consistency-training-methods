@@ -51,6 +51,14 @@ checkpoint/result roots. The initial remote pass hashed small metadata and
 log/data files; remaining large files and symlink targets are explicitly
 unverified. An inventory is not an artifact backup.
 
+The initial local regular artifacts now have a separately verified recovery
+archive on Isambard: see [`artifact-backup.json`](artifact-backup.json) for its
+URI, hash, scope and one unavailable older scheduling receipt. Verify or
+selectively restore it with `python scripts/restore_artifacts.py ARCHIVE`.
+Restoration additionally takes `--root ORIGINAL_ROOT --prefix RELATIVE_PATH
+--destination NEW_DIRECTORY`. It requires a new destination, verifies every
+blob and reports missing selected identities. It never overwrites a live run.
+
 Do not retire a location until the experiment's required inputs, checkpoint,
 raw outputs and analysis parents have verified retrievable copies. Missing
 or unverified dependencies remain visible in the catalogue. A hash proves
@@ -59,7 +67,7 @@ identity once bytes are found; it does not recover missing bytes.
 ## Integration boundaries
 
 Work happens on `codex/experiment-consolidation`. PR #9 and the committed
-Figure 6 branch are integrated there. Existing campaign directories and
+Figure 6 branch and PR #6's Tinker/SFT contribution are integrated there. Existing campaign directories and
 installed laptop helpers are separate from this checkout.
 
 The RMCT training and Figure 6 serving GPU stacks have separate explicit

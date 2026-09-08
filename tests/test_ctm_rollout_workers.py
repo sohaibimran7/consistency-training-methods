@@ -82,7 +82,7 @@ def _fake_spawn_worker(connection, config):
                 ),
             )
             connection.send(response)
-        elif op == "score_batch":
+        elif op in {"score_batch", "score_batch_uncapped_eos_tail"}:
             records = [
                 (
                     assignment["score_index"],
@@ -165,7 +165,7 @@ class FakeEndpoint:
                 "worker_id": self.worker_id,
                 "adapter_version": self.adapter_version,
             }
-        if op == "score_batch":
+        if op in {"score_batch", "score_batch_uncapped_eos_tail"}:
             if self.fail_score:
                 raise RolloutWorkerError(f"fake worker {self.worker_id} score failed")
             records = []
@@ -459,6 +459,29 @@ def test_score_partition_and_merge_are_stable_exact_and_policy_versioned(tmp_pat
     assert list(pool.ipc_dir.iterdir()) == []
 
 
+def test_uncapped_eos_tail_score_uses_distinct_fail_closed_worker_operation(tmp_path):
+    pool, endpoints = make_pool(tmp_path, 3)
+    pool.start()
+
+    scores = asyncio.run(
+        pool.score_completions_uncapped_eos_tail(
+            [[10], [20], [30]],
+            [[1], [2], [3]],
+            use_base=True,
+        )
+    )
+
+    assert len(scores) == 3
+    commands = [
+        command
+        for endpoint in endpoints
+        for command in endpoint.commands
+        if command["op"] == "score_batch_uncapped_eos_tail"
+    ]
+    assert len(commands) == 3
+    assert all(command["use_base"] is True for command in commands)
+
+
 def test_base_scoring_needs_no_adapter_but_policy_scoring_does(tmp_path):
     pool, endpoints = make_pool(tmp_path, 2)
     pool.start()
@@ -547,6 +570,39 @@ def test_ignore_eos_is_forwarded_to_every_worker(tmp_path):
     assert all(command["ignore_eos"] is True for command in commands)
 
 
+def test_pool_preserves_uncapped_max_tokens_and_rejects_nonpositive_caps(tmp_path):
+    pool, endpoints = make_pool(tmp_path, 2)
+    pool.start()
+
+    sampled = asyncio.run(
+        pool.sample_batch(
+            [[1]],
+            max_tokens=None,
+            temperature=0.7,
+            stop=[2],
+            num_samples=1,
+            use_base=True,
+        )
+    )
+
+    assert len(sampled) == 1
+    commands = [command for endpoint in endpoints for command in endpoint.commands if command["op"] == "sample_batch"]
+    assert len(commands) == 2
+    assert all(command["max_tokens"] is None for command in commands)
+    for invalid_max_tokens in (0, -1):
+        with pytest.raises(ValueError, match="max_tokens must be positive"):
+            asyncio.run(
+                pool.sample_batch(
+                    [[1]],
+                    max_tokens=invalid_max_tokens,
+                    temperature=0.7,
+                    stop=[2],
+                    num_samples=1,
+                    use_base=True,
+                )
+            )
+
+
 def test_base_sampling_and_versioned_policy_refresh(tmp_path):
     pool, endpoints = make_pool(tmp_path, 2)
     pool.start()
@@ -571,7 +627,7 @@ def test_base_sampling_and_versioned_policy_refresh(tmp_path):
     assert pool.adapter_version == 5
 
 
-def test_frozen_base_backend_starts_no_model_or_adapter_and_restores_prompt_order(tmp_path):
+def test_frozen_base_backend_preserves_uncapped_max_tokens_and_restores_prompt_order(tmp_path):
     pool, endpoints = make_pool(
         tmp_path / "pool",
         3,
@@ -593,7 +649,7 @@ def test_frozen_base_backend_starts_no_model_or_adapter_and_restores_prompt_orde
                 types.ModelInput.from_ints(tokens=[30]),
                 types.ModelInput.from_ints(tokens=[40]),
             ],
-            max_tokens=8,
+            max_tokens=None,
             temperature=0.7,
             stop=[2],
             num_samples=1,
@@ -609,6 +665,12 @@ def test_frozen_base_backend_starts_no_model_or_adapter_and_restores_prompt_orde
         [[3, 0]],
     ]
     assert all(not any(command["op"] == "load_adapter" for command in endpoint.commands) for endpoint in endpoints)
+    assert all(
+        command["max_tokens"] is None
+        for endpoint in endpoints
+        for command in endpoint.commands
+        if command["op"] == "sample_batch"
+    )
     sampled_workers = [
         endpoint.worker_id
         for endpoint in endpoints
@@ -623,6 +685,49 @@ def test_frozen_base_backend_starts_no_model_or_adapter_and_restores_prompt_orde
 
     with pytest.raises(RolloutWorkerError, match="does not accept adapter"):
         pool.publish_adapter_sync(tmp_path, version=1)
+    backend.shutdown()
+
+
+def test_frozen_base_backend_forwards_uncapped_max_tokens_to_in_process_sampler():
+    sample_calls = []
+
+    class FakeSampler:
+        def __init__(self, **_kwargs):
+            pass
+
+        def sample_batch(self, prompts, **kwargs):
+            sample_calls.append((prompts, kwargs))
+            return [[SampledSequence(tokens=[42], logprobs=[-0.5])] for _ in prompts]
+
+        def shutdown(self):
+            return None
+
+    backend = FrozenBaseVLLMBackend(model="fake/model", sampler_factory=FakeSampler)
+    backend.setup(model="fake/model")
+
+    sampled = asyncio.run(
+        backend.sample_base_batch(
+            [[10], [20]],
+            max_tokens=None,
+            temperature=0.7,
+            stop=[2],
+            num_samples=1,
+        )
+    )
+
+    assert [[sequence.tokens for sequence in group] for group in sampled] == [[[42]], [[42]]]
+    assert sample_calls == [
+        (
+            [[10], [20]],
+            {
+                "max_tokens": None,
+                "temperature": 0.7,
+                "stop": [2],
+                "num_samples": 1,
+                "use_base": True,
+            },
+        )
+    ]
     backend.shutdown()
 
 
@@ -810,13 +915,15 @@ def test_worker_sample_log_records_elapsed_tokens_and_throughput(tmp_path, monke
     from ctm.backends.local import vllm_sampler
 
     sampler_inits = []
+    sample_calls = []
     score_calls = []
 
     class FakeSampler:
         def __init__(self, **kwargs):
             sampler_inits.append(kwargs)
 
-        def sample_batch(self, prompts, *, num_samples, **_kwargs):
+        def sample_batch(self, prompts, *, num_samples, **kwargs):
+            sample_calls.append((prompts, num_samples, kwargs))
             return [
                 [SampledSequence(tokens=[tokens[0], 99], logprobs=[-0.1, -0.2]) for _ in range(num_samples)]
                 for tokens in prompts
@@ -855,7 +962,7 @@ def test_worker_sample_log_records_elapsed_tokens_and_throughput(tmp_path, monke
                     {"prompt_index": 0, "prompt_tokens": [10], "sample_indices": [0]},
                     {"prompt_index": 1, "prompt_tokens": [20], "sample_indices": [0]},
                 ],
-                "max_tokens": 8,
+                "max_tokens": None,
                 "temperature": 0.7,
                 "stop": [2],
                 "use_base": True,
@@ -906,6 +1013,19 @@ def test_worker_sample_log_records_elapsed_tokens_and_throughput(tmp_path, monke
     assert completed["completion_tokens"] == 4
     assert completed["elapsed_seconds"] >= 0
     assert completed["output_tokens_per_second"] >= 0
+    assert sample_calls == [
+        (
+            [[10], [20]],
+            1,
+            {
+                "max_tokens": None,
+                "temperature": 0.7,
+                "stop": [2],
+                "use_base": True,
+                "ignore_eos": False,
+            },
+        )
+    ]
     assert score_calls == [([[30, 31]], [[40, 41]], True)]
     score_completed = next(event for event in events if event["event"] == "score_completed")
     assert score_completed["record_count"] == 1
@@ -1058,7 +1178,7 @@ def test_backend_proxy_snapshots_refreshes_and_scores_on_rollout_workers(tmp_pat
                 types.ModelInput.from_ints(tokens=[20]),
                 types.ModelInput.from_ints(tokens=[30]),
             ],
-            max_tokens=8,
+            max_tokens=None,
             temperature=0.7,
             stop=[],
             num_samples=2,
@@ -1079,7 +1199,7 @@ def test_backend_proxy_snapshots_refreshes_and_scores_on_rollout_workers(tmp_pat
             *[
                 handle.sample(
                     types.ModelInput.from_ints(tokens=[token]),
-                    max_tokens=8,
+                    max_tokens=None,
                     temperature=0.7,
                     stop=[],
                     num_samples=2,
@@ -1093,6 +1213,12 @@ def test_backend_proxy_snapshots_refreshes_and_scores_on_rollout_workers(tmp_pat
     assert all(
         len([command for command in endpoint.commands if command["op"] == "sample_batch"]) == 2
         for endpoint in endpoints
+    )
+    assert all(
+        command["max_tokens"] is None
+        for endpoint in endpoints
+        for command in endpoint.commands
+        if command["op"] == "sample_batch"
     )
     scores = asyncio.run(
         handle.score_completions(

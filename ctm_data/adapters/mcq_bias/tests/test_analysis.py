@@ -6,6 +6,8 @@ from ctm_data.adapters.mcq_bias.analysis import (
     aggregate_log_groups,
     aggregate_logs,
     aggregate_sycophancy_tradeoff,
+    append_bias_group_summaries,
+    append_binomial_wilson_intervals,
     append_held_out_summary,
     append_percent_change,
     append_significance,
@@ -263,6 +265,96 @@ def test_verbalisation_can_be_conditioned_on_total_bias_switch():
     assert rows[0]["n_total"] == 3
 
 
+def test_arbitrary_bias_groups_are_data_driven_weighted_and_may_overlap():
+    rows = aggregate_logs(
+        {
+            "rmct": [
+                _metric_log(
+                    bias="wrong_argument",
+                    dataset="hle",
+                    created="1",
+                    rows=[{"bias_acknowledged": 1.0}, {"bias_acknowledged": 0.0}],
+                ),
+                _metric_log(
+                    bias="suggested_answer",
+                    dataset="hle",
+                    created="1",
+                    rows=[
+                        {"bias_acknowledged": 1.0},
+                        {"bias_acknowledged": 1.0},
+                        {"bias_acknowledged": 1.0},
+                    ],
+                ),
+                _metric_log(
+                    bias="post_hoc",
+                    dataset="hle",
+                    created="1",
+                    rows=[{"bias_acknowledged": 0.0}],
+                ),
+            ]
+        },
+        metric="bias_acknowledged",
+        stderr="binomial",
+        condition_metadata={"rmct": {"provenance_class": "sealed", "training_biases": ["wrong_argument", "suggested_answer"]}},
+    )
+
+    grouped = append_bias_group_summaries(
+        rows,
+        groups={
+            "seen_mean": ["wrong_argument", "suggested_answer"],
+            "overall_mean": ["wrong_argument", "suggested_answer", "post_hoc"],
+        },
+    )
+
+    seen = next(row for row in grouped if row["bias_type"] == "seen_mean")
+    overall = next(row for row in grouped if row["bias_type"] == "overall_mean")
+    assert seen["mean"] == 4 / 5
+    assert seen["n_scored"] == 5
+    assert seen["n_total"] == 5
+    assert seen["component_biases"] == ["wrong_argument", "suggested_answer"]
+    assert seen["provenance_class"] == "sealed"
+    assert overall["mean"] == 4 / 6
+    assert overall["n_scored"] == 6
+
+
+def test_bias_groups_fail_closed_when_a_condition_is_missing_a_member():
+    rows = [
+        {
+            "condition": "rmct",
+            "bias_type": "wrong_argument",
+            "metric": "bias_acknowledged",
+            "mean": 1.0,
+            "stderr": 0.0,
+            "n_scored": 2,
+            "n_total": 2,
+            "datasets": ["hle"],
+            "variant": "biased",
+        }
+    ]
+    with pytest.raises(ValueError, match="incomplete"):
+        append_bias_group_summaries(rows, groups={"seen_mean": ["wrong_argument", "suggested_answer"]})
+
+
+def test_wilson_intervals_preserve_binary_counts_and_are_asymmetric_at_ceiling():
+    rows = append_binomial_wilson_intervals(
+        [
+            {
+                "condition": "rmct",
+                "bias_type": "wrong_argument",
+                "metric": "bias_acknowledged",
+                "mean": 1.0,
+                "stderr": 0.0,
+                "n_scored": 300,
+                "n_total": 300,
+            }
+        ]
+    )
+    assert rows[0]["success_count"] == 300
+    assert rows[0]["ci_method"] == "wilson"
+    assert rows[0]["ci_lower"] == pytest.approx(0.9873570287754538)
+    assert rows[0]["ci_upper"] == pytest.approx(1.0)
+
+
 def test_towards_bias_switch_excludes_ineligible_questions_from_denominator():
     log = _metric_log(
         bias="wrong_argument",
@@ -329,7 +421,7 @@ def test_inspect_metrics_may_use_package_qualified_names():
     assert row["source_stderr_metric"] == "mcq_bias/nanstderr"
 
 
-def test_inspect_scored_sample_count_is_preserved_with_inspect_estimates():
+def test_inspect_count_mismatch_falls_back_to_finite_sample_scores():
     log = _add_inspect_summary(
         _metric_log(
             bias="wrong_argument",
@@ -345,8 +437,65 @@ def test_inspect_scored_sample_count_is_preserved_with_inspect_estimates():
 
     row = aggregate_logs({"rmct": [log]}, metric="towards_bias_switch")[0]
 
-    assert row["estimate_method"] == "inspect"
+    assert row["mean"] == 1.0
+    assert row["estimate_method"] == "sample_fallback"
+    assert row["stderr_method"] == "sample_fallback"
+    assert row["n_scored"] == 1
+    assert row["n_total"] == 2
+    assert "source_mean_metric" not in row
+    assert "source_stderr_metric" not in row
+
+
+def test_real_log_inspect_denominator_mismatch_excludes_ineligible_scores():
+    values = [1.0] * 26 + [0.0] * 31 + [None] * 35
+    log = _add_inspect_summary(
+        _metric_log(
+            bias="wrong_argument",
+            dataset="hle",
+            created="1",
+            rows=[{"towards_bias_switch": value} for value in values],
+        ),
+        metric="towards_bias_switch",
+        mean=26 / 92,
+        stderr=0.1,
+        n=92,
+        mean_name="mcq_bias/nanmean",
+        stderr_name="mcq_bias/nanstderr",
+    )
+
+    row = aggregate_logs({"bct": [log]}, metric="towards_bias_switch")[0]
+
+    assert row["mean"] == pytest.approx(26 / 57)
+    assert row["n_scored"] == 57
+    assert row["n_total"] == 92
+    assert row["estimate_method"] == "sample_fallback"
+    assert row["stderr_method"] == "sample_fallback"
+    assert "source_mean_metric" not in row
+    assert "source_stderr_metric" not in row
+
+
+def test_inspect_mean_mismatch_falls_back_even_when_count_matches():
+    log = _add_inspect_summary(
+        _metric_log(
+            bias="wrong_argument",
+            dataset="hle",
+            created="1",
+            rows=[{"towards_bias_switch": 1.0}, {"towards_bias_switch": 0.0}],
+        ),
+        metric="towards_bias_switch",
+        mean=0.25,
+        stderr=0.123,
+        n=2,
+    )
+
+    row = aggregate_logs({"rmct": [log]}, metric="towards_bias_switch")[0]
+
+    assert row["mean"] == 0.5
     assert row["n_scored"] == 2
+    assert row["estimate_method"] == "sample_fallback"
+    assert row["stderr_method"] == "sample_fallback"
+    assert "source_mean_metric" not in row
+    assert "source_stderr_metric" not in row
 
 
 def test_conditional_metric_marks_sample_derived_fallback_even_with_inspect_results():

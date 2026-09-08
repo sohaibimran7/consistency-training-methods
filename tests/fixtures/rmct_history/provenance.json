@@ -1,0 +1,17 @@
+{
+  "note": "Exact small historical contract documents copied for portable offline verification. Runtime artifact locations remain unchanged; source copies and artifact backup retain original paths.",
+  "files": [
+    {
+      "fixture": "failure-parent.json",
+      "original_path": "artifacts/rmct-convergence-gcall-r2-mb40960-r4-20260818/failure-parent.json",
+      "sha256": "bd4f08cd876d59463eb6c015e2a999090aa729f36ffe7baf56800cf401a9923b",
+      "size_bytes": 3824
+    },
+    {
+      "fixture": "segments-manifest.json",
+      "original_path": "artifacts/rmct-256-convergence-segments-20260811/rmct-256-convergence-segments-manifest-2f81e40297c594f1a05413fded238ac956a345f4fa6d3a636288aa4a9edccdc7.json",
+      "sha256": "2f81e40297c594f1a05413fded238ac956a345f4fa6d3a636288aa4a9edccdc7",
+      "size_bytes": 17042
+    }
+  ]
+}

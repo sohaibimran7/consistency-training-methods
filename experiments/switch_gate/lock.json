@@ -1,0 +1,35 @@
+{
+  "schema_version": "switch-gate-lock-v1",
+  "locked_at": "2026-07-29T13:10:10Z",
+  "candidate_model_outcomes_seen_before_lock": false,
+  "paid_or_remote_candidate_generations_before_lock": false,
+  "repository_head_at_lock": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+  "tracked_files": {
+    "experiments/switch_gate/README.md": "62e54f6917f1b13c21064518358299782114b34958198243d70397b82e4edf98",
+    "experiments/switch_gate/analyze.py": "48f55e099a22ae2ba3e98b270cfdd66f03cf79e377d36a1792b11567146b6683",
+    "experiments/switch_gate/audit.json": "29d7155918dd82419bfa8edcd58caac05f631afae1d2c57ce42802dd00210ec9",
+    "experiments/switch_gate/cost.json": "c8c44a55452117569c31998ea9fa3fe8e1ba870e8b2a15560442360e7e529283",
+    "experiments/switch_gate/power.py": "d89e8e36b5f78dd4e55181af2ec7e5f7b841b0e9997e8a2bc638681f7c15ff62",
+    "experiments/switch_gate/prepare.py": "c58bc92b2d43419ef9fc71b1ff52b9f75d7d75f2a023232691fc48b4aeb50ceb",
+    "experiments/switch_gate/preregistration.md": "ebe3c8d03ce84f7da5521513c3c58102ccf22100f4894b24170b2830d10650e1",
+    "experiments/switch_gate/protocol.yaml": "a705ddc7606b16dd46d3863366278d8466e36b99f6566664e01f5f2da205d60e",
+    "experiments/switch_gate/tasks.py": "6cb69234bcd5f55e3e0bee2bde9bdae0c54eef80d1a2d169f3d565a21b4ce1bc",
+    "experiments/switch_gate/config/confirmation-task-args.json": "d03a091a69b3632c5757445ed0e305a14dcb75c8fb81cbeeeabd25b3d6dc3f0f",
+    "experiments/switch_gate/config/hle-task-args.json": "036461f51c167dbae0f43364a7533479eb6b00e1894ab4d0fb903e2b0c2bfc32",
+    "experiments/switch_gate/config/qwen3-generation.json": "ad6991d679bc93e94903b2c6e17965b4ac0ed5b833aabbae84382fe68136d383",
+    "experiments/switch_gate/config/qwen3.5-generation.json": "edfc3130f5dd1f1aa82f409db58d3becf62dc29e958dd8d65ddf9da919522fb0",
+    "experiments/switch_gate/config/screen-task-args.json": "67090b461baa4031d1c9b75cbc1d2506cc54926c1114d78f4a0e179a242ba27b",
+    "tests/test_switch_gate_analyze.py": "3e7fa0141b817a94dc57a72e0fcc69808d92a1b6a122c73308d2bb38bf3dc060",
+    "tests/test_switch_gate_power.py": "e9d363282465fcf9067bb3a82c6632da9efdcc05eba4e42e64a071fca3e643c0",
+    "tests/test_switch_gate_prepare.py": "cee91e1f30979c4c8468f20d9ecdf77b2281916fb6b2f366c9f862ed56ee2089",
+    "tests/test_switch_gate_tasks.py": "45fa873a6bcdafef077851e2934e0bbeb744dd0009e827be2bf885f873f98d3c"
+  },
+  "frozen_ignored_artifacts": {
+    "artifacts/switch-gate/source/distractor-argument-pairs.jsonl": "d6eabbfe0ad5c5401702b256c69f7fd9c8c19be1b745935cd86676513092ffab",
+    "artifacts/switch-gate/split-manifest.json": "bd78f824f35026e8a95c77f01297cde24c263c244fdbbb279b752bb6ffbd866a",
+    "artifacts/switch-gate/prepared/screen.jsonl": "ea1fb24c42fef6e1757ed2aea2360c3077a8a36323ad10e1050f92c9053c65a5",
+    "artifacts/switch-gate/prepared/confirmation-n600.jsonl": "9d116c35321b61aebb9418c49372646ad4557fe0c1b30890b57ca0e99f2c098b",
+    "artifacts/switch-gate/power.json": "1eb1e11df546a2f5e9ad84e7bb7126a287adbe1b59315114b7af42ac64144f00",
+    "artifacts/switch-gate/source/hle-eval/question-ids.jsonl": "ec5834edd9b71428e1bc39286b5c97f3fffbf2cc9f45373271531b5c21d0d1d4"
+  }
+}

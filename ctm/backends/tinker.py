@@ -134,7 +134,6 @@ class TinkerBackend:
     @staticmethod
     def _training_client_kwargs(*, model: str, lora: LoRAConfig) -> dict[str, Any]:
         """Validate Tinker-compatible LoRA settings and build client arguments."""
-
         if lora.target_modules is not None:
             raise NotImplementedError(
                 "Tinker exposes component-level LoRA selection only; exact target_modules are supported by LocalBackend"

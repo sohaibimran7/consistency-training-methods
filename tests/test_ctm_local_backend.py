@@ -9,6 +9,7 @@ loss/optimizer/sampler/checkpoint machinery.
 import asyncio
 import copy
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 import torch
@@ -141,15 +142,106 @@ def test_selected_hidden_logprobs_bounds_head_calls_and_matches_dense_gradient()
         torch.testing.assert_close(chunked_parameter.grad, dense_parameter.grad)
 
 
+def test_selected_hidden_logprobs_applies_muse_multiplier_before_softcap():
+    torch.manual_seed(29)
+    hidden = torch.randn(9, 5)
+    targets = torch.randint(0, 17, (9,))
+    head = torch.nn.Linear(5, 17, bias=False)
+
+    actual = _selected_hidden_logprobs(
+        hidden,
+        targets,
+        head,
+        chunk_size=3,
+        output_multiplier=0.19611613513818404,
+        final_logit_softcapping=20.0,
+        checkpoint_chunks=False,
+    )
+    dense_logits = head(hidden).float() * 0.19611613513818404
+    dense_logits = 20.0 * torch.tanh(dense_logits / 20.0)
+    expected = torch.log_softmax(dense_logits, dim=-1).gather(1, targets[:, None]).squeeze(1)
+
+    torch.testing.assert_close(actual, expected)
+
+
+def test_muse_text_only_detaches_vision_modules_but_keeps_language_path():
+    class FakeMuse(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(model_type="muse_glimmer")
+            self.model = torch.nn.Module()
+            self.model.language_model = torch.nn.Linear(3, 3)
+            self.model.vision_tower = torch.nn.Linear(3, 3)
+            self.model.vision_adapter = torch.nn.Linear(3, 3)
+            self.model.vision_projection = torch.nn.Linear(3, 3)
+            self.model.perception_emb_norm = torch.nn.LayerNorm(3)
+
+    model = FakeMuse()
+    language_model = model.model.language_model
+    backend = LocalBackend(
+        device="cpu",
+        use_lora=False,
+        model_instance=model,
+        hf_language_model_only=True,
+    )
+    backend._detach_unused_multimodal_modules()
+
+    assert model.model.language_model is language_model
+    assert model.model.vision_tower is None
+    assert model.model.vision_adapter is None
+    assert model.model.vision_projection is None
+    assert model.model.perception_emb_norm is None
+
+
+def test_gemma4_unified_reference_uses_full_image_text_loader(monkeypatch):
+    import transformers
+
+    class FakeGemma4Unified(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(model_type="gemma4_unified")
+            self.embedding = torch.nn.Embedding(VOCAB, 4)
+            self.projection = torch.nn.Linear(4, VOCAB)
+
+        def get_input_embeddings(self):
+            return self.embedding
+
+    class ImageTextLoader:
+        calls: ClassVar[list[tuple[str, dict]]] = []
+
+        @classmethod
+        def from_pretrained(cls, model_name, **kwargs):
+            cls.calls.append((model_name, kwargs))
+            return FakeGemma4Unified()
+
+    monkeypatch.setattr(
+        "transformers.AutoConfig.from_pretrained",
+        lambda model_name: SimpleNamespace(model_type="gemma4_unified"),
+    )
+    monkeypatch.setattr(transformers, "AutoModelForImageTextToText", ImageTextLoader, raising=False)
+    monkeypatch.setattr(
+        "transformers.AutoModelForCausalLM.from_pretrained",
+        lambda *_args, **_kwargs: pytest.fail("Gemma 4 must not use the text-only CausalLM loader"),
+    )
+
+    backend = LocalBackend(device="cpu", use_lora=False)
+    backend.setup(model="google/gemma-4-12B-it", lora=LoRAConfig(rank=4))
+
+    assert isinstance(backend.model, FakeGemma4Unified)
+    assert len(ImageTextLoader.calls) == 1
+    model_name, load_kwargs = ImageTextLoader.calls[0]
+    assert model_name == "google/gemma-4-12B-it"
+    assert load_kwargs["torch_dtype"] == torch.float32
+    assert load_kwargs["config"].model_type == "gemma4_unified"
+
+
 @pytest.mark.parametrize(
     ("logits_shape", "targets_shape", "chunk_size"),
     [((2, 3, 4), (2,), 2), ((2, 4), (3,), 2), ((2, 4), (2,), 0)],
 )
 def test_selected_target_logprobs_rejects_invalid_shapes(logits_shape, targets_shape, chunk_size):
     with pytest.raises(ValueError):
-        _selected_target_logprobs(
-            torch.randn(logits_shape), torch.zeros(targets_shape, dtype=torch.long), chunk_size=chunk_size
-        )
+        _selected_target_logprobs(torch.randn(logits_shape), torch.zeros(targets_shape, dtype=torch.long), chunk_size=chunk_size)
 
 
 def tiny_model():
@@ -227,18 +319,46 @@ def dense_datum_logprobs(model, datums):
         input_ids[index, : len(tokens)] = torch.tensor(tokens)
         attention_mask[index, : len(tokens)] = 1
     logits = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False).logits
-    return [
-        torch.log_softmax(logits[index, : len(tokens)].float(), dim=-1)
-        .gather(1, datum.loss_fn_inputs["target_tokens"].to_torch().long()[:, None])
-        .squeeze(1)
-        for index, (tokens, datum) in enumerate(zip(token_lists, datums))
-    ]
+    return [torch.log_softmax(logits[index, : len(tokens)].float(), dim=-1).gather(1, datum.loss_fn_inputs["target_tokens"].to_torch().long()[:, None]).squeeze(1) for index, (tokens, datum) in enumerate(zip(token_lists, datums))]
 
 
 def make_backend() -> LocalBackend:
     backend = LocalBackend(device="cpu", use_lora=False, model_instance=tiny_model())
     backend.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=4))
     return backend
+
+
+def test_local_hf_eos_only_generation_has_no_length_stopping_path(monkeypatch):
+    backend = make_backend()
+
+    def emit_eos(probabilities, *, num_samples):
+        assert num_samples == 1
+        return torch.full(
+            (probabilities.shape[0], 1),
+            3,
+            dtype=torch.long,
+            device=probabilities.device,
+        )
+
+    monkeypatch.setattr(torch, "multinomial", emit_eos)
+    groups = backend._generate_batch(
+        prompt_tokens_batch=[[1, 2], [4]],
+        max_tokens=None,
+        temperature=1.0,
+        stop=[3],
+        num_samples=2,
+        use_base=False,
+    )
+
+    assert [[sequence.tokens for sequence in group] for group in groups] == [
+        [[3], [3]],
+        [[3], [3]],
+    ]
+    assert all(
+        len(sequence.logprobs or []) == 1
+        for group in groups
+        for sequence in group
+    )
 
 
 def test_device_map_constructor_guards():
@@ -515,6 +635,58 @@ def test_fused_opct_forward_backward_matches_explicit_single_pass_objective(loss
         torch.testing.assert_close(fused_parameter.grad, reference_parameter.grad)
 
 
+def test_fused_opct_accepts_zero_behavior_temperature_without_reconstruction():
+    backend = deterministic_backend(max_datums=None, max_tokens=None)
+    datum = rl_datum(backend, prompt=(5, 6), action=(7, 8), advantage=0.0)
+    mask = datum.loss_fn_inputs["mask"].to_torch().bool()
+    datum.loss_fn_inputs["opct_teacher_logprobs"] = types.TensorData.from_torch(
+        torch.full((int(mask.sum()),), -2.0)
+    )
+
+    def reject_temperature_reconstruction(*args, **kwargs):
+        raise AssertionError("fused OPCT must not reconstruct behavior scores")
+
+    backend._opct_logprobs_batch = reject_temperature_reconstruction
+
+    async def run():
+        pending = await backend.submit_opct_forward_backward(
+            [datum],
+            behavior_temperature=0.0,
+            kl_coef=1.0,
+            kl_discount_factor=0.0,
+            loss_fn="importance_sampling",
+        )
+        return await pending.result()
+
+    backend.model.forward_calls = 0
+    output = asyncio.run(run())
+
+    assert backend.model.forward_calls == 1
+    assert len(output.logprobs) == 1
+
+
+def test_opct_behavior_temperature_is_nonnegative_only_for_fused_path():
+    backend = deterministic_backend(max_datums=None, max_tokens=None)
+    datum = rl_datum(backend, prompt=(5, 6), action=(7, 8), advantage=0.0)
+    mask = datum.loss_fn_inputs["mask"].to_torch().bool()
+    datum.loss_fn_inputs["opct_teacher_logprobs"] = types.TensorData.from_torch(
+        torch.full((int(mask.sum()),), -2.0)
+    )
+
+    with pytest.raises(ValueError, match="finite positive"):
+        backend._opct_logprobs_batch([datum], behavior_temperature=0.0)
+    with pytest.raises(ValueError, match="finite non-negative"):
+        asyncio.run(
+            backend.submit_opct_forward_backward(
+                [datum],
+                behavior_temperature=-0.1,
+                kl_coef=1.0,
+                kl_discount_factor=0.0,
+                loss_fn="importance_sampling",
+            )
+        )
+
+
 def microbatch_test_datums(backend: LocalBackend, loss_fn: str):
     if loss_fn == "cross_entropy":
         return [
@@ -563,11 +735,7 @@ def test_forward_microbatch_matches_unchunked_loss_gradients_logprobs_and_optimi
             [datum.loss_fn_inputs["advantages"].to_torch() for datum in datums],
             [datum.loss_fn_inputs["mask"].to_torch().float() for datum in datums],
         )
-        expected_loss = (
-            local_losses.ppo_loss(*loss_args, clip_epsilon=unchunked.ppo_clip_epsilon)
-            if loss_fn == "ppo"
-            else local_losses.importance_sampling_loss(*loss_args)
-        )
+        expected_loss = local_losses.ppo_loss(*loss_args, clip_epsilon=unchunked.ppo_clip_epsilon) if loss_fn == "ppo" else local_losses.importance_sampling_loss(*loss_args)
     assert unchunked_out.metrics["loss"] == pytest.approx(float(expected_loss), abs=1e-6)
     assert len(chunked_out.logprobs) == len(datums)
     for chunked_logprobs, unchunked_logprobs, datum in zip(chunked_out.logprobs, unchunked_out.logprobs, datums):
@@ -664,9 +832,7 @@ def test_hf_selected_token_path_matches_dense_loss_logprobs_and_gradients(loss_f
     top_level_forward_calls = []
     head_chunk_sizes = []
     model_hook = backend.model.register_forward_hook(lambda *_args: top_level_forward_calls.append(True))
-    head_hook = backend.model.get_output_embeddings().register_forward_pre_hook(
-        lambda _module, args: head_chunk_sizes.append(args[0].shape[0])
-    )
+    head_hook = backend.model.get_output_embeddings().register_forward_pre_hook(lambda _module, args: head_chunk_sizes.append(args[0].shape[0]))
     selected_output = asyncio.run(forward_backward(backend, datums, loss_fn))
     model_hook.remove()
     head_hook.remove()
@@ -684,11 +850,7 @@ def test_hf_selected_token_path_matches_dense_loss_logprobs_and_gradients(loss_f
             [datum.loss_fn_inputs["advantages"].to_torch() for datum in datums],
             [datum.loss_fn_inputs["mask"].to_torch().float() for datum in datums],
         )
-        dense_loss = (
-            local_losses.ppo_loss(*loss_args, clip_epsilon=backend.ppo_clip_epsilon)
-            if loss_fn == "ppo"
-            else local_losses.importance_sampling_loss(*loss_args)
-        )
+        dense_loss = local_losses.ppo_loss(*loss_args, clip_epsilon=backend.ppo_clip_epsilon) if loss_fn == "ppo" else local_losses.importance_sampling_loss(*loss_args)
     dense_loss.backward()
 
     assert top_level_forward_calls == []
@@ -724,9 +886,7 @@ def test_completion_scoring_microbatches_mixed_lengths_and_restores_order_withou
         lambda _module, args, kwargs: backbone_batch_sizes.append(kwargs["input_ids"].shape[0]),
         with_kwargs=True,
     )
-    head_hook = backend.model.get_output_embeddings().register_forward_pre_hook(
-        lambda _module, args: head_chunk_sizes.append(args[0].shape[0])
-    )
+    head_hook = backend.model.get_output_embeddings().register_forward_pre_hook(lambda _module, args: head_chunk_sizes.append(args[0].shape[0]))
     scored = backend._score_completions(prompts, completions, use_base=False)
     backbone_hook.remove()
     head_hook.remove()
@@ -880,9 +1040,7 @@ class TestLocalRL:
         chunked._frozen_base_model.forward_calls = 0
 
         unchunked_metrics = asyncio.run(unchunked.incorporate_kl_penalty(datums, kl_coef=0.3, kl_discount_factor=0.7))
-        chunked_metrics = asyncio.run(
-            chunked.incorporate_kl_penalty(chunked_datums, kl_coef=0.3, kl_discount_factor=0.7)
-        )
+        chunked_metrics = asyncio.run(chunked.incorporate_kl_penalty(chunked_datums, kl_coef=0.3, kl_discount_factor=0.7))
 
         assert unchunked._frozen_base_model.forward_calls == 1
         assert chunked._frozen_base_model.forward_calls > 1
@@ -995,9 +1153,7 @@ class TestLocalCheckpoint:
     def test_save_and_resume_full_finetune(self, tmp_path):
         backend = make_backend()
         asyncio.run(step(backend, [sft_datum()], "cross_entropy"))
-        paths = asyncio.run(
-            backend.save_checkpoint(name="run1_step1", log_dir=tmp_path, loop_state={"step": 1}, kind="both")
-        )
+        paths = asyncio.run(backend.save_checkpoint(name="run1_step1", log_dir=tmp_path, loop_state={"step": 1}, kind="both"))
 
         ckpt = tmp_path / "checkpoints" / "run1_step1"
         assert paths["sampler_path"] == f"file://{ckpt.resolve()}"
@@ -1104,25 +1260,15 @@ class TestLocalLoRA:
         outer_forward_calls = []
         head_chunk_sizes = []
         model_hook = backend.model.register_forward_hook(lambda *_args: outer_forward_calls.append(True))
-        head_hook = backend.model.get_output_embeddings().register_forward_pre_hook(
-            lambda _module, args: head_chunk_sizes.append(args[0].shape[0])
-        )
+        head_hook = backend.model.get_output_embeddings().register_forward_pre_hook(lambda _module, args: head_chunk_sizes.append(args[0].shape[0]))
         asyncio.run(forward_backward(backend, datums, "cross_entropy"))
         model_hook.remove()
         head_hook.remove()
 
         assert outer_forward_calls == []
         assert head_chunk_sizes and max(head_chunk_sizes) <= 2
-        attention_gradient = sum(
-            float(parameter.grad.abs().sum())
-            for name, parameter in backend.model.named_parameters()
-            if "attn.c_attn" in name and "lora_" in name and parameter.grad is not None
-        )
-        head_gradient = sum(
-            float(parameter.grad.abs().sum())
-            for name, parameter in backend.model.named_parameters()
-            if "lm_head" in name and "lora_" in name and parameter.grad is not None
-        )
+        attention_gradient = sum(float(parameter.grad.abs().sum()) for name, parameter in backend.model.named_parameters() if "attn.c_attn" in name and "lora_" in name and parameter.grad is not None)
+        head_gradient = sum(float(parameter.grad.abs().sum()) for name, parameter in backend.model.named_parameters() if "lm_head" in name and "lora_" in name and parameter.grad is not None)
         assert attention_gradient > 0
         assert head_gradient > 0
 

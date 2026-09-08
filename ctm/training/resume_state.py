@@ -98,7 +98,11 @@ def capture_runtime_rng_state() -> dict[str, Any]:
 
 
 def restore_runtime_rng_state(state: Mapping[str, Any], *, require_torch: bool) -> None:
-    """Restore a state emitted by :func:`capture_runtime_rng_state`."""
+    """Restore a state emitted by :func:`capture_runtime_rng_state`.
+
+    Call after model/adapter restoration so construction does not consume the
+    coordinator-side RNG state needed for the next shuffle.
+    """
 
     if not isinstance(state, Mapping):
         raise ValueError("runtime_rng must be an object")

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,10 +31,121 @@ from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT / ".env")
 
 from ctm.artifacts import plain_file_identity, verify_data_manifest_bindings
-from ctm.backends.cli import add_backend_args, build_backend, describe_backend
+from ctm.backends.cli import (
+    PhaseSharedCLIConfig,
+    add_backend_args,
+    build_backend,
+    describe_backend,
+    resolve_phase_shared_args,
+    resolve_rollout_parallel_args,
+)
 from ctm.cli_safety import parse_json_object, reject_inline_secrets
 from ctm.core.config import AdamConfig, CheckpointConfig, resolve_lora_config
 from ctm.training.opct import OPCTConfig, OPCTGenerationConfig, OPCTTrainer, validate_opct_samples
+
+
+def _phase_shared_run_metadata(phase_shared: PhaseSharedCLIConfig | None) -> dict[str, object]:
+    """Return reproducible runtime provenance for an opt-in shared-GPU run.
+
+    The placement is deliberately recorded separately from scientific settings:
+    phase sharing changes how the configured update is executed, rather than
+    which data, objective, rollout budgets, or optimizer hyperparameters the
+    experiment uses.
+    """
+
+    if phase_shared is None:
+        return {}
+    topology = phase_shared.topology
+    return {
+        "phase_shared": {
+            "schema_version": "local_phase_shared_v1",
+            "execution_only": True,
+            "execution_semantics": (
+                "runtime topology only; configured objective, data selection, rollout budgets, "
+                "and optimizer hyperparameters are unchanged"
+            ),
+            "visible_devices": list(topology.visible_devices),
+            "training_world_size": topology.world_size,
+            "training_ranks": [
+                {
+                    "rank": rank.rank,
+                    "logical_index": rank.gpu.logical_index,
+                    "device_token": rank.gpu.device_token,
+                    "publisher": rank.is_publisher,
+                }
+                for rank in topology.training_ranks
+            ],
+            "rollout_workers": [
+                {
+                    "worker_id": worker_id,
+                    "logical_index": gpu.logical_index,
+                    "device_token": gpu.device_token,
+                }
+                for worker_id, gpu in enumerate(topology.rollout_gpus)
+            ],
+            "overlap": [
+                {"logical_index": gpu.logical_index, "device_token": gpu.device_token}
+                for gpu in topology.overlap
+            ],
+            "coordinator": {
+                "rank": 0,
+                "logical_index": topology.coordinator.logical_index,
+                "device_token": topology.coordinator.device_token,
+                "device": phase_shared.coordinator_device,
+                "canonical_adapter_publisher": True,
+            },
+            "vllm_sleep_lifecycle": {
+                "enabled": True,
+                "sleep_level": 1,
+                "rollout_phase": "workers awake; sampling and scoring permitted",
+                "training_phase": "workers sleep before replicated trainer work; sampling and scoring prohibited",
+                "publication": "rank 0 verifies replica state, publishes the adapter, then all workers acknowledge before rollout resumes",
+                "transition_failure_policy": "fail_closed",
+            },
+            "rollout_worker_timeouts_seconds": {
+                "startup": phase_shared.rollout.start_timeout_seconds,
+                "request": phase_shared.rollout.request_timeout_seconds,
+            },
+            "replica_timeouts_seconds": {
+                "startup": phase_shared.replica_start_timeout_seconds,
+                "command": phase_shared.replica_command_timeout_seconds,
+                "shutdown": phase_shared.replica_shutdown_timeout_seconds,
+            },
+        }
+    }
+
+
+def _print_phase_shared_runtime(phase_shared: PhaseSharedCLIConfig | None) -> None:
+    """Print a compact, topology-independent execution provenance summary."""
+
+    if phase_shared is None:
+        return
+    topology = phase_shared.topology
+    ranks = ", ".join(
+        f"rank {rank.rank} -> logical {rank.gpu.logical_index} ({rank.gpu.device_token})"
+        for rank in topology.training_ranks
+    )
+    rollouts = ", ".join(
+        f"worker {worker_id} -> logical {gpu.logical_index} ({gpu.device_token})"
+        for worker_id, gpu in enumerate(topology.rollout_gpus)
+    )
+    overlap = ", ".join(str(gpu.logical_index) for gpu in topology.overlap) or "none"
+    print(
+        "Phase-shared: execution-only; configured objective/data/budgets/hyperparameters unchanged"
+    )
+    print(
+        f"Phase topology: world={topology.world_size}; rank 0/coordinator="
+        f"{phase_shared.coordinator_device}; overlap logical GPUs=[{overlap}]"
+    )
+    print(f"Training ranks: {ranks}")
+    print(f"Rollout workers: {rollouts}")
+    print("vLLM lifecycle: awake for rollout; level-1 sleep for training; rank-0 publish + worker ACK")
+    print(
+        "Replica timeouts: "
+        f"start={phase_shared.replica_start_timeout_seconds:g}s, "
+        f"command={phase_shared.replica_command_timeout_seconds:g}s, "
+        f"shutdown={phase_shared.replica_shutdown_timeout_seconds:g}s"
+    )
 
 
 def parse_file_spec(spec: str) -> tuple[Path, int | None]:
@@ -125,14 +237,33 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--lora-config", help="JSON object or file with the shared LoRA configuration")
     parser.add_argument("--lora-rank", type=int, default=None)
-    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for LoRA init and training-data ordering. "
+            "Use --local-rollout-seed-base to seed independent vLLM worker streams"
+        ),
+    )
     parser.add_argument("--optimizer-config", help="JSON object or file with the shared Adam configuration")
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--lr-schedule", choices=["constant", "linear", "cosine"], default=None)
 
     parser.add_argument("--rollouts-per-prompt", type=int, default=4, help="Student rollouts k for each prompt pair")
     parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument("--max-new-tokens", type=int, default=2048)
+    generation_limit = parser.add_mutually_exclusive_group()
+    generation_limit.add_argument("--max-new-tokens", type=int, default=2048)
+    generation_limit.add_argument(
+        "--no-max-new-tokens",
+        action="store_const",
+        const=None,
+        dest="max_new_tokens",
+        help=(
+            "Sample until model EOS with no output-token limit. The selected backend "
+            "must preserve max_tokens=None and fail on any non-EOS termination."
+        ),
+    )
     parser.add_argument("--kl-coef", type=float, default=1.0, help="Reverse-KL coefficient lambda")
     parser.add_argument(
         "--kl-discount-factor",
@@ -149,6 +280,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=8, help="Prompt pairs per microbatch")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument(
+        "--no-shuffle-samples",
+        action="store_false",
+        dest="shuffle_samples",
+        help="Preserve the supplied row order on every epoch",
+    )
 
     parser.add_argument("--checkpoint-every", type=int, default=50)
     parser.add_argument("--save-state", action="store_true")
@@ -184,7 +321,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Load only student weights from --resume-from",
     )
 
-    add_backend_args(parser)
+    add_backend_args(parser, enable_phase_shared=True)
+    parser.add_argument(
+        "--onpolicy-target-attestation",
+        type=Path,
+        help="Immutable target contract injected only by the protected Qwen3.5 on-policy launcher",
+    )
+    parser.add_argument(
+        "--require-onpolicy-target-attestation",
+        action="store_true",
+        help="Fail closed unless --onpolicy-target-attestation is supplied (used by protected experiment plans)",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("-y", "--yes", action="store_true")
     return parser
@@ -193,7 +340,27 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
+    onpolicy_target_provenance: dict | None = None
     try:
+        if args.require_onpolicy_target_attestation and args.onpolicy_target_attestation is None:
+            raise ValueError("--require-onpolicy-target-attestation requires --onpolicy-target-attestation")
+        if args.onpolicy_target_attestation is not None:
+            # This happens before loading any training rows or constructing a
+            # backend. It independently replays the plan/source/worker gates,
+            # so a post-launch YAML or sidecar mutation cannot reach a model.
+            from experiments.rmct_paper_vast_dense_models.stage1.onpolicy_recovery_preflight import (
+                validate_onpolicy_target_attestation_for_child,
+            )
+
+            onpolicy_target_provenance = validate_onpolicy_target_attestation_for_child(
+                attestation=args.onpolicy_target_attestation,
+                expected_training_script="scripts/train_opct.py",
+                child_argv=["scripts/train_opct.py", *effective_argv],
+                interpreter=sys.executable,
+                training_script_path=Path(__file__),
+                cuda_visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES"),
+            )
         file_specs = [parse_file_spec(value) for value in args.data]
         for path, limit in file_specs:
             if not path.is_file():
@@ -236,6 +403,8 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError("--rollout-dir must be a non-empty path")
         if args.rollout_log == "none" and args.rollout_dir is not None:
             raise ValueError("--rollout-dir requires --rollout-log all")
+        phase_shared = resolve_phase_shared_args(args)
+        rollout_parallel = phase_shared.rollout if phase_shared is not None else resolve_rollout_parallel_args(args)
 
         print("Loading prompt pairs...")
         samples = load_and_combine(file_specs, interleave=args.interleave)
@@ -254,6 +423,7 @@ def main(argv: list[str] | None = None) -> None:
             n_epochs=args.epochs,
             batch_size=args.batch_size,
             gradient_accumulation_steps=args.gradient_accumulation_steps,
+            shuffle_samples=args.shuffle_samples,
             kl_coef=args.kl_coef,
             kl_discount_factor=args.kl_discount_factor,
             loss_fn=args.loss_fn,
@@ -276,6 +446,29 @@ def main(argv: list[str] | None = None) -> None:
                 "teacher_policy": "run_start",
                 "resume_from": args.resume_from,
                 "resume_with_optimizer": args.resume_with_optimizer,
+                **_phase_shared_run_metadata(phase_shared),
+                **(
+                    {"onpolicy_target_attestation": onpolicy_target_provenance}
+                    if onpolicy_target_provenance is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "rollout_parallel": {
+                            "coordinator_device": args.local_device,
+                            "workers": [gpu.as_dict() for gpu in rollout_parallel.gpus],
+                            "status_dir": str(rollout_parallel.status_dir),
+                            "adapter_barrier": "all_workers_acknowledge_before_policy_sampling",
+                            "engine_seed_base": args.local_rollout_seed_base,
+                            "engine_seed_policy": "base_plus_worker_id_v1",
+                            "engine_seed_fallback": (
+                                None if args.local_rollout_seed_base is not None else "os_entropy_once_per_pool"
+                            ),
+                        }
+                    }
+                    if rollout_parallel is not None
+                    else {}
+                ),
             },
         )
         validate_opct_samples(samples, config)
@@ -290,6 +483,14 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Model: {config.model}")
     print("Method: OPCT (paired output consistency)")
     print(f"Backend: {describe_backend(args)}")
+    if rollout_parallel is not None:
+        if phase_shared is None:
+            mapping = ", ".join(f"logical {gpu.logical_index} -> {gpu.device_token}" for gpu in rollout_parallel.gpus)
+            print(f"Rollout workers: {len(rollout_parallel.gpus)} ({mapping})")
+        print(f"Worker status: {rollout_parallel.status_dir}")
+        seed_text = args.local_rollout_seed_base if args.local_rollout_seed_base is not None else "recorded entropy"
+        print(f"Sampling RNG: vLLM engine seeds {seed_text}+worker_id")
+    _print_phase_shared_runtime(phase_shared)
     print(f"Experiment: {config.experiment_name} / {config.run_name}")
     print(f"Prompt pairs: {len(samples)}")
     print(
@@ -299,6 +500,11 @@ def main(argv: list[str] | None = None) -> None:
         f"epochs={config.n_epochs}, optimizer_steps={steps}"
     )
     print(f"Pair fields: teacher={config.reference_messages_field!r}, " f"student={config.variant_messages_field!r}")
+    if onpolicy_target_provenance is not None:
+        print(
+            "On-policy target attestation: "
+            f"{onpolicy_target_provenance['path']} (sha256:{onpolicy_target_provenance['sha256']})"
+        )
     teacher_source = (
         f"run-start Tinker checkpoint ({args.resume_from})" if args.resume_from else "run-start base policy"
     )

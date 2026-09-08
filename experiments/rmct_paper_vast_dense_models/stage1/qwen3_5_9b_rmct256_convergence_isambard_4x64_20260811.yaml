@@ -1,0 +1,131 @@
+name: rmct256-convergence-isambard-4x64-20260811
+experiment_factory: experiments.rmct_256_convergence.plan:compile_experiment
+
+# A fixed optimizer-data-segment convergence trajectory, not a fresh
+# hyperparameter sweep.  The compiler emits all 16 segments (four ordered
+# 64-row blocks × four passes) and has no ambient pass-count override.  Every
+# segment has a unique run namespace and an attested static parent checkpoint
+# URI; only the first starts from the pinned base snapshot.
+spec:
+  topology_profiles:
+    four-gpu:
+      target_prefix: rmct256-convergence
+      run_name_prefix: rmct256-convergence-isambard-4x64-20260811
+      gpu_count: 4
+      coordinator_device: cuda:0
+      rollout_gpus: [1, 2, 3]
+      gradient_checkpointing_layers: all
+
+  model: Qwen/Qwen3.5-9B
+  base_snapshot:
+    repo_id: Qwen/Qwen3.5-9B
+    revision: c202236235762e1c871ad0ccb60c8ee5ba337b9a
+    offline_only: true
+  isambard_runtime:
+    platform: isambard-ai-gh200
+    architecture: aarch64
+    vllm_version: 0.21.0
+    vllm_cuda: "12.9"
+    transformers_version: 5.5.4
+    gdn_prefill_backend: triton
+
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-rmct256-convergence-isambard-4x64-20260811
+  figure_root: figures/rmct-hle-qwen3.5-9b-dense-rmct256-convergence-isambard-4x64-20260811
+  training_only: true
+  onpolicy_target_attestation: true
+  tracking: {wandb_project: rmct256_convergence_isambard_4x64_20260811}
+
+  # The runtime never creates derived block JSONLs.  It loads exact slices of
+  # this already attested parent JSONL, and the content-addressed segment
+  # manifest proves the four ordered 64-row partitions and their question IDs.
+  selection:
+    pairs_path: artifacts/rmct-256-training-20260804/rmct-256-training-7602aca7f92312e24b884a8dd4f290a5c2374350e51cd3b6bf3fffbcf216a55a.jsonl
+    selection_manifest: artifacts/rmct-256-training-20260804/rmct-256-training-manifest-5c18fa31ddaaca76256bef15cc54ddfa0f103287b0f5c940fd0a87cc8e2e179e.json
+    selection_content_sha256: 7602aca7f92312e24b884a8dd4f290a5c2374350e51cd3b6bf3fffbcf216a55a
+    selection_manifest_sha256: 5c18fa31ddaaca76256bef15cc54ddfa0f103287b0f5c940fd0a87cc8e2e179e
+    segment_manifest: artifacts/rmct-256-convergence-segments-20260811/rmct-256-convergence-segments-manifest-2f81e40297c594f1a05413fded238ac956a345f4fa6d3a636288aa4a9edccdc7.json
+    segment_manifest_sha256: 2f81e40297c594f1a05413fded238ac956a345f4fa6d3a636288aa4a9edccdc7
+
+  # Explicitly select each frozen row's biased counterpart.  Omitting this
+  # must not silently fall back to the setting factory's current default.
+  setting_config:
+    control: false
+
+  # Keep the approved RMCT LoRA and local vLLM scientific/execution values.
+  # `gradient_checkpointing_layers: all` is resolved by omitting a limiting
+  # CLI flag, so the backend checkpoints every decoder layer.
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+  local:
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.34
+    rollout_gpu_memory_utilization: 0.75
+    rollout_seed_base: 42
+    vllm_language_model_only: true
+    vllm_max_num_seqs: 256
+    vllm_max_num_batched_tokens: 8192
+    vllm_max_model_len: 32768
+    vllm_gdn_prefill_backend: triton
+    gradient_checkpointing: true
+    gradient_checkpointing_layers: all
+    forward_microbatch_max_datums: 8
+    forward_microbatch_max_tokens: 20480
+    target_logprob_chunk_size: 2048
+
+  # Explicitly pin train_rlct's sampling defaults as well as the approved
+  # RMCT rollout counts, so a future CLI-default change cannot alter a segment.
+  sampling_defaults:
+    unparsed_handling: discard
+    max_resample_attempts: 4
+    snr_mode: soft
+    snr_z: 2.0
+    snr_normalizer: trait_std
+  optimizer:
+    learning_rate: 0.0001
+    learning_rate_schedule: constant
+    beta1: 0.9
+    beta2: 0.95
+    eps: 1.0e-8
+    weight_decay: 0.0
+    grad_clip_norm: 1.0
+  rate_matching:
+    datapoints: 64
+    rollouts: {reference: 96, training: 96, consistency: 96, anchor: 96}
+    batch_size: 4
+    epochs: 1
+    temperature: 1.0
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 0.05
+    # Freeze both former runtime defaults: token-local KL and standard PPO
+    # clip range.  They are emitted as explicit CLI arguments per segment.
+    kl_discount_factor: 0.0
+    ppo_clip_epsilon: 0.2
+    anchor_weight: 0.0
+    anchor_model: base
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: pooled
+    gradient_accumulation_steps: 1
+    refresh_every: 1
+    checkpoint_every: 16
+    save_state: true
+
+  # Plateau decisions occur only after a complete four-block pass.  The
+  # controller consumes its own authoritative absolute training-gap records;
+  # this static plan deliberately does not prescribe a raw-observation schema.
+  # Every 16-update final checkpoint is retained; the controller exposes
+  # raw/threshold best complete-pass endpoints and reports a cap rather than
+  # convergence if pass four is still improving.
+  convergence:
+    mode: optimizer_data_segment
+    hard_cap_passes: 4
+    segments_per_pass: 4
+    rows_per_segment: 64
+    updates_per_segment: 16
+    row_offsets: [0, 64, 128, 192]
+    minimum_completed_passes: 1
+    full_pass_min_delta: 0.01
+    non_improving_pass_patience: 2
+    retain: retain_all_16_step_checkpoints
+    cap_outcome: capped_while_improving

@@ -1,0 +1,156 @@
+name: muse-glimmer-rmct-replication
+experiment_factory: experiments.muse_glimmer_rmct_replication.plan:compile_experiment
+spec:
+  schema: muse-glimmer-rmct-replication-plan-v1
+  model:
+    repo_id: meta-models/Muse-Glimmer-30B
+    revision: a4e59da52a7bc87ae7251dd5545c0dd437c44b68
+    offline_only: true
+    text_only: true
+    reasoning_strength: high
+  runtime:
+    transformers_version: 5.15.1
+    vllm_git_commit: 8c2bbe00d58a930c6c09a80495728b26b79d9200
+    vllm_released_wheel_acceptable: false
+    vllm_installation: clean_pinned_source_checkout
+    cuda_toolkit:
+      version: 12.9.1
+      nvcc: 12.9.86
+      sbsa_installer_sha256: 64f47ab791a76b6889702425e0755385f5fa216c5a9f061875c7deed5f08cdb6
+    receipt_dir: artifacts/muse-glimmer-runtime-cu129-20260824
+  data:
+    path: artifacts/rmct-shared-qid-two-bias-20260813/shared-qid-two-bias-n1000-cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075.jsonl
+    sha256: cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075
+    manifest_path: artifacts/rmct-shared-qid-two-bias-20260813/shared-qid-two-bias-n1000-cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075.manifest-eac0682fe0286126cc5928253e2e2ef4968eee50775a65feb21d061eec6853cc.json
+    manifest_sha256: eac0682fe0286126cc5928253e2e2ef4968eee50775a65feb21d061eec6853cc
+    prompt_style: none
+    perturbations: [clean, wrong_argument, suggested_answer]
+    training_indices: [1, 2]
+    segment_datapoints: 32
+    segment_count: 32
+    ordering: one_logiqa_plus_one_hellaswag_per_update_no_shuffle
+  topology:
+    profile: dedicated-trainer-three-rollout-workers
+    gpu_count: 4
+    trainer_gpu: 0
+    rollout_gpus: [1, 2, 3]
+    phase_shared: false
+    replicated_training: false
+    reason: one BF16 HF/PEFT text tower plus three independent BF16 vLLM text-only engines
+  local:
+    dtype: bfloat16
+    hf_language_model_only: true
+    vllm_language_model_only: true
+    rollout_gpu_memory_utilization: 0.9
+    vllm_max_model_len: 131072
+    vllm_max_num_seqs: 128
+    vllm_max_num_batched_tokens: 8192
+    forward_microbatch_max_datums: 1
+    forward_microbatch_max_tokens: 16384
+    target_logprob_chunk_size: 256
+    gradient_checkpointing: all_52_text_layers
+    worker_parity_attestation: artifacts/muse-glimmer-rmct-preflight-20260824/muse-glimmer-rollout-worker-parity-attestation.json
+    worker_score_completions_allowed: false
+  lora:
+    rank: 8
+    alpha: 16
+    dropout: 0.0
+    train_mlp: true
+    train_attn: true
+    train_unembed: false
+  optimizer:
+    learning_rate: 0.0001
+    schedule: constant
+    beta1: 0.9
+    beta2: 0.95
+    eps: 1.0e-8
+    weight_decay: 0.0
+    grad_clip_norm: 1.0
+  method:
+    loss: ppo
+    ppo_clip_epsilon: 0.2
+    advantage_estimator: grpo_normalized
+    normalization: pooled
+    kl_coefficient: 0.05
+    kl_discount_factor: 0.0
+    anchor_weight: 0.0
+    anchor_model: base
+  sampling:
+    reference_rollouts: 96
+    training_rollouts: 96
+    consistency_rollouts: 96
+    anchor_rollouts: 96
+    temperature: 1.0
+    top_p: 1.0
+    top_k: null
+    max_tokens: null
+    termination: eos_only
+    allowed_eos_token_ids: [200001, 200008]
+    non_eos_termination_policy: fail_run
+    unparsed_handling: discard
+    max_resample_attempts: 4
+    snr_mode: soft
+    snr_z: 2.0
+    snr_normalizer: trait_std
+  loop:
+    batch_size: 2
+    gradient_accumulation_steps: 1
+    epochs: 1
+    refresh_every: 1
+    shuffle_datapoints: false
+    checkpoint_every_optimizer_steps: 16
+    save_state: true
+  convergence:
+    updates_per_window: 16
+    hard_cap_windows: 32
+    hard_cap_optimizer_steps: 512
+    first_eligible_optimizer_step: 32
+    minimum_coverage: 0.85
+    maximum_weighted_abs_gap: 0.1
+    maximum_abs_change: 0.01
+    final_checkpoint: first_passing_window_else_capped_not_converged
+    comparison_checkpoints: [16, 64, final]
+  evaluation:
+    conditions: [base, step16, step64, final]
+    biases: [wrong_argument, suggested_answer, distractor_fact, post_hoc, spurious_few_shot_squares, wrong_few_shot]
+    datasets: {logiqa: 50, hellaswag: 50, hle: 100}
+    pool_policy: same_question_ids_for_every_condition_and_clean_biased_pair
+    tasks_per_condition: 21
+    generations_per_condition: 1400
+    model_args:
+      device: cuda:0
+      dtype: bfloat16
+      hf_language_model_only: true
+      do_sample: true
+    switch_rate:
+      paired_cluster: whole_question
+      permutations: 10000
+      multiple_comparisons: Holm
+      interval: Wilson
+    verbalisation:
+      grader: luna
+      max_connections: 500
+      grade_parsed_outputs: true
+      same_question_pools: true
+    aita_nta_flip:
+      parser_scope: final_output_after_cot_only
+      verdicts: [YTA, NTA]
+      max_tokens: null
+      termination: eos_only
+      temperature: 0.6
+      top_p: 0.9
+      top_k: 50
+      seed: 0
+      max_connections: 4
+      grade_parsed_outputs: true
+    generation:
+      max_tokens: null
+      termination: eos_only
+      non_eos_termination_policy: fail_run
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 20
+      max_connections: 8
+      hf_language_model_only: true
+    gpu_count: 16
+    launch_phases: 3

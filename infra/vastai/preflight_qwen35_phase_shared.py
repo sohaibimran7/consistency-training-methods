@@ -137,6 +137,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Fail unless the allocation is large enough to validate every requested topology-contract size",
     )
     parser.add_argument("--worker-gpu-mem-util", type=_unit_interval, default=0.35)
+    parser.add_argument(
+        "--worker-dtype",
+        choices=["bfloat16", "float16", "float32"],
+        default="bfloat16",
+        help=(
+            "Exact vLLM dtype for the cold coordinator and every rollout worker. "
+            "The worker-parity attestation binds this value, so it must match the production CLI."
+        ),
+    )
     parser.add_argument("--worker-max-model-len", type=_positive_int, default=32_768)
     parser.add_argument("--worker-max-num-seqs", type=_positive_int, default=64)
     parser.add_argument("--worker-max-num-batched-tokens", type=_positive_int, default=8_192)
@@ -927,6 +936,7 @@ def _rank_zero_vllm_options(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         "gpu_memory_utilization": args.worker_gpu_mem_util,
+        "dtype": args.worker_dtype,
         "enable_sleep_mode": True,
         "max_model_len": args.worker_max_model_len,
         "max_num_seqs": args.worker_max_num_seqs,
@@ -942,6 +952,9 @@ def _worker_vllm_options(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         "gpu_memory_utilization": args.worker_gpu_mem_util,
+        # Do not let a preflight attest vLLM's mutable ``auto`` default when
+        # the production target pins BF16 explicitly.
+        "dtype": args.worker_dtype,
         "enable_sleep_mode": True,
         "max_model_len": args.worker_max_model_len,
         "max_num_seqs": args.worker_max_num_seqs,
@@ -959,6 +972,7 @@ def _contract_config(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "model": args.model,
         "worker_gpu_memory_utilization": args.worker_gpu_mem_util,
+        "worker_dtype": args.worker_dtype,
         "worker_max_model_len": args.worker_max_model_len,
         "worker_max_num_seqs": args.worker_max_num_seqs,
         "worker_max_num_batched_tokens": args.worker_max_num_batched_tokens,

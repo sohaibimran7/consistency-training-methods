@@ -46,6 +46,12 @@ from typing import Any, Optional
 import uuid
 
 from ctm.backends.base import SampledSequence
+from ctm.backends.local.muse_glimmer import (
+    PARITY_ATTESTATION_NAME as MUSE_PARITY_ATTESTATION_NAME,
+    file_sha256 as muse_file_sha256,
+    is_muse_glimmer_model_name,
+    validate_muse_rollout_worker_parity_attestation,
+)
 from ctm.backends.local.qwen35_vllm_compat import (
     MANIFEST_NAME as QWEN35_COMPAT_MANIFEST_NAME,
     WORKER_PARITY_ATTESTATION_NAME as QWEN35_WORKER_PARITY_ATTESTATION_NAME,
@@ -570,7 +576,7 @@ def _worker_main(connection: Connection, config: _WorkerProcessConfig) -> None:
                         }
                     )
                     break
-                if op not in {"sample_batch", "score_batch"}:
+                if op not in {"sample_batch", "score_batch", "score_batch_uncapped_eos_tail"}:
                     raise RolloutWorkerError(f"unknown worker operation: {op!r}")
 
                 use_base = bool(command["use_base"])
@@ -582,7 +588,7 @@ def _worker_main(connection: Connection, config: _WorkerProcessConfig) -> None:
                         f"policy request requires adapter v{required_version}, worker has v{loaded_version}"
                     )
                 assignments = command["assignments"]
-                if op == "score_batch":
+                if op in {"score_batch", "score_batch_uncapped_eos_tail"}:
                     score_started_at = time.monotonic()
                     _append_jsonl(
                         log_path,
@@ -594,7 +600,12 @@ def _worker_main(connection: Connection, config: _WorkerProcessConfig) -> None:
                         loaded_adapter_version=loaded_version,
                         score_indices=[assignment["score_index"] for assignment in assignments],
                     )
-                    scored = sampler.score_completions(
+                    score_method = (
+                        sampler.score_completions_uncapped_eos_tail
+                        if op == "score_batch_uncapped_eos_tail"
+                        else sampler.score_completions
+                    )
+                    scored = score_method(
                         [assignment["prompt_tokens"] for assignment in assignments],
                         [assignment["completion_tokens"] for assignment in assignments],
                         use_base=use_base,
@@ -652,6 +663,8 @@ def _worker_main(connection: Connection, config: _WorkerProcessConfig) -> None:
                         requested_adapter_version=required_version,
                         record_count=len(records),
                         completion_tokens=completion_token_count,
+                        tail_max_tokens=None if op == "score_batch_uncapped_eos_tail" else 1,
+                        tail_termination="eos_only" if op == "score_batch_uncapped_eos_tail" else "not_attested",
                         elapsed_seconds=elapsed_seconds,
                         scored_tokens_per_second=(
                             completion_token_count / elapsed_seconds if elapsed_seconds > 0 else 0.0
@@ -688,7 +701,11 @@ def _worker_main(connection: Connection, config: _WorkerProcessConfig) -> None:
                     group = by_count[count]
                     sampled = sampler.sample_batch(
                         [assignment["prompt_tokens"] for assignment in group],
-                        max_tokens=int(command["max_tokens"]),
+                        max_tokens=(
+                            None
+                            if command.get("max_tokens") is None
+                            else int(command["max_tokens"])
+                        ),
                         temperature=float(command["temperature"]),
                         stop=command["stop"],
                         num_samples=count,
@@ -983,7 +1000,8 @@ class RolloutWorkerPool:
         requested_logprobs_mode = kwargs.get("logprobs_mode", "processed_logprobs")
         if requested_logprobs_mode != "processed_logprobs":
             raise ValueError(
-                "rollout workers require logprobs_mode='processed_logprobs'; " f"got {requested_logprobs_mode!r}"
+                "rollout workers require logprobs_mode='processed_logprobs'; "
+                f"got {requested_logprobs_mode!r}"
             )
         kwargs["logprobs_mode"] = "processed_logprobs"
         tensor_parallel_size = kwargs.pop("tensor_parallel_size", 1)
@@ -1286,7 +1304,9 @@ class RolloutWorkerPool:
             self._ensure_usable()
             request_id = self._next_request_id("health")
             try:
-                responses = await self._call_all([{"op": "health", "request_id": request_id}] * self.worker_count)
+                responses = await self._call_all(
+                    [{"op": "health", "request_id": request_id}] * self.worker_count
+                )
                 if self.sleep_enabled:
                     self._validate_lifecycle_acks(
                         responses,
@@ -1486,7 +1506,7 @@ class RolloutWorkerPool:
         self,
         prompt_tokens_batch: Sequence[Sequence[int]],
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -1495,7 +1515,7 @@ class RolloutWorkerPool:
     ) -> list[list[SampledSequence]]:
         if num_samples < 0:
             raise ValueError("num_samples must be non-negative")
-        if max_tokens <= 0:
+        if max_tokens is not None and max_tokens <= 0:
             raise ValueError("max_tokens must be positive")
         if not prompt_tokens_batch:
             return []
@@ -1624,6 +1644,7 @@ class RolloutWorkerPool:
         completion_tokens_batch: Sequence[Sequence[int]],
         *,
         use_base: bool,
+        _uncapped_eos_tail: bool = False,
     ) -> list[list[float]]:
         """Score aligned prompt/completion pairs across rollout workers."""
 
@@ -1657,9 +1678,10 @@ class RolloutWorkerPool:
                 raise RolloutWorkerError("policy scoring requires an acknowledged adapter snapshot")
             request_id = self._next_request_id("score-base" if use_base else f"score-policy-v{requested_version}")
             assignments = self._score_assignments(prompts, completions)
+            operation = "score_batch_uncapped_eos_tail" if _uncapped_eos_tail else "score_batch"
             commands = [
                 {
-                    "op": "score_batch",
+                    "op": operation,
                     "request_id": request_id,
                     "assignments": worker_assignments,
                     "use_base": use_base,
@@ -1675,6 +1697,8 @@ class RolloutWorkerPool:
                 adapter_version=requested_version,
                 score_count=len(prompts),
                 completion_token_count=sum(len(completion) for completion in completions),
+                tail_max_tokens=None if _uncapped_eos_tail else 1,
+                tail_termination="eos_only" if _uncapped_eos_tail else "not_attested",
                 assignments=[
                     {
                         "worker_id": worker_id,
@@ -1753,6 +1777,22 @@ class RolloutWorkerPool:
             )
             return merged
 
+    async def score_completions_uncapped_eos_tail(
+        self,
+        prompt_tokens_batch: Sequence[Sequence[int]],
+        completion_tokens_batch: Sequence[Sequence[int]],
+        *,
+        use_base: bool,
+    ) -> list[list[float]]:
+        """Preflight-only prompt scoring with an uncapped EOS-only tail."""
+
+        return await self.score_completions(
+            prompt_tokens_batch,
+            completion_tokens_batch,
+            use_base=use_base,
+            _uncapped_eos_tail=True,
+        )
+
     def shutdown(self) -> None:
         if self._closed:
             return
@@ -1794,7 +1834,7 @@ class DistributedSamplerHandle:
         self,
         prompt: Any,
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -1821,7 +1861,7 @@ class DistributedSamplerHandle:
         self,
         prompts: Sequence[Any],
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -1909,7 +1949,7 @@ class FrozenBaseSamplerHandle(DistributedSamplerHandle):
         self,
         prompts: Sequence[Any],
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -2033,7 +2073,7 @@ class FrozenBaseVLLMBackend:
         self,
         prompt_tokens_batch: Sequence[Sequence[int]],
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -2095,6 +2135,7 @@ class RolloutParallelBackend:
         request_timeout_seconds: float = 7200.0,
         shutdown_timeout_seconds: float = 30.0,
         qwen35_rollout_parity_attestation: str | Path | None = None,
+        muse_rollout_parity_attestation: str | Path | None = None,
         qwen35_rollout_parity_bootstrap: bool = False,
         pool: Optional[RolloutWorkerPool] = None,
     ):
@@ -2112,10 +2153,13 @@ class RolloutParallelBackend:
         self.qwen35_rollout_parity_attestation = (
             None if qwen35_rollout_parity_attestation is None else Path(qwen35_rollout_parity_attestation)
         )
+        self.muse_rollout_parity_attestation = (
+            None if muse_rollout_parity_attestation is None else Path(muse_rollout_parity_attestation)
+        )
         # This is intentionally not exposed through the normal training CLI.
         # Only the non-production fixed-token preflight harness may bootstrap
         # the first evidence file, before a production backend is allowed to
-        # start. See infra/vastai/preflight_qwen35_phase_shared.py.
+        # start. See infra/vastai/benchmark_qwen35_opct_group.py.
         self.qwen35_rollout_parity_bootstrap = qwen35_rollout_parity_bootstrap
         self.pool: Optional[RolloutWorkerPool] = pool
         self._adapter_version = 0
@@ -2124,6 +2168,9 @@ class RolloutParallelBackend:
         self._qwen35_rollout_parity: Optional[dict[str, Any]] = None
         self._qwen35_rollout_parity_path: Optional[Path] = None
         self._qwen35_rollout_parity_sha256: Optional[str] = None
+        self._muse_rollout_parity: Optional[dict[str, Any]] = None
+        self._muse_rollout_parity_path: Optional[Path] = None
+        self._muse_rollout_parity_sha256: Optional[str] = None
         self._shutdown = False
 
     def __getattr__(self, name: str) -> Any:
@@ -2154,7 +2201,9 @@ class RolloutParallelBackend:
         """Sleep rollout workers before coordinator KL/forward/backward work."""
 
         if self.pool is None:
-            raise RolloutWorkerError("RolloutParallelBackend.setup() must be called before entering a training phase")
+            raise RolloutWorkerError(
+                "RolloutParallelBackend.setup() must be called before entering a training phase"
+            )
         await self.pool.enter_training_phase()
 
     async def enter_rollout_phase(self) -> None:
@@ -2168,7 +2217,9 @@ class RolloutParallelBackend:
         """
 
         if self.pool is None:
-            raise RolloutWorkerError("RolloutParallelBackend.setup() must be called before entering a rollout phase")
+            raise RolloutWorkerError(
+                "RolloutParallelBackend.setup() must be called before entering a rollout phase"
+            )
         await self._release_training_memory_before_worker_wake()
         await self.pool.enter_rollout_phase()
 
@@ -2179,7 +2230,9 @@ class RolloutParallelBackend:
         # Legacy/injected pools used by compatibility tooling predate the
         # phase-sharing lifecycle.  Treat those as sleep-disabled rather than
         # requiring unrelated callers to emulate resource-phase state.
-        if not getattr(self.pool, "sleep_enabled", False) or (getattr(self.pool, "phase", "rollout") != "training"):
+        if not getattr(self.pool, "sleep_enabled", False) or (
+            getattr(self.pool, "phase", "rollout") != "training"
+        ):
             return
         release = getattr(self.training_backend, "enter_rollout_phase", None)
         if not callable(release):
@@ -2311,6 +2364,24 @@ class RolloutParallelBackend:
                     )
                     self._qwen35_rollout_parity_path = Path(parity_path).resolve()
                     self._qwen35_rollout_parity_sha256 = file_sha256(self._qwen35_rollout_parity_path)
+            if is_muse_glimmer_model_name(model):
+                parity_path = (
+                    self.muse_rollout_parity_attestation
+                    if self.muse_rollout_parity_attestation is not None
+                    else self.status_dir / MUSE_PARITY_ATTESTATION_NAME
+                )
+                # Muse requires the post-fix vLLM stack and a real non-zero
+                # LoRA transport proof.  There is intentionally no production
+                # bootstrap bypass: the separate GPU preflight must finish
+                # before a training backend is allowed to publish even v1.
+                self._muse_rollout_parity = validate_muse_rollout_worker_parity_attestation(
+                    parity_path,
+                    expected_model=model,
+                    expected_worker_gpus=self.pool.gpus,
+                    expected_worker_engine_kwargs=self.pool.engine_kwargs,
+                )
+                self._muse_rollout_parity_path = Path(parity_path).resolve()
+                self._muse_rollout_parity_sha256 = muse_file_sha256(self._muse_rollout_parity_path)
             print(
                 f"RolloutParallelBackend: {self.pool.worker_count} worker(s), status={self.pool.status_dir}",
                 flush=True,
@@ -2342,6 +2413,7 @@ class RolloutParallelBackend:
         )
         try:
             qwen35_compatibility = is_qwen35_model_name(self._model_name)
+            muse_compatibility = is_muse_glimmer_model_name(self._model_name)
             if qwen35_compatibility:
                 if self._qwen35_rollout_parity is None:
                     if not self.qwen35_rollout_parity_bootstrap:
@@ -2374,6 +2446,27 @@ class RolloutParallelBackend:
                         raise RolloutWorkerError(
                             "Qwen3.5 rollout worker parity attestation no longer matches the validated preflight"
                         )
+            if muse_compatibility:
+                if (
+                    self._muse_rollout_parity is None
+                    or self._muse_rollout_parity_path is None
+                    or self._muse_rollout_parity_sha256 is None
+                    or muse_file_sha256(self._muse_rollout_parity_path) != self._muse_rollout_parity_sha256
+                ):
+                    raise RolloutWorkerError(
+                        "Muse Glimmer rollout-worker parity attestation is absent or changed after setup"
+                    )
+                assert self.pool is not None
+                current_muse_parity = validate_muse_rollout_worker_parity_attestation(
+                    self._muse_rollout_parity_path,
+                    expected_model=self._model_name,
+                    expected_worker_gpus=self.pool.gpus,
+                    expected_worker_engine_kwargs=self.pool.engine_kwargs,
+                )
+                if current_muse_parity != self._muse_rollout_parity:
+                    raise RolloutWorkerError(
+                        "Muse Glimmer rollout-worker parity no longer matches the validated preflight"
+                    )
             raw_dir = staging / "raw" if qwen35_compatibility else staging
             self.training_backend.model.save_pretrained(str(raw_dir))
             published_relative_path = "."
@@ -2411,9 +2504,9 @@ class RolloutParallelBackend:
                                         "sha256": self._qwen35_rollout_parity_sha256,
                                         "schema": self._qwen35_rollout_parity["schema"],
                                         "preflight_adapter_version": self._qwen35_rollout_parity["adapter_version"],
-                                        "preflight_raw_adapter_model_sha256": self._qwen35_rollout_parity[
-                                            "raw_adapter"
-                                        ]["adapter_model_sha256"],
+                                        "preflight_raw_adapter_model_sha256": self._qwen35_rollout_parity["raw_adapter"][
+                                            "adapter_model_sha256"
+                                        ],
                                         "preflight_vllm_adapter_model_sha256": self._qwen35_rollout_parity[
                                             "vllm_adapter"
                                         ]["adapter_model_sha256"],
@@ -2431,6 +2524,20 @@ class RolloutParallelBackend:
                         }
                     }
                     if compatibility_manifest is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "muse_glimmer_vllm_parity": {
+                            "path": str(self._muse_rollout_parity_path),
+                            "sha256": self._muse_rollout_parity_sha256,
+                            "schema": self._muse_rollout_parity["schema"],
+                            "vllm_commit": self._muse_rollout_parity["runtime"]["vllm_commit"],
+                            "max_tokens": None,
+                            "termination": "eos_only",
+                        }
+                    }
+                    if muse_compatibility
                     else {}
                 ),
             }

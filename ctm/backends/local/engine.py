@@ -100,6 +100,17 @@ _DIRECT_LM_HEAD_CLASSES = {
 }
 _SOFTCAPPED_LM_HEAD_CLASSES = {"gemma2": frozenset({"Gemma2ForCausalLM"})}
 
+# Gemma 4 12B is a unified conditional-generation model, not a text-only
+# CausalLM.  Its name is intentionally narrow here: LocalBackend supports the
+# exact candidate under evaluation while direct benchmark evaluation uses the
+# stronger config-based check in ``ctm.evals.local_model``.
+_GEMMA4_UNIFIED_MODEL_TYPES = frozenset({"gemma4_unified", "gemma4"})
+
+
+def _is_gemma4_unified_model_reference(model: str) -> bool:
+    normalized = model.lower().replace("_", "-")
+    return "gemma-4-12b-it" in normalized or "gemma4-12b-it" in normalized
+
 # The dense Qwen3.5-9B hybrid backbone has 32 physical decoder layers.  Only
 # every fourth layer is conventional softmax attention; the other 24 are
 # DeltaNet layers and do not return the probability matrices AttCT optimizes.
@@ -152,6 +163,7 @@ class _SelectedTokenComponents:
 
     backbone: torch.nn.Module
     lm_head: torch.nn.Module
+    output_multiplier: float = 1.0
     final_logit_softcapping: float | None = None
 
 
@@ -182,7 +194,8 @@ def logical_loss_denominator(
 
     if loss_fn not in _GLOBAL_NORMALIZED_LOSS_FNS:
         raise ValueError(
-            "logical_loss_denominator supports only cross_entropy, ppo, or " f"importance_sampling; got {loss_fn!r}"
+            "logical_loss_denominator supports only cross_entropy, ppo, or "
+            f"importance_sampling; got {loss_fn!r}"
         )
     field = "weights" if loss_fn == "cross_entropy" else "mask"
     terms: list[torch.Tensor] = []
@@ -293,9 +306,7 @@ def _selected_target_logprobs(
     if logits.ndim != 2:
         raise ValueError(f"logits must have shape [tokens, vocabulary], got {tuple(logits.shape)}")
     if targets.ndim != 1 or targets.shape[0] != logits.shape[0]:
-        raise ValueError(
-            f"targets must have shape [tokens] matching logits; got logits={tuple(logits.shape)}, targets={tuple(targets.shape)}"
-        )
+        raise ValueError(f"targets must have shape [tokens] matching logits; got logits={tuple(logits.shape)}, targets={tuple(targets.shape)}")
     if chunk_size <= 0:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     if logits.shape[0] == 0:
@@ -323,6 +334,7 @@ def _selected_hidden_logprobs(
     lm_head: torch.nn.Module,
     *,
     chunk_size: int = _TARGET_LOGPROB_CHUNK_SIZE,
+    output_multiplier: float = 1.0,
     final_logit_softcapping: float | None = None,
     checkpoint_chunks: bool = True,
 ) -> torch.Tensor:
@@ -337,9 +349,7 @@ def _selected_hidden_logprobs(
     if hidden_states.ndim != 2:
         raise ValueError(f"hidden_states must have shape [tokens, hidden], got {tuple(hidden_states.shape)}")
     if targets.ndim != 1 or targets.shape[0] != hidden_states.shape[0]:
-        raise ValueError(
-            f"targets must have shape [tokens] matching hidden_states; got hidden_states={tuple(hidden_states.shape)}, targets={tuple(targets.shape)}"
-        )
+        raise ValueError(f"targets must have shape [tokens] matching hidden_states; got hidden_states={tuple(hidden_states.shape)}, targets={tuple(targets.shape)}")
     if chunk_size <= 0:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     if hidden_states.shape[0] == 0:
@@ -348,9 +358,9 @@ def _selected_hidden_logprobs(
     def selected(chunk_hidden: torch.Tensor, chunk_targets: torch.Tensor) -> torch.Tensor:
         chunk_logits = lm_head(chunk_hidden)
         if chunk_logits.ndim != 2 or chunk_logits.shape[0] != chunk_hidden.shape[0]:
-            raise RuntimeError(
-                f"selected-token LM head must return [tokens, vocabulary], got {tuple(chunk_logits.shape)} from {type(lm_head).__name__}"
-            )
+            raise RuntimeError(f"selected-token LM head must return [tokens, vocabulary], got {tuple(chunk_logits.shape)} from {type(lm_head).__name__}")
+        if output_multiplier != 1.0:
+            chunk_logits = chunk_logits * output_multiplier
         if final_logit_softcapping is not None:
             chunk_logits = torch.tanh(chunk_logits / final_logit_softcapping) * final_logit_softcapping
         return -F.cross_entropy(
@@ -364,11 +374,7 @@ def _selected_hidden_logprobs(
         end = min(start + chunk_size, hidden_states.shape[0])
         chunk_hidden = hidden_states[start:end]
         chunk_targets = targets[start:end]
-        if (
-            checkpoint_chunks
-            and torch.is_grad_enabled()
-            and (chunk_hidden.requires_grad or any(parameter.requires_grad for parameter in lm_head.parameters()))
-        ):
+        if checkpoint_chunks and torch.is_grad_enabled() and (chunk_hidden.requires_grad or any(parameter.requires_grad for parameter in lm_head.parameters())):
             values = checkpoint(selected, chunk_hidden, chunk_targets, use_reentrant=False)
         else:
             values = selected(chunk_hidden, chunk_targets)
@@ -383,6 +389,7 @@ def _selected_hidden_raw_and_temperature_logprobs(
     *,
     temperature: float,
     chunk_size: int = _TARGET_LOGPROB_CHUNK_SIZE,
+    output_multiplier: float = 1.0,
     final_logit_softcapping: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return raw-policy and temperature-adjusted selected-token scores.
@@ -418,6 +425,8 @@ def _selected_hidden_raw_and_temperature_logprobs(
                 "selected-token LM head must return [tokens, vocabulary], "
                 f"got {tuple(chunk_logits.shape)} from {type(lm_head).__name__}"
             )
+        if output_multiplier != 1.0:
+            chunk_logits = chunk_logits * output_multiplier
         if final_logit_softcapping is not None:
             chunk_logits = torch.tanh(chunk_logits / final_logit_softcapping) * final_logit_softcapping
         float_logits = chunk_logits.float()
@@ -459,13 +468,40 @@ def _selected_token_components(model: torch.nn.Module) -> _SelectedTokenComponen
 
     config = getattr(causal_lm, "config", None)
     model_type = getattr(config, "model_type", None)
+    if (
+        model_type == "muse_glimmer"
+        and type(causal_lm).__name__ == "MuseGlimmerForConditionalGeneration"
+        and type(causal_lm).__module__.startswith("transformers.models.")
+    ):
+        multimodal_backbone = getattr(causal_lm, "model", None)
+        backbone = getattr(multimodal_backbone, "language_model", None)
+        get_output_embeddings = getattr(causal_lm, "get_output_embeddings", None)
+        lm_head = get_output_embeddings() if callable(get_output_embeddings) else None
+        text_config = getattr(config, "text_config", None)
+        multiplier = getattr(text_config, "output_multiplier", None)
+        softcap = getattr(text_config, "final_logit_softcapping", None)
+        if (
+            not isinstance(backbone, torch.nn.Module)
+            or not isinstance(lm_head, torch.nn.Module)
+            or isinstance(multiplier, bool)
+            or not isinstance(multiplier, (int, float))
+            or not math.isfinite(float(multiplier))
+            or float(multiplier) <= 0
+            or isinstance(softcap, bool)
+            or not isinstance(softcap, (int, float))
+            or not math.isfinite(float(softcap))
+            or float(softcap) <= 0
+        ):
+            return None
+        return _SelectedTokenComponents(
+            backbone=backbone,
+            lm_head=lm_head,
+            output_multiplier=float(multiplier),
+            final_logit_softcapping=float(softcap),
+        )
     supported_classes = _DIRECT_LM_HEAD_CLASSES.get(model_type) or _SOFTCAPPED_LM_HEAD_CLASSES.get(model_type)
     causal_lm_type = type(causal_lm)
-    if (
-        supported_classes is None
-        or causal_lm_type.__name__ not in supported_classes
-        or not causal_lm_type.__module__.startswith("transformers.models.")
-    ):
+    if supported_classes is None or causal_lm_type.__name__ not in supported_classes or not causal_lm_type.__module__.startswith("transformers.models."):
         return None
 
     prefix = getattr(causal_lm, "base_model_prefix", None)
@@ -504,6 +540,8 @@ def _gradient_checkpointing_backbone_layers(model: torch.nn.Module) -> list[torc
 
     prefix = getattr(causal_lm, "base_model_prefix", None)
     backbone = getattr(causal_lm, prefix, None) if isinstance(prefix, str) and prefix else None
+    if getattr(getattr(causal_lm, "config", None), "model_type", None) == "muse_glimmer":
+        backbone = getattr(backbone, "language_model", None)
     layers = (
         getattr(backbone, "layers", None)
         if isinstance(backbone, torch.nn.Module) and backbone is not causal_lm
@@ -571,7 +609,10 @@ def _inspect_qwen35_consistency_topology(model: torch.nn.Module) -> tuple[dict[s
         )
         return report, errors
     if not isinstance(layers, torch.nn.ModuleList):
-        errors.append("Qwen3.5 consistency preflight could not resolve decoder layers at " "<base_model_prefix>.layers")
+        errors.append(
+            "Qwen3.5 consistency preflight could not resolve decoder layers at "
+            "<base_model_prefix>.layers"
+        )
         return report, errors
     if len(layers) != _QWEN35_CONSISTENCY_DECODER_LAYERS:
         errors.append(
@@ -624,12 +665,10 @@ def _inspect_qwen35_strict_qv_lora(
         errors.append("Qwen3.5 consistency preflight has no recorded LoRA configuration")
     else:
         targets = configured_lora.target_modules
-        if (
-            not isinstance(targets, list)
-            or len(targets) != 2
-            or set(targets) != set(_QWEN35_CONSISTENCY_TARGET_PROJECTIONS)
-        ):
-            errors.append("Qwen3.5 consistency preflight requires exact target_modules=['q_proj', 'v_proj']")
+        if not isinstance(targets, list) or len(targets) != 2 or set(targets) != set(_QWEN35_CONSISTENCY_TARGET_PROJECTIONS):
+            errors.append(
+                "Qwen3.5 consistency preflight requires exact target_modules=['q_proj', 'v_proj']"
+            )
         if configured_lora.train_mlp or configured_lora.train_attn or configured_lora.train_unembed:
             errors.append(
                 "Qwen3.5 consistency preflight requires all portable LoRA component flags "
@@ -730,7 +769,8 @@ def _inspect_qwen35_act_attention_lora(
             or set(targets) != set(_QWEN35_ACT_TARGET_PROJECTIONS)
         ):
             errors.append(
-                "Qwen3.5 ACT preflight requires exact target_modules=" f"{list(_QWEN35_ACT_TARGET_PROJECTIONS)!r}"
+                "Qwen3.5 ACT preflight requires exact target_modules="
+                f"{list(_QWEN35_ACT_TARGET_PROJECTIONS)!r}"
             )
         if configured_lora.train_mlp or configured_lora.train_attn or configured_lora.train_unembed:
             errors.append(
@@ -756,11 +796,9 @@ def _inspect_qwen35_act_attention_lora(
         expected_projections = (
             _QWEN35_ACT_FULL_ATTENTION_PROJECTIONS
             if family == "self_attn" and layer in _QWEN35_CONSISTENCY_FULL_ATTENTION_LAYERS
-            else (
-                _QWEN35_ACT_LINEAR_ATTENTION_PROJECTIONS
-                if family == "linear_attn" and layer not in _QWEN35_CONSISTENCY_FULL_ATTENTION_LAYERS
-                else ()
-            )
+            else _QWEN35_ACT_LINEAR_ATTENTION_PROJECTIONS
+            if family == "linear_attn" and layer not in _QWEN35_CONSISTENCY_FULL_ATTENTION_LAYERS
+            else ()
         )
         if projection not in expected_projections:
             unexpected_trainable.append(name)
@@ -874,9 +912,7 @@ def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> lis
     if config.target_modules is not None:
         names = [name for component_names in components.values() for name in component_names]
         selected = [name for name in names if any(_name_matches(name, target) for target in config.target_modules)]
-        unmatched = [
-            target for target in config.target_modules if not any(_name_matches(name, target) for name in names)
-        ]
+        unmatched = [target for target in config.target_modules if not any(_name_matches(name, target) for name in names)]
         if unmatched:
             raise ValueError(f"model {type(model).__name__} has no linear modules matching target_modules={unmatched}")
         return selected
@@ -887,15 +923,9 @@ def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> lis
         "unembed": config.train_unembed,
     }
     raw_mlp_parameters = _lora_target_parameter_names(model, config)
-    missing = [
-        component
-        for component, selected in enabled.items()
-        if selected and not components[component] and not (component == "mlp" and raw_mlp_parameters)
-    ]
+    missing = [component for component, selected in enabled.items() if selected and not components[component] and not (component == "mlp" and raw_mlp_parameters)]
     if missing:
-        raise NotImplementedError(
-            f"model {type(model).__name__} exposes no local LoRA modules for selected component(s): {missing}"
-        )
+        raise NotImplementedError(f"model {type(model).__name__} exposes no local LoRA modules for selected component(s): {missing}")
     return [name for component, names in components.items() if enabled[component] for name in names]
 
 
@@ -951,9 +981,7 @@ class LocalSamplerHandle:
         self._pending: list[tuple[dict[str, Any], asyncio.Future]] = []
         self._flush_task: asyncio.Task | None = None
 
-    async def sample(
-        self, prompt: Any, *, max_tokens: int, temperature: float, stop: Any, num_samples: int
-    ) -> list[SampledSequence]:
+    async def sample(self, prompt: Any, *, max_tokens: int | None, temperature: float, stop: Any, num_samples: int) -> list[SampledSequence]:
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         self._pending.append(
@@ -1015,9 +1043,7 @@ class LocalSamplerHandle:
                         use_base=self._use_base,
                     )
                     if len(results) != len(group):
-                        raise RuntimeError(
-                            f"local sampler returned {len(results)} prompt results for {len(group)} requests"
-                        )
+                        raise RuntimeError(f"local sampler returned {len(results)} prompt results for {len(group)} requests")
                 except BaseException as exc:  # noqa: BLE001 -- propagate cancellation/failure to every queued future
                     for _, future in group:
                         if not future.done():
@@ -1067,6 +1093,7 @@ class LocalBackend:
         consistency_loss_options: Optional[dict] = None,
         full_finetune_modules: Optional[Sequence[str]] = None,
         keep_frozen_base: bool = False,
+        hf_language_model_only: bool = False,
         device_map: Optional[Any] = None,
         max_memory: Optional[dict] = None,
         gradient_checkpointing: bool = False,
@@ -1097,6 +1124,9 @@ class LocalBackend:
                 train when ``use_lora=False``. ``None`` trains every parameter.
             keep_frozen_base: retain an immutable copy of the initial model for
                 clean/reference forwards during selective full fine-tuning.
+            hf_language_model_only: after loading a supported multimodal model,
+                detach its unused vision/connector modules while retaining the
+                canonical outer text-model key path needed by PEFT and vLLM.
             device_map: Transformers/Accelerate device map (for example,
                 ``"auto"``) used to place one training model across the GPUs in
                 this process. This is placement only; the training methods do
@@ -1145,6 +1175,7 @@ class LocalBackend:
         self.consistency_loss_options = consistency_loss_options or {}
         self.full_finetune_modules = list(full_finetune_modules) if full_finetune_modules is not None else None
         self.keep_frozen_base = keep_frozen_base
+        self.hf_language_model_only = hf_language_model_only
         if max_memory is not None and device_map is None:
             raise ValueError("max_memory requires device_map")
         if model_instance is not None and device_map is not None:
@@ -1168,9 +1199,7 @@ class LocalBackend:
             ("target_logprob_chunk_size", target_logprob_chunk_size),
         ):
             allows_none = name != "target_logprob_chunk_size"
-            if (value is None and not allows_none) or (
-                value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1)
-            ):
+            if (value is None and not allows_none) or (value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1)):
                 suffix = " or None" if allows_none else ""
                 raise ValueError(f"{name} must be a positive integer{suffix}, got {value!r}")
         self.device_map = device_map
@@ -1205,7 +1234,8 @@ class LocalBackend:
             if gradient_reducer in {"torch.distributed", "torch_distributed"}:
                 return sum_trainable_gradients_torch_distributed
             raise ValueError(
-                "gradient_reducer must be None, a callable, or 'torch.distributed'; " f"got {gradient_reducer!r}"
+                "gradient_reducer must be None, a callable, or 'torch.distributed'; "
+                f"got {gradient_reducer!r}"
             )
         if not callable(gradient_reducer):
             raise TypeError(
@@ -1232,39 +1262,60 @@ class LocalBackend:
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
-    def setup(
-        self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False
-    ) -> None:
+    def setup(self, *, model: str, lora: LoRAConfig, resume_from: Optional[str] = None, resume_with_optimizer: bool = False) -> None:
         self.model_name = model
         self._configured_lora = lora.model_copy(deep=True)
         if self.model is None:
-            from transformers import AutoModelForCausalLM
+            import transformers
 
             load_kwargs: dict[str, Any] = {"torch_dtype": self.dtype}
             if self.device_map is not None:
                 load_kwargs["device_map"] = self.device_map
                 if self.max_memory is not None:
                     load_kwargs["max_memory"] = self.max_memory
-            self.model = AutoModelForCausalLM.from_pretrained(model, **load_kwargs)
+            requires_unified_gemma_loader = _is_gemma4_unified_model_reference(model)
+            if self.hf_language_model_only or requires_unified_gemma_loader:
+                from transformers import AutoConfig
+
+                model_config = AutoConfig.from_pretrained(model)
+                load_kwargs["config"] = model_config
+            else:
+                model_config = None
+            model_type = getattr(model_config, "model_type", None)
+            if model_type in _GEMMA4_UNIFIED_MODEL_TYPES:
+                if self.hf_language_model_only:
+                    raise ValueError(
+                        "Gemma 4 unified loading must retain the full conditional-generation wrapper; "
+                        "do not set hf_language_model_only"
+                    )
+                model_loader = getattr(transformers, "AutoModelForImageTextToText", None)
+                if model_loader is None:
+                    raise ImportError(
+                        "Gemma 4 unified loading requires a Transformers runtime exposing "
+                        "AutoModelForImageTextToText"
+                    )
+                self.model = model_loader.from_pretrained(model, **load_kwargs)
+            elif model_type == "muse_glimmer":
+                from transformers import AutoModelForMultimodalLM
+
+                self.model = AutoModelForMultimodalLM.from_pretrained(model, **load_kwargs)
+            else:
+                self.model = transformers.AutoModelForCausalLM.from_pretrained(model, **load_kwargs)
+        if self.hf_language_model_only:
+            self._detach_unused_multimodal_modules()
         if self.use_lora:
             if self.full_finetune_modules is not None:
                 raise ValueError("full_finetune_modules applies only when use_lora=False")
             if self.keep_frozen_base:
                 raise ValueError("keep_frozen_base is unnecessary with LoRA; disabling the adapter is the frozen base")
             if not HAS_PEFT:
-                raise ImportError(
-                    "LocalBackend(use_lora=True) requires peft: `uv pip install peft`, or pass use_lora=False for full fine-tuning."
-                )
+                raise ImportError("LocalBackend(use_lora=True) requires peft: `uv pip install peft`, or pass use_lora=False for full fine-tuning.")
             if lora.seed is not None:
                 torch.manual_seed(lora.seed)
             target_modules = _lora_target_module_names(self.model, lora)
             target_parameters = _lora_target_parameter_names(self.model, lora)
             parameters = dict(self.model.named_parameters())
-            fused_experts = [
-                (name, tuple(parameters[name].shape))
-                for name in target_parameters
-                if name in parameters and parameters[name].ndim == 3
-            ]
+            fused_experts = [(name, tuple(parameters[name].shape)) for name in target_parameters if name in parameters and parameters[name].ndim == 3]
             if fused_experts:
                 examples = ", ".join(f"{name} {shape}" for name, shape in fused_experts[:2])
                 warnings.warn(
@@ -1287,18 +1338,14 @@ class LocalBackend:
                 task_type="CAUSAL_LM",
             )
             self.model = get_peft_model(self.model, peft_cfg)
-            self._trainable_parameter_names = [
-                name for name, parameter in self.model.named_parameters() if parameter.requires_grad
-            ]
+            self._trainable_parameter_names = [name for name, parameter in self.model.named_parameters() if parameter.requires_grad]
         else:
             if self.keep_frozen_base:
                 self._frozen_base_model = copy.deepcopy(self.model)
                 self._frozen_base_model.eval()
                 for parameter in self._frozen_base_model.parameters():
                     parameter.requires_grad_(False)
-            self._trainable_parameter_names = _configure_full_finetune_parameters(
-                self.model, self.full_finetune_modules
-            )
+            self._trainable_parameter_names = _configure_full_finetune_parameters(self.model, self.full_finetune_modules)
         if self.device_map is None:
             self.model.to(self.device)
             if self._frozen_base_model is not None:
@@ -1312,9 +1359,7 @@ class LocalBackend:
                 raise RuntimeError("device_map was requested but the loaded model has no hf_device_map")
             unsupported = sorted({str(value) for value in placement.values() if str(value) in {"cpu", "disk", "meta"}})
             if unsupported:
-                raise ValueError(
-                    f"LocalBackend device_map training requires GPU-only placement; found offload target(s): {unsupported}"
-                )
+                raise ValueError(f"LocalBackend device_map training requires GPU-only placement; found offload target(s): {unsupported}")
             embeddings = self.model.get_input_embeddings() if hasattr(self.model, "get_input_embeddings") else None
             embedding_parameter = next(embeddings.parameters(), None) if embeddings is not None else None
             if embedding_parameter is not None and embedding_parameter.device.type != "meta":
@@ -1357,9 +1402,7 @@ class LocalBackend:
         if resume_from:
             self._load_checkpoint(resume_from, with_optimizer=resume_with_optimizer)
         if self.sampler == "vllm" and not self.use_lora:
-            raise NotImplementedError(
-                "sampler='vllm' requires use_lora=True: policy refresh works by hot-reloading the adapter; full-finetune weights cannot be swapped into a running vLLM engine."
-            )
+            raise NotImplementedError("sampler='vllm' requires use_lora=True: policy refresh works by hot-reloading the adapter; full-finetune weights cannot be swapped into a running vLLM engine.")
         # The vLLM engine itself boots lazily (_ensure_vllm) on the first sampler
         # request: runs that never sample (SFT) must not pay its GPU memory or
         # require the vllm package at all.
@@ -1368,6 +1411,37 @@ class LocalBackend:
         if self.model is None:
             raise RuntimeError("LocalBackend.setup() must be called before use")
         return self.model
+
+    def _detach_unused_multimodal_modules(self) -> None:
+        """Drop Muse's unused vision tower without changing text adapter keys."""
+
+        model = self._require_model()
+        if getattr(getattr(model, "config", None), "model_type", None) != "muse_glimmer":
+            raise NotImplementedError(
+                "hf_language_model_only currently supports only Muse Glimmer"
+            )
+        multimodal = getattr(model, "model", None)
+        language_model = getattr(multimodal, "language_model", None)
+        if not isinstance(language_model, torch.nn.Module):
+            raise RuntimeError(
+                "Muse Glimmer text-only loading requires model.language_model"
+            )
+        detached = []
+        for name in (
+            "vision_tower",
+            "vision_adapter",
+            "vision_projection",
+            "perception_emb_norm",
+        ):
+            if not hasattr(multimodal, name):
+                raise RuntimeError(
+                    f"Muse Glimmer text-only loading could not find model.{name}"
+                )
+            if getattr(multimodal, name) is not None:
+                setattr(multimodal, name, None)
+                detached.append(name)
+        if not detached:
+            raise RuntimeError("Muse Glimmer vision modules were already absent")
 
     # ── samplers ─────────────────────────────────────────────────────────
 
@@ -1500,9 +1574,7 @@ class LocalBackend:
 
     def _require_base(self):
         if not ((self.use_lora and HAS_PEFT) or self._frozen_base_model is not None):
-            raise NotImplementedError(
-                "Base-model access (anchor sampling / KL-to-base / distill) on LocalBackend requires LoRA or keep_frozen_base=True for full fine-tuning."
-            )
+            raise NotImplementedError("Base-model access (anchor sampling / KL-to-base / distill) on LocalBackend requires LoRA or keep_frozen_base=True for full fine-tuning.")
 
     def _base_ctx(self):
         self._require_base()
@@ -1571,15 +1643,15 @@ class LocalBackend:
         python_rng_state = random.getstate()
         torch_rng_state = torch.get_rng_state()
         cuda_rng_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-        trainable_parameters = [
-            (name, parameter) for name, parameter in model.named_parameters() if parameter.requires_grad
-        ]
+        trainable_parameters = [(name, parameter) for name, parameter in model.named_parameters() if parameter.requires_grad]
         gradients_before = [
             (parameter, None if parameter.grad is None else parameter.grad.detach().clone())
             for _, parameter in trainable_parameters
         ]
         adapter_parameter_snapshots = [
-            (parameter, parameter.detach().clone()) for name, parameter in model.named_parameters() if ".lora_" in name
+            (parameter, parameter.detach().clone())
+            for name, parameter in model.named_parameters()
+            if ".lora_" in name
         ]
         module_training_before = [(module, module.training) for module in model.modules()]
         attention_implementation_before: list[tuple[torch.nn.Module, Any, Any]] = []
@@ -1589,7 +1661,9 @@ class LocalBackend:
             if config is None or not hasattr(config, "_attn_implementation") or id(config) in seen_attention_configs:
                 continue
             seen_attention_configs.add(id(config))
-            attention_implementation_before.append((candidate, config, getattr(config, "_attn_implementation")))
+            attention_implementation_before.append(
+                (candidate, config, getattr(config, "_attn_implementation"))
+            )
         consistency_loss_modules_before = dict(self._consistency_loss_modules)
         mlp_hooks_before = self._mlp_hooks
         base_mlp_hooks_before = self._base_mlp_hooks
@@ -1743,9 +1817,7 @@ class LocalBackend:
                     if positive:
                         positive_by_family[family] = positive_by_family.get(family, 0) + 1
                     if not valid:
-                        requirement = (
-                            "a finite LoRA-B gradient" if method == "act" else "a finite positive LoRA-B gradient"
-                        )
+                        requirement = "a finite LoRA-B gradient" if method == "act" else "a finite positive LoRA-B gradient"
                         errors.append(
                             f"Qwen3.5 consistency preflight requires {requirement} for "
                             f"physical layer {layer} {projection}; got gradient_present={gradient is not None}, "
@@ -1848,9 +1920,7 @@ class LocalBackend:
                 if not backend_caches_restored:
                     errors.append("could not restore LocalBackend consistency caches after preflight")
             except Exception as exc:  # pragma: no cover - defensive cache recovery
-                errors.append(
-                    f"could not restore LocalBackend consistency caches after preflight: {type(exc).__name__}: {exc}"
-                )
+                errors.append(f"could not restore LocalBackend consistency caches after preflight: {type(exc).__name__}: {exc}")
 
             # Do this after every model/config/cache restoration in case an
             # architecture-specific attention setter touches a generator.
@@ -1943,7 +2013,7 @@ class LocalBackend:
         self,
         *,
         prompt_tokens: list[int],
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -1963,7 +2033,7 @@ class LocalBackend:
         self,
         *,
         prompt_tokens_batch: Sequence[Sequence[int]],
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -1992,7 +2062,7 @@ class LocalBackend:
         self,
         *,
         prompt_tokens: list[int],
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -2011,7 +2081,7 @@ class LocalBackend:
         self,
         *,
         prompt_tokens_batch: Sequence[Sequence[int]],
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -2045,6 +2115,86 @@ class LocalBackend:
                 raise ValueError("sampling prompts must contain at least one token")
             input_ids[index, -len(tokens) :] = torch.tensor(tokens, dtype=torch.long, device=self.device)
             attention_mask[index, -len(tokens) :] = 1
+        if max_tokens is None:
+            if not eos_ids:
+                raise RuntimeError("EOS-only local HF generation requires at least one concrete EOS/stop token")
+            if not isinstance(num_samples, int) or isinstance(num_samples, bool) or num_samples < 1:
+                raise ValueError("num_samples must be a positive integer")
+
+            # Do not call Transformers.generate here: its defaults introduce a
+            # hidden length bound when max_new_tokens is absent.  This manual
+            # cached loop has no counter or length stopping criterion.  Every
+            # sequence must terminate by emitting one of the model/renderer
+            # EOS tokens above.
+            expanded_input_ids = input_ids.repeat_interleave(num_samples, dim=0)
+            running_attention = attention_mask.repeat_interleave(num_samples, dim=0)
+            generated = expanded_input_ids
+            sequence_count = generated.shape[0]
+            unfinished = torch.ones(sequence_count, dtype=torch.bool, device=self.device)
+            sampled_tokens: list[list[int]] = [[] for _ in range(sequence_count)]
+            sampled_logprobs: list[list[float]] = [[] for _ in range(sequence_count)]
+            past_key_values = None
+            try:
+                with torch.no_grad():
+                    ctx = self._base_ctx() if use_base else _nullcontext()
+                    with ctx:
+                        while bool(torch.any(unfinished).item()):
+                            model_input_ids = generated if past_key_values is None else generated[:, -1:]
+                            outputs = model(
+                                input_ids=model_input_ids,
+                                attention_mask=running_attention,
+                                past_key_values=past_key_values,
+                                use_cache=True,
+                                return_dict=True,
+                            )
+                            past_key_values = getattr(outputs, "past_key_values", None)
+                            if past_key_values is None:
+                                raise RuntimeError("EOS-only local HF generation requires a model KV cache")
+                            logits = outputs.logits[:, -1, :].float()
+                            if temperature > 0:
+                                behavior_logprobs = torch.log_softmax(logits / float(temperature), dim=-1)
+                                next_tokens = torch.multinomial(behavior_logprobs.exp(), num_samples=1).squeeze(-1)
+                            else:
+                                behavior_logprobs = torch.log_softmax(logits, dim=-1)
+                                next_tokens = torch.argmax(logits, dim=-1)
+                            selected_logprobs = behavior_logprobs.gather(-1, next_tokens[:, None]).squeeze(-1)
+
+                            active_before_step = unfinished.clone()
+                            emitted = torch.where(
+                                active_before_step,
+                                next_tokens,
+                                torch.full_like(next_tokens, pad_token_id),
+                            )
+                            for sequence_index in torch.nonzero(active_before_step, as_tuple=False).flatten().tolist():
+                                sampled_tokens[sequence_index].append(int(emitted[sequence_index]))
+                                sampled_logprobs[sequence_index].append(float(selected_logprobs[sequence_index]))
+
+                            generated = torch.cat((generated, emitted[:, None]), dim=-1)
+                            running_attention = torch.cat(
+                                (
+                                    running_attention,
+                                    active_before_step.to(dtype=running_attention.dtype)[:, None],
+                                ),
+                                dim=-1,
+                            )
+                            finished_now = torch.zeros_like(unfinished)
+                            for eos_token_id in eos_ids:
+                                finished_now |= emitted.eq(eos_token_id)
+                            unfinished &= ~finished_now
+            finally:
+                if was_training:
+                    model.train()
+
+            return [
+                [
+                    SampledSequence(
+                        tokens=sampled_tokens[prompt_index * num_samples + sample_index],
+                        logprobs=sampled_logprobs[prompt_index * num_samples + sample_index],
+                    )
+                    for sample_index in range(num_samples)
+                ]
+                for prompt_index in range(len(prompt_tokens_batch))
+            ]
         try:
             with torch.no_grad():
                 ctx = self._base_ctx() if use_base else _nullcontext()
@@ -2102,12 +2252,7 @@ class LocalBackend:
                 raise ValueError(f"token counts must be non-negative, got {token_count} at index {index}")
         if not token_counts:
             return []
-        all_fit = (
-            self.forward_microbatch_max_datums is None or len(token_counts) <= self.forward_microbatch_max_datums
-        ) and (
-            self.forward_microbatch_max_tokens is None
-            or len(token_counts) * max(token_counts) <= self.forward_microbatch_max_tokens
-        )
+        all_fit = (self.forward_microbatch_max_datums is None or len(token_counts) <= self.forward_microbatch_max_datums) and (self.forward_microbatch_max_tokens is None or len(token_counts) * max(token_counts) <= self.forward_microbatch_max_tokens)
         if all_fit:
             return [list(range(len(token_counts)))]
 
@@ -2119,13 +2264,8 @@ class LocalBackend:
             token_count = token_counts[index]
             next_count = len(chunk) + 1
             next_max_tokens = max(max_tokens, token_count)
-            exceeds_datums = (
-                self.forward_microbatch_max_datums is not None and next_count > self.forward_microbatch_max_datums
-            )
-            exceeds_tokens = (
-                self.forward_microbatch_max_tokens is not None
-                and next_count * next_max_tokens > self.forward_microbatch_max_tokens
-            )
+            exceeds_datums = self.forward_microbatch_max_datums is not None and next_count > self.forward_microbatch_max_datums
+            exceeds_tokens = self.forward_microbatch_max_tokens is not None and next_count * next_max_tokens > self.forward_microbatch_max_tokens
             if chunk and (exceeds_datums or exceeds_tokens):
                 chunks.append(chunk)
                 chunk = []
@@ -2151,23 +2291,19 @@ class LocalBackend:
             raise ValueError("token_lists, prediction_positions, and targets must have the same length")
         if not token_lists:
             return ([], []) if behavior_temperature is not None else []
-        if behavior_temperature is not None and (not math.isfinite(behavior_temperature) or behavior_temperature <= 0):
+        if behavior_temperature is not None and (
+            not math.isfinite(behavior_temperature) or behavior_temperature <= 0
+        ):
             raise ValueError("behavior_temperature must be a finite positive number")
 
         normalized_tokens = [list(tokens) for tokens in token_lists]
         normalized_positions = [list(positions) for positions in prediction_positions]
         normalized_targets = [target.long().to(self.device) for target in targets]
-        for index, (tokens, positions, target) in enumerate(
-            zip(normalized_tokens, normalized_positions, normalized_targets)
-        ):
+        for index, (tokens, positions, target) in enumerate(zip(normalized_tokens, normalized_positions, normalized_targets)):
             if len(positions) != target.numel():
-                raise ValueError(
-                    f"prediction positions and targets differ at index {index}: {len(positions)} and {target.numel()}"
-                )
+                raise ValueError(f"prediction positions and targets differ at index {index}: {len(positions)} and {target.numel()}")
             if any(position < 0 or position >= len(tokens) for position in positions):
-                raise ValueError(
-                    f"prediction positions at index {index} must be within a {len(tokens)}-token input, got {positions}"
-                )
+                raise ValueError(f"prediction positions at index {index} must be within a {len(tokens)}-token input, got {positions}")
 
         max_len = max(len(tokens) for tokens in normalized_tokens)
         if max_len == 0:
@@ -2221,13 +2357,9 @@ class LocalBackend:
             )
             hidden_states = getattr(backbone_output, "last_hidden_state", None)
             if not isinstance(hidden_states, torch.Tensor) or hidden_states.ndim != 3:
-                raise RuntimeError(
-                    f"{type(components.backbone).__name__} did not return [batch, sequence, hidden] last_hidden_state"
-                )
+                raise RuntimeError(f"{type(components.backbone).__name__} did not return [batch, sequence, hidden] last_hidden_state")
             if hidden_states.shape[:2] != input_ids.shape:
-                raise RuntimeError(
-                    f"selected-token backbone changed the batch/sequence shape: input={tuple(input_ids.shape)}, hidden={tuple(hidden_states.shape)}"
-                )
+                raise RuntimeError(f"selected-token backbone changed the batch/sequence shape: input={tuple(input_ids.shape)}, hidden={tuple(hidden_states.shape)}")
             del backbone_output
 
             selected_hidden = []
@@ -2251,6 +2383,7 @@ class LocalBackend:
                     flat_targets,
                     components.lm_head,
                     chunk_size=self.target_logprob_chunk_size,
+                    output_multiplier=components.output_multiplier,
                     final_logit_softcapping=components.final_logit_softcapping,
                     # Disabled-adapter base scoring is no-grad in supported callers.
                     # Avoid a future backward recomputation after that context exits.
@@ -2264,6 +2397,7 @@ class LocalBackend:
                 components.lm_head,
                 temperature=behavior_temperature,
                 chunk_size=self.target_logprob_chunk_size,
+                output_multiplier=components.output_multiplier,
                 final_logit_softcapping=components.final_logit_softcapping,
             )
             return (
@@ -2280,9 +2414,7 @@ class LocalBackend:
         targets = [d.loss_fn_inputs["target_tokens"].to_torch() for d in datums]
         for index, (tokens, target) in enumerate(zip(token_lists, targets)):
             if len(tokens) != target.numel():
-                raise ValueError(
-                    f"model_input and target_tokens must align at index {index}, got {len(tokens)} and {target.numel()} tokens"
-                )
+                raise ValueError(f"model_input and target_tokens must align at index {index}, got {len(tokens)} and {target.numel()} tokens")
         output = self._predictive_logprobs_batch(
             token_lists,
             [range(len(tokens)) for tokens in token_lists],
@@ -2362,7 +2494,8 @@ class LocalBackend:
         if isinstance(global_loss_denominator, torch.Tensor):
             if global_loss_denominator.numel() != 1:
                 raise ValueError(
-                    "global_loss_denominator must be scalar, got " f"shape {tuple(global_loss_denominator.shape)}"
+                    "global_loss_denominator must be scalar, got "
+                    f"shape {tuple(global_loss_denominator.shape)}"
                 )
             denominator = global_loss_denominator.detach().to(device=like.device, dtype=like.dtype)
         else:
@@ -2402,13 +2535,19 @@ class LocalBackend:
         if loss_fn == "cross_entropy":
             weights = [d.loss_fn_inputs["weights"].to_torch().to(self.device) for d in datums]
             local_denominator = (
-                sum(weight.sum() for weight in weights) if weights else torch.zeros((), device=self.device)
+                sum(weight.sum() for weight in weights)
+                if weights
+                else torch.zeros((), device=self.device)
             )
         else:
             sampled = [d.loss_fn_inputs["logprobs"].to_torch().to(self.device) for d in datums]
             advs = [d.loss_fn_inputs["advantages"].to_torch().to(self.device) for d in datums]
             masks = [d.loss_fn_inputs["mask"].to_torch().float().to(self.device) for d in datums]
-            local_denominator = sum(mask.sum() for mask in masks) if masks else torch.zeros((), device=self.device)
+            local_denominator = (
+                sum(mask.sum() for mask in masks)
+                if masks
+                else torch.zeros((), device=self.device)
+            )
         denominator = (
             local_denominator
             if global_loss_denominator is None
@@ -2426,9 +2565,7 @@ class LocalBackend:
         for indices in self._forward_microbatches(token_counts):
             chunk_logprobs = self._target_logprobs_batch([datums[index] for index in indices])
             if loss_fn == "cross_entropy":
-                chunk_numerator = sum(
-                    (weights[index] * logprob).sum() for index, logprob in zip(indices, chunk_logprobs)
-                )
+                chunk_numerator = sum((weights[index] * logprob).sum() for index, logprob in zip(indices, chunk_logprobs))
             else:
                 chunk_terms = []
                 for index, logprob in zip(indices, chunk_logprobs):
@@ -2487,6 +2624,7 @@ class LocalBackend:
 
         ``behavior_temperature`` is retained as a compatibility/validation
         argument, but it is not used to reconstruct the behavior distribution.
+        A finite zero remains valid for the legacy greedy-surrogate path.
         The authoritative processed behavior log-probabilities are the values
         returned by generation and stored in each datum's ``logprobs`` tensor.
         They are detached in the importance ratio. The reverse-KL signal uses
@@ -2495,8 +2633,8 @@ class LocalBackend:
 
         if loss_fn not in ("importance_sampling", "ppo"):
             raise ValueError(f"OPCT supports importance_sampling or ppo, got {loss_fn!r}")
-        if not math.isfinite(behavior_temperature) or behavior_temperature <= 0:
-            raise ValueError("behavior_temperature must be a finite positive number")
+        if not math.isfinite(behavior_temperature) or behavior_temperature < 0:
+            raise ValueError("behavior_temperature must be a finite non-negative number")
         if not math.isfinite(kl_coef) or kl_coef <= 0:
             raise ValueError("kl_coef must be a finite positive number")
         if not math.isfinite(kl_discount_factor) or not 0 <= kl_discount_factor <= 1:
@@ -2557,7 +2695,8 @@ class LocalBackend:
             teacher = teacher_data.to_torch().float().to(self.device)
             if teacher.ndim != 1 or teacher.numel() != int(mask.sum()):
                 raise ValueError(
-                    f"OPCT datum {index} has {int(mask.sum())} action tokens but " f"{teacher.numel()} teacher logprobs"
+                    f"OPCT datum {index} has {int(mask.sum())} action tokens but "
+                    f"{teacher.numel()} teacher logprobs"
                 )
             if not torch.isfinite(teacher).all():
                 raise ValueError(f"OPCT datum {index} contains non-finite teacher logprobs")
@@ -2624,7 +2763,9 @@ class LocalBackend:
             if chunk_loss.requires_grad:
                 chunk_loss.backward()
             detached_numerator = chunk_numerator.detach()
-            total_numerator = detached_numerator if total_numerator is None else total_numerator + detached_numerator
+            total_numerator = (
+                detached_numerator if total_numerator is None else total_numerator + detached_numerator
+            )
             del raw_scores, chunk_numerator, chunk_loss
 
         if total_numerator is None:
@@ -2648,9 +2789,7 @@ class LocalBackend:
 
     def _consistency_loss(self, loss_fn: str) -> consistency_losses.ConsistencyLoss:
         if loss_fn not in self._consistency_loss_modules:
-            self._consistency_loss_modules[loss_fn] = consistency_losses.create_consistency_loss(
-                loss_fn, self.consistency_loss_options
-            )
+            self._consistency_loss_modules[loss_fn] = consistency_losses.create_consistency_loss(loss_fn, self.consistency_loss_options)
         return self._consistency_loss_modules[loss_fn]
 
     def _consistency_forward_backward(
@@ -2687,9 +2826,7 @@ class LocalBackend:
         # sdpa/flash kernels don't materialize attention weights (transformers ≥5
         # returns empty ``attentions`` instead of falling back) — switch to eager.
         if needs_attentions and model.config._attn_implementation != "eager":
-            print(
-                f"LocalBackend: switching attention from {model.config._attn_implementation!r} to 'eager' for {loss_fn}"
-            )
+            print(f"LocalBackend: switching attention from {model.config._attn_implementation!r} to 'eager' for {loss_fn}")
             model.set_attn_implementation("eager")
         base_model = self._model_for(use_base=True)
         if needs_attentions and base_model is not model and base_model.config._attn_implementation != "eager":
@@ -2711,9 +2848,7 @@ class LocalBackend:
                     base_hooks = MLPHookManager(base_model, variant=getattr(loss_module, "variant", "hidden")).install()
                 else:
                     if self._base_mlp_hooks is None:
-                        self._base_mlp_hooks = MLPHookManager(
-                            base_model, variant=getattr(loss_module, "variant", "hidden")
-                        )
+                        self._base_mlp_hooks = MLPHookManager(base_model, variant=getattr(loss_module, "variant", "hidden"))
                     base_hooks = self._base_mlp_hooks.install()
 
         def forward(tokens: list[int], use_base: bool):
@@ -2741,15 +2876,10 @@ class LocalBackend:
         total_loss = 0.0
         try:
             for d in datums:
-                idx = {
-                    k: int(d.loss_fn_inputs[k].to_torch()[0])
-                    for k in ("start_index", "clean_start_index", "clean_len", "match_len")
-                }
+                idx = {k: int(d.loss_fn_inputs[k].to_torch()[0]) for k in ("start_index", "clean_start_index", "clean_len", "match_len")}
                 adv_outputs, adv_mlp_states = forward(d.model_input.to_ints(), use_base=False)
                 with torch.no_grad():
-                    clean_outputs, clean_mlp_states = forward(
-                        d.loss_fn_inputs["clean_tokens"].to_torch().long().tolist(), use_base=True
-                    )
+                    clean_outputs, clean_mlp_states = forward(d.loss_fn_inputs["clean_tokens"].to_torch().long().tolist(), use_base=True)
                 if preflight_observation is not None:
                     if needs_attentions:
                         preflight_observation.setdefault("variant_attention_counts", []).append(
@@ -2766,12 +2896,8 @@ class LocalBackend:
                             len(getattr(clean_outputs, "hidden_states", ()) or ())
                         )
                     if loss_module.needs_mlp_hooks:
-                        preflight_observation.setdefault("variant_mlp_hook_counts", []).append(
-                            len(adv_mlp_states or ())
-                        )
-                        preflight_observation.setdefault("reference_mlp_hook_counts", []).append(
-                            len(clean_mlp_states or ())
-                        )
+                        preflight_observation.setdefault("variant_mlp_hook_counts", []).append(len(adv_mlp_states or ()))
+                        preflight_observation.setdefault("reference_mlp_hook_counts", []).append(len(clean_mlp_states or ()))
                 out = loss_module(
                     clean_outputs,
                     adv_outputs,
@@ -2831,9 +2957,7 @@ class LocalBackend:
         self._gradient_accumulations = 0
         return _ResolvedPending(None)
 
-    async def incorporate_kl_penalty(
-        self, datums: Sequence[Any], *, kl_coef: float, kl_discount_factor: float
-    ) -> dict[str, float]:
+    async def incorporate_kl_penalty(self, datums: Sequence[Any], *, kl_coef: float, kl_discount_factor: float) -> dict[str, float]:
         """Same math as tinker_cookbook.rl.metrics.incorporate_kl_penalty, with base
         logprobs from a local forward pass under the disabled adapter."""
         import tinker
@@ -2852,9 +2976,7 @@ class LocalBackend:
             kl_advantages = kl_coef * masks[i] * (avg_diff - diffs[i])
             if kl_discount_factor > 0:
                 kl_advantages = discounted_future_sum_vectorized(kl_advantages, kl_discount_factor)
-            datum.loss_fn_inputs["advantages"] = tinker.TensorData.from_torch(
-                datum.loss_fn_inputs["advantages"].to_torch() + kl_advantages
-            )
+            datum.loss_fn_inputs["advantages"] = tinker.TensorData.from_torch(datum.loss_fn_inputs["advantages"].to_torch() + kl_advantages)
         return {"kl_policy_base": float(avg_diff)}
 
     def _score_completions(
@@ -2873,9 +2995,7 @@ class LocalBackend:
 
         self._sleep_vllm_for_training()
         if len(prompts) != len(completion_tokens):
-            raise ValueError(
-                f"prompts and completion_tokens must have the same length, got {len(prompts)} and {len(completion_tokens)}"
-            )
+            raise ValueError(f"prompts and completion_tokens must have the same length, got {len(prompts)} and {len(completion_tokens)}")
         if use_base:
             self._require_base()
         else:
@@ -2894,9 +3014,7 @@ class LocalBackend:
         # The final completion token is a target, never an input needed to score
         # this continuation. Position R - 1 + t predicts completion token t.
         model_inputs = [prompt + completion[:-1] for prompt, completion in zip(prompt_tokens, continuations)]
-        prediction_positions = [
-            range(len(prompt) - 1, len(model_input)) for prompt, model_input in zip(prompt_tokens, model_inputs)
-        ]
+        prediction_positions = [range(len(prompt) - 1, len(model_input)) for prompt, model_input in zip(prompt_tokens, model_inputs)]
         targets = [torch.tensor(completion, dtype=torch.long) for completion in continuations]
 
         model = self._model_for(use_base=use_base)
@@ -2968,7 +3086,9 @@ class LocalBackend:
         opt_path = ckpt_dir / "optimizer.pt"
         if with_optimizer:
             if opt_path.is_symlink() or not opt_path.is_file():
-                raise FileNotFoundError(f"optimizer-state resume was requested but optimizer.pt is missing: {opt_path}")
+                raise FileNotFoundError(
+                    f"optimizer-state resume was requested but optimizer.pt is missing: {opt_path}"
+                )
             # Optimizer is created lazily at the first optim_step; stage the state.
             self._pending_optimizer_state = torch.load(opt_path, map_location=self.device)
         print(f"LocalBackend: loaded checkpoint from {ckpt_dir} (optimizer: {with_optimizer})")

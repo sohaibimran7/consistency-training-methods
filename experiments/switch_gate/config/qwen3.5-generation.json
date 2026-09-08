@@ -1,0 +1,13 @@
+{
+  "cache": false,
+  "max_tokens": 20480,
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "seed": 20260729,
+  "num_choices": 1,
+  "max_retries": 0,
+  "max_connections": 16,
+  "timeout": 1800,
+  "attempt_timeout": 600
+}

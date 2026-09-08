@@ -80,11 +80,47 @@ def _validate_frozen_row(row: object, *, path: Path, line_number: int) -> dict:
     return dict(row)
 
 
-def file_identity(path: str | Path) -> dict:
-    """Record which exact file an experiment selected, without interpreting it."""
+def _validated_row_offset(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("row_offset must be a non-negative integer")
+    return value
+
+
+def _validated_row_count(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("row_count must be a positive integer")
+    return value
+
+
+def file_identity(
+    path: str | Path,
+    *,
+    row_offset: int | None = None,
+    row_count: int | None = None,
+) -> dict:
+    """Record an explicit frozen file and, when applicable, its exact row slice.
+
+    ``row_offset`` is zero-based while the inclusive range is recorded in the
+    human-facing one-based convention used by frozen selection manifests.
+    Passing either selection value requires both so provenance cannot describe
+    an ambiguous prefix or open-ended range.
+    """
+
+    if (row_offset is None) != (row_count is None):
+        raise ValueError("row_offset and row_count must be supplied together for file provenance")
 
     identity = plain_file_identity(path)
-    identity["provenance"] = {"source": "explicit_mcq_bias_file"}
+    provenance: dict[str, object] = {"source": "explicit_mcq_bias_file"}
+    if row_offset is not None and row_count is not None:
+        offset = _validated_row_offset(row_offset)
+        count = _validated_row_count(row_count)
+        provenance["selection"] = {
+            "method": "exact_contiguous_source_rows_without_reserialization",
+            "row_offset": offset,
+            "row_count": count,
+            "source_rows_1_based_inclusive": [offset + 1, offset + count],
+        }
+    identity["provenance"] = provenance
     return identity
 
 
@@ -93,16 +129,32 @@ def load_paths(
     *,
     n_datapoints: int | None = None,
     path_limits: Mapping[str, int] | None = None,
+    row_offset: int | None = None,
 ) -> list[dict]:
     """Load the exact native files selected by the experiment.
 
     ``path_limits`` gives each file an explicit cap. Otherwise
     ``n_datapoints`` is divided as evenly as possible across the files.
+
+    ``row_offset`` enables one exact contiguous slice of one frozen source.
+    It is zero-based and deliberately cannot be combined with multi-file
+    loading or ``path_limits``: either would make the selected source range
+    ambiguous. Rows are read directly from the input JSONL; no derived JSONL
+    is created or reserialized.
     """
 
     selected = [Path(path) for path in paths]
     if not selected:
         raise ValueError("sycophancy training requires at least one data_path")
+
+    if row_offset is not None:
+        offset = _validated_row_offset(row_offset)
+        if len(selected) != 1:
+            raise ValueError("row_offset requires exactly one data_path")
+        if path_limits is not None:
+            raise ValueError("row_offset cannot be combined with path_limits")
+    else:
+        offset = 0
 
     if path_limits is not None:
         selected_names = {str(path) for path in selected}
@@ -125,6 +177,7 @@ def load_paths(
 
     datapoints: list[dict] = []
     for path, limit in zip(selected, limits):
+        skipped = 0
         loaded = 0
         with path.open(encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
@@ -134,12 +187,25 @@ def load_paths(
                     row = json.loads(line)
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"{path}:{line_number}: invalid JSON: {exc.msg}") from exc
-                datapoints.append(_validate_frozen_row(row, path=path, line_number=line_number))
+                validated = _validate_frozen_row(row, path=path, line_number=line_number)
+                if skipped < offset:
+                    skipped += 1
+                    continue
+                datapoints.append(validated)
                 loaded += 1
                 if loaded >= limit:
                     break
+        if skipped < offset:
+            raise ValueError(
+                f"{path} contains only {skipped} rows; row_offset {offset} requires at least {offset + 1} rows"
+            )
         if loaded < limit:
-            raise ValueError(f"{path} contains only {loaded}/{limit} requested rows")
+            if row_offset is None:
+                raise ValueError(f"{path} contains only {loaded}/{limit} requested rows")
+            raise ValueError(
+                f"{path} contains only {loaded}/{limit} requested rows after row_offset {offset}; "
+                f"requested source rows {offset + 1}--{offset + limit}"
+            )
     return datapoints
 
 

@@ -12,12 +12,13 @@ import concurrent.futures
 import hashlib
 import json
 import os
-import queue
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -59,9 +60,15 @@ def _validate_experiment_name(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ExperimentConfigError("experiment config needs a non-empty name")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", value):
-        raise ExperimentConfigError(
-            "experiment name must start with a letter or digit and contain only letters, digits, dots, underscores, and hyphens"
-        )
+        raise ExperimentConfigError("experiment name must start with a letter or digit and contain only letters, digits, dots, underscores, and hyphens")
+    return value
+
+
+def _validate_target_name(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ExperimentConfigError("execution target must be a non-empty string")
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", value):
+        raise ExperimentConfigError("execution target must start with a letter or digit and contain only letters, digits, dots, underscores, and hyphens")
     return value
 
 
@@ -79,12 +86,37 @@ def load_experiment_source(path: str | Path) -> dict[str, Any]:
     return value
 
 
-def compile_experiment(source: Mapping[str, Any]) -> dict[str, Any]:
-    """Expand an optional ``module:callable`` factory into an execution plan."""
+def _validate_topology_profile(value: str | None) -> str | None:
+    """Validate an explicit, launcher-selected logical GPU topology profile."""
+
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", value):
+        raise ExperimentConfigError(
+            "topology profile must start with a letter or digit and contain only letters, digits, dots, underscores, and hyphens"
+        )
+    return value
+
+
+def compile_experiment(
+    source: Mapping[str, Any],
+    *,
+    topology_profile: str | None = None,
+) -> dict[str, Any]:
+    """Expand an optional ``module:callable`` factory into an execution plan.
+
+    ``topology_profile`` is intentionally an explicit compiler input instead
+    of an ambient environment setting.  Protected launchers pass it again to
+    the target attestation, which binds the resulting logical GPU bundle and
+    replays the same compilation before starting the child.
+    """
 
     name = _validate_experiment_name(source.get("name"))
+    topology_profile = _validate_topology_profile(topology_profile)
     factory_spec = source.get("experiment_factory")
     if factory_spec is None:
+        if topology_profile is not None:
+            raise ExperimentConfigError("--topology-profile requires a factory experiment that defines selectable profiles")
         value = dict(source)
     else:
         unknown = sorted(set(source) - {"name", "experiment_factory", "spec"})
@@ -95,7 +127,8 @@ def compile_experiment(source: Mapping[str, Any]) -> dict[str, Any]:
             raise ExperimentConfigError("factory experiment needs a spec object")
         try:
             factory = load_callable(factory_spec, label="experiment_factory")
-            expanded = factory(name=name, spec=dict(spec))
+            factory_options = {"topology_profile": topology_profile} if topology_profile is not None else {}
+            expanded = factory(name=name, spec=dict(spec), **factory_options)
         except (TypeError, ValueError) as exc:
             raise ExperimentConfigError(f"experiment factory failed: {exc}") from exc
         if not isinstance(expanded, Mapping):
@@ -159,22 +192,20 @@ def validate_training_backend_consistency(config: Mapping[str, Any]) -> None:
             declared.setdefault(backend, []).append(name)
 
     if declared and undeclared:
-        raise ExperimentConfigError(
-            "training commands must all declare --backend when any command does; "
-            f"missing for {undeclared}"
-        )
+        raise ExperimentConfigError(f"training commands must all declare --backend when any command does; missing for {undeclared}")
     if len(declared) > 1:
         details = ", ".join(f"{backend}={names}" for backend, names in sorted(declared.items()))
-        raise ExperimentConfigError(
-            "an experiment cannot mix training backends because its results would not be directly comparable; "
-            f"split this plan into one backend per experiment ({details})"
-        )
+        raise ExperimentConfigError(f"an experiment cannot mix training backends because its results would not be directly comparable; split this plan into one backend per experiment ({details})")
 
 
-def load_experiment(path: str | Path) -> dict[str, Any]:
+def load_experiment(
+    path: str | Path,
+    *,
+    topology_profile: str | None = None,
+) -> dict[str, Any]:
     """Read and compile either a direct plan or a concise experiment spec."""
 
-    return compile_experiment(load_experiment_source(path))
+    return compile_experiment(load_experiment_source(path), topology_profile=topology_profile)
 
 
 def _canonical_stage(value: str) -> str:
@@ -217,10 +248,14 @@ def _entries(
         raise ExperimentConfigError(f"{stage} must be a command object or non-empty list of command objects")
     for entry in entries:
         entry_target = entry.get("target")
-        if entry_target is not None and (not isinstance(entry_target, str) or not entry_target.strip()):
-            raise ExperimentConfigError(f"{stage} command target must be a non-empty string")
+        if entry_target is not None:
+            try:
+                _validate_target_name(entry_target)
+            except ExperimentConfigError as exc:
+                raise ExperimentConfigError(f"{stage} command has invalid target: {exc}") from exc
     if target is None:
         return list(entries)
+    _validate_target_name(target)
     return [entry for entry in entries if entry.get("target") == target]
 
 
@@ -264,9 +299,7 @@ def _argument_tokens(args: Any) -> list[str]:
     tokens: list[str] = []
     for key, value in args.items():
         if not isinstance(key, str):
-            raise ExperimentConfigError(
-                f"argument keys must be strings; quote YAML 1.1 words such as 'yes' (got {key!r})"
-            )
+            raise ExperimentConfigError(f"argument keys must be strings; quote YAML 1.1 words such as 'yes' (got {key!r})")
         flag = _flag(str(key))
         if value is None or value is False:
             continue
@@ -276,14 +309,7 @@ def _argument_tokens(args: Any) -> list[str]:
         if isinstance(value, Mapping):
             tokens.append(json.dumps(value, sort_keys=True, separators=(",", ":")))
         elif isinstance(value, list):
-            tokens.extend(
-                (
-                    json.dumps(item, sort_keys=True, separators=(",", ":"))
-                    if isinstance(item, (Mapping, list))
-                    else str(item)
-                )
-                for item in value
-            )
+            tokens.extend((json.dumps(item, sort_keys=True, separators=(",", ":")) if isinstance(item, (Mapping, list)) else str(item)) for item in value)
         else:
             tokens.append(str(value))
     return tokens
@@ -294,7 +320,7 @@ def command_argv(spec: Mapping[str, Any], context: Mapping[str, Any], *, strict:
     command = rendered.get("command")
     if not isinstance(command, list) or not command or any(not isinstance(token, str) for token in command):
         raise ExperimentConfigError("each command needs a non-empty string-list command")
-    unknown = sorted(set(rendered) - {"name", "target", "resource", "command", "args"})
+    unknown = sorted(set(rendered) - {"name", "target", "resource", "gpu_count", "command", "args"})
     if unknown:
         raise ExperimentConfigError(f"unknown command field(s): {unknown}")
     return [*command, *_argument_tokens(rendered.get("args"))]
@@ -307,6 +333,22 @@ def command_resource(spec: Mapping[str, Any], stage: str) -> str:
     if resource not in {"cpu", "gpu"}:
         raise ExperimentConfigError(f"{stage} command resource must be 'cpu' or 'gpu'; got {resource!r}")
     return str(resource)
+
+
+def command_gpu_count(spec: Mapping[str, Any], stage: str) -> int:
+    """Return the number of exclusively assigned GPUs requested by a command."""
+
+    resource = command_resource(spec, stage)
+    value = spec.get("gpu_count")
+    if value is None:
+        return 1 if resource == "gpu" else 0
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ExperimentConfigError(f"{stage} command gpu_count must be a positive integer")
+    if resource != "gpu":
+        raise ExperimentConfigError(f"{stage} command gpu_count applies only to resource: gpu")
+    if value < 1:
+        raise ExperimentConfigError(f"{stage} command gpu_count must be a positive integer")
+    return value
 
 
 def _uses_placeholder(value: Any, name: str) -> bool:
@@ -341,11 +383,7 @@ def validate_checkpoint_ownership(
             if _uses_placeholder(spec, "checkpoint"):
                 consumers.append(str(spec.get("name") or f"{stage}-{index}"))
     if consumers:
-        raise ExperimentConfigError(
-            f"ambiguous ${{checkpoint}} ownership: the selected plan has {n_training} training commands "
-            f"and the placeholder is used by {consumers}. Split the runs or pass explicit checkpoint "
-            "values; named stage outputs are not implemented."
-        )
+        raise ExperimentConfigError(f"ambiguous ${{checkpoint}} ownership: the selected plan has {n_training} training commands and the placeholder is used by {consumers}. Split the runs or pass explicit checkpoint values; named stage outputs are not implemented.")
 
 
 def selected_stages_use_placeholder(
@@ -355,11 +393,7 @@ def selected_stages_use_placeholder(
     *,
     target: str | None = None,
 ) -> bool:
-    return any(
-        _uses_placeholder(spec, name)
-        for stage in selected_stages
-        for spec in _entries(config, stage, target=target)
-    )
+    return any(_uses_placeholder(spec, name) for stage in selected_stages for spec in _entries(config, stage, target=target))
 
 
 def planned_commands(
@@ -376,12 +410,11 @@ def planned_commands(
         names: set[str] = set()
         for index, spec in enumerate(_entries(config, stage, target=target), start=1):
             name = str(spec.get("name") or f"{stage}-{index}")
+            command_gpu_count(spec, stage)  # validate resource allocation in previews as well as execution
             if name in names:
                 raise ExperimentConfigError(f"duplicate {stage} command name {name!r}")
             if stage == "training" and not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_-]*", name):
-                raise ExperimentConfigError(
-                    f"training command name {name!r} must contain only letters, digits, underscores, and hyphens"
-                )
+                raise ExperimentConfigError(f"training command name {name!r} must contain only letters, digits, underscores, and hyphens")
             names.add(name)
             planned.append((stage, name, command_argv(spec, context, strict=strict)))
     return planned
@@ -411,93 +444,284 @@ def initial_context(
     }
 
 
-def output_state_path(config: Mapping[str, Any]) -> Path:
-    """Return the structured output path for one experiment."""
+def output_state_path(config: Mapping[str, Any], *, target: str | None = None) -> Path:
+    """Return the canonical or target-scoped structured output path."""
 
-    return PROJECT_ROOT / "logs" / "experiments" / str(config["name"]) / "outputs.json"
-
-
-def resolved_plan_path(config: Mapping[str, Any]) -> Path:
-    """Return the immutable expanded-plan path for one experiment name."""
-
-    return output_state_path(config).with_name("resolved-plan.yaml")
+    root = PROJECT_ROOT / "logs" / "experiments" / str(config["name"])
+    if target is not None:
+        root = root / "targets" / _validate_target_name(target)
+    return root / "outputs.json"
 
 
-def resolved_plan_text(config: Mapping[str, Any]) -> str:
-    """Serialize the complete command plan deterministically."""
+def resolved_plan_path(config: Mapping[str, Any], *, target: str | None = None) -> Path:
+    """Return the immutable expanded-plan path for one experiment/target."""
 
-    return yaml.safe_dump(dict(config), sort_keys=False).rstrip() + "\n"
+    state_path = output_state_path(config) if target is None else output_state_path(config, target=target)
+    return state_path.with_name("resolved-plan.yaml")
 
 
-def validate_resolved_plan(config: Mapping[str, Any]) -> tuple[Path, str]:
-    """Reject reuse of an experiment name for a different expanded plan."""
+def _resolved_plan(config: Mapping[str, Any], *, target: str | None) -> dict[str, Any]:
+    if target is None:
+        return dict(config)
+    plan = {key: value for key, value in config.items() if key not in STAGE_ORDER}
+    for stage in STAGE_ORDER:
+        if stage not in config:
+            continue
+        entries = _entries(config, stage, target=target)
+        if entries:
+            plan[stage] = [dict(entry) for entry in entries]
+    return plan
 
-    path = resolved_plan_path(config)
-    content = resolved_plan_text(config)
+
+def resolved_plan_text(config: Mapping[str, Any], *, target: str | None = None) -> str:
+    """Serialize the complete or target-scoped command plan deterministically."""
+
+    return yaml.safe_dump(_resolved_plan(config, target=target), sort_keys=False).rstrip() + "\n"
+
+
+def validate_resolved_plan(
+    config: Mapping[str, Any],
+    *,
+    target: str | None = None,
+) -> tuple[Path, str]:
+    """Reject reuse of an experiment/target name for a different expanded plan."""
+
+    path = resolved_plan_path(config) if target is None else resolved_plan_path(config, target=target)
+    content = resolved_plan_text(config, target=target)
     digest = hashlib.sha256(content.encode()).hexdigest()
     if path.exists() and path.read_text(encoding="utf-8") != content:
-        raise ExperimentConfigError(
-            f"resolved plan differs from {path}. Use a new experiment name, or move the existing "
-            "experiment log directory to an archive before rerunning."
-        )
+        raise ExperimentConfigError(f"resolved plan differs from {path}. Use a new experiment name, or move the existing experiment log directory to an archive before rerunning.")
     return path, digest
 
 
-def save_resolved_plan(config: Mapping[str, Any]) -> tuple[Path, str]:
+def save_resolved_plan(
+    config: Mapping[str, Any],
+    *,
+    target: str | None = None,
+) -> tuple[Path, str]:
     """Persist the expanded plan atomically after run approval."""
 
-    path, digest = validate_resolved_plan(config)
+    path, digest = validate_resolved_plan(config, target=target)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".yaml.tmp")
-        temporary.write_text(resolved_plan_text(config), encoding="utf-8")
+        temporary.write_text(resolved_plan_text(config, target=target), encoding="utf-8")
         temporary.replace(path)
     return path, digest
 
 
-def load_output_context(config: Mapping[str, Any]) -> dict[str, str]:
-    """Load previously published named training checkpoints, if present."""
-
-    path = output_state_path(config)
+def _load_output_state(config: Mapping[str, Any], *, target: str | None = None) -> tuple[Path, dict[str, Any]] | None:
+    path = output_state_path(config) if target is None else output_state_path(config, target=target)
     if not path.exists():
-        return {}
+        return None
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ExperimentConfigError(f"invalid experiment output state {path}: {exc}") from exc
     if state.get("schema_version") != OUTPUT_SCHEMA_VERSION or state.get("experiment") != config["name"]:
         raise ExperimentConfigError(f"experiment output state does not match {config['name']!r}: {path}")
+    if state.get("execution_target") != target:
+        raise ExperimentConfigError(f"experiment output state target does not match {target!r}: {path}")
     checkpoints = state.get("training_checkpoints", {})
-    if not isinstance(checkpoints, Mapping) or any(
-        not isinstance(name, str) or not isinstance(value, str) or not value for name, value in checkpoints.items()
-    ):
+    if not isinstance(checkpoints, Mapping) or any(not isinstance(name, str) or not isinstance(value, str) or not value for name, value in checkpoints.items()):
         raise ExperimentConfigError(f"invalid training_checkpoints in {path}")
+    return path, state
+
+
+def load_output_context(config: Mapping[str, Any], *, target: str | None = None) -> dict[str, str]:
+    """Load previously published named training checkpoints, if present."""
+
+    loaded = _load_output_state(config, target=target)
+    if loaded is None:
+        return {}
+    _, state = loaded
+    checkpoints = state["training_checkpoints"]
     context = {f"training.{name}.checkpoint": value for name, value in checkpoints.items()}
     if len(checkpoints) == 1:
         context["checkpoint"] = next(iter(checkpoints.values()))
     return context
 
 
-def save_training_checkpoint(config: Mapping[str, Any], name: str, checkpoint: str) -> None:
-    """Publish one named checkpoint atomically for later experiment stages."""
+def validated_completed_training(config: Mapping[str, Any], *, target: str | None = None) -> dict[str, str]:
+    """Return completed commands whose published checkpoints still validate."""
 
-    path = output_state_path(config)
-    existing = load_output_context(config)
-    checkpoints = {
-        key.removeprefix("training.").removesuffix(".checkpoint"): value
-        for key, value in existing.items()
-        if key.startswith("training.") and key.endswith(".checkpoint")
-    }
+    loaded = _load_output_state(config, target=target)
+    if loaded is None:
+        return {}
+    _, state = loaded
+    declared_names = {str(entry.get("name") or f"training-{index}") for index, entry in enumerate(_entries(config, "training", target=target), start=1)}
+    completed = dict(state["training_checkpoints"])
+    stale = sorted(set(completed) - declared_names)
+    if stale:
+        raise ExperimentConfigError(f"completed training state contains command(s) outside the selected plan: {stale}")
+    for checkpoint in completed.values():
+        _checkpoint_artifact_manifest(checkpoint)
+    return completed
+
+
+def save_training_checkpoint(
+    config: Mapping[str, Any],
+    name: str,
+    checkpoint: str,
+    *,
+    target: str | None = None,
+) -> None:
+    """Publish one named checkpoint atomically within one execution scope."""
+
+    path = output_state_path(config) if target is None else output_state_path(config, target=target)
+    existing = load_output_context(config, target=target)
+    checkpoints = {key.removeprefix("training.").removesuffix(".checkpoint"): value for key, value in existing.items() if key.startswith("training.") and key.endswith(".checkpoint")}
     checkpoints[name] = checkpoint
     state = {
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "experiment": config["name"],
         "training_checkpoints": checkpoints,
+        **({"execution_target": target} if target is not None else {}),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(path)
+
+
+def _publication_manifest(config: Mapping[str, Any]) -> tuple[str, dict[str, list[str]]]:
+    publication = config.get("training_output_publication")
+    if not isinstance(publication, Mapping):
+        raise ExperimentConfigError("experiment does not declare training_output_publication")
+    owner = publication.get("owner")
+    targets = publication.get("targets")
+    if not isinstance(owner, str) or not owner:
+        raise ExperimentConfigError("training_output_publication.owner must be a non-empty string")
+    _validate_target_name(owner)
+    if not isinstance(targets, list) or not targets or any(not isinstance(target, str) for target in targets) or len(targets) != len(set(targets)):
+        raise ExperimentConfigError("training_output_publication.targets must be a non-empty unique string list")
+    declared_targets = [_validate_target_name(target) for target in targets]
+
+    names_by_target: dict[str, list[str]] = {target: [] for target in declared_targets}
+    for index, entry in enumerate(_entries(config, "training"), start=1):
+        name = str(entry.get("name") or f"training-{index}")
+        target = entry.get("target")
+        if target not in names_by_target:
+            raise ExperimentConfigError(f"training command {name!r} has target {target!r}, outside training_output_publication.targets")
+        names_by_target[target].append(name)
+    empty = [target for target, names in names_by_target.items() if not names]
+    if empty:
+        raise ExperimentConfigError(f"training_output_publication has target(s) without training commands: {empty}")
+    return owner, names_by_target
+
+
+def _checkpoint_artifact_manifest(checkpoint: str) -> dict[str, Any]:
+    """Validate and hash a local checkpoint after cross-node synchronization."""
+
+    if not checkpoint.startswith("file://"):
+        return {"checkpoint": checkpoint, "storage": "remote"}
+
+    directory = Path(checkpoint.removeprefix("file://")).resolve()
+    if not directory.is_dir():
+        raise ExperimentConfigError(f"local checkpoint directory is missing after synchronization: {directory}")
+
+    manifest_path = directory / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ExperimentConfigError(f"local checkpoint has no manifest.json: {directory}") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ExperimentConfigError(f"invalid local checkpoint manifest {manifest_path}: {exc}") from exc
+    if not isinstance(manifest, Mapping) or manifest.get("backend") != "local":
+        raise ExperimentConfigError(f"local checkpoint manifest is not a LocalBackend checkpoint: {manifest_path}")
+
+    if manifest.get("lora") is True:
+        required = [directory / "adapter_config.json"]
+        adapter_weights = [directory / name for name in ("adapter_model.safetensors", "adapter_model.bin")]
+        if not any(path.is_file() for path in adapter_weights):
+            raise ExperimentConfigError(f"local LoRA checkpoint has no adapter weights: {directory}")
+    elif manifest.get("lora") is False:
+        required = [directory / "weights.pt"]
+    else:
+        raise ExperimentConfigError(f"local checkpoint manifest has invalid lora flag: {manifest_path}")
+    missing = [str(path) for path in required if not path.is_file()]
+    if missing:
+        raise ExperimentConfigError(f"local checkpoint is incomplete; missing files: {missing}")
+
+    files: list[dict[str, Any]] = []
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink():
+            raise ExperimentConfigError(f"local checkpoint contains a symlink and cannot be integrity-hashed: {path}")
+        if not path.is_file():
+            continue
+        payload = path.read_bytes()
+        files.append(
+            {
+                "path": str(path.relative_to(directory)),
+                "size_bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    if not files:
+        raise ExperimentConfigError(f"local checkpoint contains no files: {directory}")
+    return {
+        "checkpoint": checkpoint,
+        "storage": "local",
+        "backend": "local",
+        "model": manifest.get("model"),
+        "lora": manifest["lora"],
+        "files": files,
+    }
+
+
+def publish_training_outputs(config: Mapping[str, Any]) -> tuple[Path, str]:
+    """Merge completed target states once, from the declared publication owner."""
+
+    owner, names_by_target = _publication_manifest(config)
+    checkpoints: dict[str, str] = {}
+    checkpoint_artifacts: dict[str, dict[str, Any]] = {}
+    sources: list[dict[str, Any]] = []
+    for target, expected_names in names_by_target.items():
+        loaded = _load_output_state(config, target=target)
+        if loaded is None:
+            raise ExperimentConfigError(f"training target {target!r} has no output state")
+        path, state = loaded
+        target_checkpoints = dict(state["training_checkpoints"])
+        expected = set(expected_names)
+        actual = set(target_checkpoints)
+        if actual != expected:
+            missing, unexpected = sorted(expected - actual), sorted(actual - expected)
+            raise ExperimentConfigError(f"training target {target!r} checkpoint set is incomplete or stale: missing={missing}, unexpected={unexpected}")
+        checkpoints.update(target_checkpoints)
+        for name, checkpoint in target_checkpoints.items():
+            checkpoint_artifacts[name] = _checkpoint_artifact_manifest(checkpoint)
+        sources.append(
+            {
+                "target": target,
+                "path": str(path.relative_to(PROJECT_ROOT)),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "training_commands": expected_names,
+            }
+        )
+
+    state = {
+        "schema_version": OUTPUT_SCHEMA_VERSION,
+        "experiment": config["name"],
+        "training_checkpoints": checkpoints,
+        "checkpoint_artifacts": checkpoint_artifacts,
+        "publication": {
+            "owner": owner,
+            "resolved_plan_sha256": hashlib.sha256(resolved_plan_text(config).encode()).hexdigest(),
+            "sources": sources,
+        },
+    }
+    path = output_state_path(config)
+    serialized = json.dumps(state, indent=2, sort_keys=True) + "\n"
+    digest = hashlib.sha256(serialized.encode()).hexdigest()
+    if path.exists():
+        if path.read_text(encoding="utf-8") != serialized:
+            raise ExperimentConfigError(f"canonical experiment output state already exists and differs: {path}. Move the existing experiment log directory to an archive before publishing a different state.")
+        return path, digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(serialized, encoding="utf-8")
+    temporary.replace(path)
+    return path, digest
 
 
 def run_command(
@@ -508,6 +732,7 @@ def run_command(
 ) -> str | None:
     """Stream one subprocess and return a checkpoint announced by training."""
 
+    started = time.monotonic()
     process = subprocess.Popen(
         list(argv),
         cwd=PROJECT_ROOT,
@@ -528,6 +753,20 @@ def run_command(
                 raise ExperimentConfigError("training emitted an empty final-checkpoint marker")
             checkpoint = announced
     return_code = process.wait()
+    elapsed = time.monotonic() - started
+    print(
+        "CTM_COMMAND_TIMING="
+        + json.dumps(
+            {
+                "label": label,
+                "elapsed_seconds": round(elapsed, 6),
+                "return_code": return_code,
+                "status": "passed" if return_code == 0 else "failed",
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
     if return_code:
         raise subprocess.CalledProcessError(return_code, list(argv))
     return checkpoint
@@ -557,6 +796,20 @@ def _parse_gpus(value: str | None) -> list[str]:
     return gpus
 
 
+def _with_onpolicy_target_attestation(
+    command: Sequence[str],
+    *,
+    stage: str,
+    attestation: Path | None,
+) -> list[str]:
+    """Append the immutable target sidecar to the one protected training child."""
+
+    output = list(command)
+    if attestation is not None and stage == "training":
+        output.extend(("--onpolicy-target-attestation", str(attestation)))
+    return output
+
+
 def _run_stage_parallel(
     config: Mapping[str, Any],
     stage: str,
@@ -565,40 +818,74 @@ def _run_stage_parallel(
     target: str | None,
     parallel: int,
     gpus: Sequence[str],
+    skip_completed: frozenset[str] = frozenset(),
+    onpolicy_target_attestation: Path | None = None,
 ) -> None:
-    """Run independent commands concurrently, with at most one process per GPU."""
+    """Run independent commands concurrently with exclusive one-or-more-GPU bundles."""
 
     work = []
     for index, spec in enumerate(_entries(config, stage, target=target), start=1):
         name = str(spec.get("name") or f"{stage}-{index}")
-        work.append((name, command_argv(spec, context, strict=True), command_resource(spec, stage)))
+        if stage == "training" and name in skip_completed:
+            print(f"\n[{stage}:{name}] SKIPPED: validated completed checkpoint", flush=True)
+            continue
+        work.append(
+            (
+                name,
+                _with_onpolicy_target_attestation(
+                    command_argv(spec, context, strict=True),
+                    stage=stage,
+                    attestation=onpolicy_target_attestation,
+                ),
+                command_resource(spec, stage),
+                command_gpu_count(spec, stage),
+            )
+        )
     if not work:
         return
 
-    needs_gpu = any(resource == "gpu" for _, _, resource in work)
+    needs_gpu = any(resource == "gpu" for _, _, resource, _ in work)
     if needs_gpu and not gpus:
-        raise ExperimentConfigError(
-            f"parallel {stage} execution includes GPU commands; pass --gpus with the visible GPU ids"
-        )
-    gpu_queue: queue.Queue[str] = queue.Queue()
-    for gpu in gpus:
-        gpu_queue.put(gpu)
+        raise ExperimentConfigError(f"parallel {stage} execution includes GPU commands; pass --gpus with the visible GPU ids")
+    largest_bundle = max((gpu_count for _, _, _, gpu_count in work), default=0)
+    if largest_bundle > len(gpus):
+        raise ExperimentConfigError(f"parallel {stage} command requests {largest_bundle} GPU(s), but only {len(gpus)} were supplied")
+    gpu_order = {gpu: index for index, gpu in enumerate(gpus)}
+    available_gpus = list(gpus)
+    gpu_condition = threading.Condition()
 
-    def run_one(item: tuple[str, list[str], str]) -> tuple[str, str | None]:
-        name, command, resource = item
-        gpu = None
+    def acquire_gpus(count: int) -> list[str]:
+        if count == 0:
+            return []
+        with gpu_condition:
+            while len(available_gpus) < count:
+                gpu_condition.wait()
+            selected = available_gpus[:count]
+            del available_gpus[:count]
+            return selected
+
+    def release_gpus(selected: Sequence[str]) -> None:
+        if not selected:
+            return
+        with gpu_condition:
+            available_gpus.extend(selected)
+            available_gpus.sort(key=gpu_order.__getitem__)
+            gpu_condition.notify_all()
+
+    def run_one(item: tuple[str, list[str], str, int]) -> tuple[str, str | None]:
+        name, command, resource, gpu_count = item
+        assigned_gpus: list[str] = []
         child_env = None
         try:
             if resource == "gpu":
-                gpu = gpu_queue.get()
-                child_env = {**os.environ, "CUDA_VISIBLE_DEVICES": gpu}
-            suffix = f" gpu={gpu}" if gpu is not None else " cpu"
+                assigned_gpus = acquire_gpus(gpu_count)
+                child_env = {**os.environ, "CUDA_VISIBLE_DEVICES": ",".join(assigned_gpus)}
+            suffix = f" gpu={','.join(assigned_gpus)}" if assigned_gpus else " cpu"
             label = f"{stage}:{name}{suffix}"
             print(f"\n[{label}] {shlex.join(command)}", flush=True)
             return name, run_command(command, env=child_env, label=label)
         finally:
-            if gpu is not None:
-                gpu_queue.put(gpu)
+            release_gpus(assigned_gpus)
 
     max_workers = min(parallel, len(work))
     failures: list[Exception] = []
@@ -616,7 +903,7 @@ def _run_stage_parallel(
                 context["checkpoint"] = checkpoint
                 if stage == "training":
                     context[f"training.{completed_name}.checkpoint"] = checkpoint
-                    save_training_checkpoint(config, completed_name, checkpoint)
+                    save_training_checkpoint(config, completed_name, checkpoint, target=target)
     if failures:
         raise failures[0]
 
@@ -634,6 +921,13 @@ def _parser() -> argparse.ArgumentParser:
         help="Run only command entries whose optional target field exactly matches this value",
     )
     parser.add_argument(
+        "--topology-profile",
+        help=(
+            "Explicit factory-defined logical GPU topology profile. Protected launchers bind this profile "
+            "into their immutable target attestation."
+        ),
+    )
+    parser.add_argument(
         "--parallel",
         type=int,
         default=1,
@@ -641,7 +935,25 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--gpus",
-        help="Comma-separated physical GPU ids; parallel GPU commands get one exclusive id each",
+        help="Comma-separated physical GPU ids; parallel commands get gpu_count exclusive ids each (default: 1)",
+    )
+    parser.add_argument(
+        "--publish-training-outputs",
+        action="store_true",
+        help="As the declared publication owner, atomically merge completed target-scoped training outputs",
+    )
+    parser.add_argument(
+        "--resume-completed",
+        action="store_true",
+        help="Validate and skip already completed training commands; interrupted commands restart normally",
+    )
+    parser.add_argument(
+        "--onpolicy-target-attestation",
+        type=Path,
+        help=(
+            "Immutable Qwen3.5 on-policy target sidecar. Requires one selected training target; "
+            "the runner revalidates the recompiled child argv and passes this exact path to the child."
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Print the config and commands without executing")
     parser.add_argument("-y", "--yes", action="store_true", help="Execute after printing the plan")
@@ -651,60 +963,165 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     parser = _parser()
     args = parser.parse_args(argv)
+    onpolicy_target_attestation: Path | None = None
     try:
         source_config = load_experiment_source(args.config)
         reject_inline_secrets(source_config, path="experiment specification")
-        config = compile_experiment(source_config)
+        config = compile_experiment(source_config, topology_profile=args.topology_profile)
         reject_inline_secrets(config, path="experiment")
-        if args.parallel < 1:
-            raise ExperimentConfigError("--parallel must be at least 1")
-        gpus = _parse_gpus(args.gpus)
-        if gpus and args.parallel == 1:
-            raise ExperimentConfigError(
-                "--gpus only applies with --parallel greater than 1; sequential runs inherit the ambient CUDA environment"
+        if args.publish_training_outputs:
+            incompatible = []
+            if args.stages or args.start_from:
+                incompatible.append("--stages/--start-from")
+            if args.target:
+                incompatible.append("--target")
+            if args.parallel != 1:
+                incompatible.append("--parallel")
+            if args.gpus:
+                incompatible.append("--gpus")
+            if args.checkpoint or args.training_data:
+                incompatible.append("--checkpoint/--training-data")
+            if args.dry_run:
+                incompatible.append("--dry-run")
+            if args.resume_completed:
+                incompatible.append("--resume-completed")
+            if args.onpolicy_target_attestation is not None:
+                incompatible.append("--onpolicy-target-attestation")
+            if incompatible:
+                raise ExperimentConfigError("--publish-training-outputs cannot be combined with " + ", ".join(incompatible))
+            publication_owner, publication_targets = _publication_manifest(config)
+            plan_path, plan_digest = validate_resolved_plan(config)
+            stages: list[str] = []
+            preview: list[tuple[str, str, list[str]]] = []
+            gpus: list[str] = []
+            completed_training: dict[str, str] = {}
+        else:
+            publication_owner, publication_targets = None, None
+            if args.parallel < 1:
+                raise ExperimentConfigError("--parallel must be at least 1")
+            gpus = _parse_gpus(args.gpus)
+            if gpus and args.parallel == 1:
+                raise ExperimentConfigError("--gpus only applies with --parallel greater than 1; sequential runs inherit the ambient CUDA environment")
+            stages = select_stages(
+                config,
+                stages=[part.strip() for part in args.stages.split(",") if part.strip()] if args.stages else None,
+                start_from=args.start_from,
             )
-        if args.parallel > 1 and len(gpus) > args.parallel:
-            gpus = gpus[: args.parallel]
-        stages = select_stages(
-            config,
-            stages=[part.strip() for part in args.stages.split(",") if part.strip()] if args.stages else None,
-            start_from=args.start_from,
-        )
-        if args.parallel > 1 and not gpus and not args.dry_run:
-            for stage in stages:
-                if stage != "analysis" and any(
-                    command_resource(spec, stage) == "gpu" for spec in _entries(config, stage, target=args.target)
-                ):
-                    raise ExperimentConfigError(
-                        f"parallel {stage} execution includes GPU commands; pass --gpus with the visible GPU ids"
+            if args.parallel > 1 and not gpus and not args.dry_run:
+                for stage in stages:
+                    if stage != "analysis" and any(command_resource(spec, stage) == "gpu" for spec in _entries(config, stage, target=args.target)):
+                        raise ExperimentConfigError(f"parallel {stage} execution includes GPU commands; pass --gpus with the visible GPU ids")
+            if args.parallel > 1 and gpus:
+                for stage in stages:
+                    if stage == "analysis":
+                        continue
+                    largest_bundle = max(
+                        (command_gpu_count(spec, stage) for spec in _entries(config, stage, target=args.target)),
+                        default=0,
                     )
-        context = initial_context(config, checkpoint=args.checkpoint, training_data=args.training_data)
-        target_has_training = "training" in stages and bool(_entries(config, "training", target=args.target))
-        if not target_has_training:
-            context.update(load_output_context(config))
-        explicit_checkpoint = args.checkpoint or config.get("checkpoint")
-        if explicit_checkpoint:
-            context["checkpoint"] = explicit_checkpoint
-        if selected_stages_use_placeholder(config, stages, "training_data", target=args.target) and not args.training_data:
-            raise ExperimentConfigError("selected commands use ${training_data}; pass --training-data PATH")
-        preview = planned_commands(config, stages, context, strict=False, target=args.target)
-        if args.target and not preview:
-            raise ExperimentConfigError(f"no commands select target {args.target!r}")
-        if not args.dry_run:
-            missing = _missing_executables(preview)
-            if missing:
-                details = ", ".join(f"{executable!r} (needed by {where})" for executable, where in missing.items())
-                raise ExperimentConfigError(
-                    f"selected commands need executables not on PATH: {details}; "
-                    "install them or narrow the run with --stages/--start-from"
+                    if largest_bundle > len(gpus):
+                        raise ExperimentConfigError(f"parallel {stage} command requests {largest_bundle} GPU(s), but only {len(gpus)} were supplied")
+            context = initial_context(config, checkpoint=args.checkpoint, training_data=args.training_data)
+            target_has_training = "training" in stages and bool(_entries(config, "training", target=args.target))
+            completed_training = {}
+            if args.resume_completed:
+                if "training" not in stages:
+                    raise ExperimentConfigError("--resume-completed requires the training stage to be selected")
+                completed_training = validated_completed_training(config, target=args.target)
+                context.update(load_output_context(config, target=args.target))
+            elif not target_has_training:
+                context.update(load_output_context(config))
+            explicit_checkpoint = args.checkpoint or config.get("checkpoint")
+            if explicit_checkpoint:
+                context["checkpoint"] = explicit_checkpoint
+            if selected_stages_use_placeholder(config, stages, "training_data", target=args.target) and not args.training_data:
+                raise ExperimentConfigError("selected commands use ${training_data}; pass --training-data PATH")
+            preview = planned_commands(config, stages, context, strict=False, target=args.target)
+            if completed_training:
+                preview = [item for item in preview if not (item[0] == "training" and item[1] in completed_training)]
+            if args.target and not preview and not completed_training:
+                raise ExperimentConfigError(f"no commands select target {args.target!r}")
+            if args.onpolicy_target_attestation is not None:
+                if args.target is None:
+                    raise ExperimentConfigError("--onpolicy-target-attestation requires --target")
+                if stages != ["training"]:
+                    raise ExperimentConfigError("--onpolicy-target-attestation requires exactly --stages training")
+                if args.resume_completed:
+                    raise ExperimentConfigError("--onpolicy-target-attestation cannot be combined with --resume-completed")
+                onpolicy_target_attestation = args.onpolicy_target_attestation.resolve()
+                if not onpolicy_target_attestation.is_file():
+                    raise ExperimentConfigError(
+                        f"on-policy target attestation is missing: {onpolicy_target_attestation}"
+                    )
+                exact = planned_commands(config, stages, context, strict=True, target=args.target)
+                if len(exact) != 1 or exact[0][0] != "training":
+                    raise ExperimentConfigError(
+                        "--onpolicy-target-attestation requires exactly one compiled selected training command"
+                    )
+                from experiments.rmct_paper_vast_dense_models.stage1.onpolicy_recovery_preflight import (
+                    validate_onpolicy_target_attestation_for_runner,
                 )
-        plan_path, plan_digest = validate_resolved_plan(config)
+
+                base_command = exact[0][2]
+                validate_onpolicy_target_attestation_for_runner(
+                    attestation=onpolicy_target_attestation,
+                    plan=args.config,
+                    target=args.target,
+                    child_argv=[
+                        *base_command[1:],
+                        "--onpolicy-target-attestation",
+                        str(onpolicy_target_attestation),
+                    ],
+                    interpreter=base_command[0],
+                    # Parallel launch gives the one protected child the full
+                    # selected bundle. Bind that exact inherited allocation,
+                    # including logical GPU 0 (the coordinator), before any
+                    # subprocess is allowed to start.
+                    cuda_visible_devices=(
+                        ",".join(gpus) if args.parallel > 1 else os.environ.get("CUDA_VISIBLE_DEVICES")
+                    ),
+                    topology_profile=args.topology_profile,
+                )
+                preview = [
+                    (
+                        stage,
+                        name,
+                        _with_onpolicy_target_attestation(
+                            command,
+                            stage=stage,
+                            attestation=onpolicy_target_attestation,
+                        ),
+                    )
+                    for stage, name, command in preview
+                ]
+            if not args.dry_run:
+                missing = _missing_executables(preview)
+                if missing:
+                    details = ", ".join(f"{executable!r} (needed by {where})" for executable, where in missing.items())
+                    raise ExperimentConfigError(f"selected commands need executables not on PATH: {details}; install them or narrow the run with --stages/--start-from")
+            plan_path, plan_digest = validate_resolved_plan(config, target=args.target)
     except (ExperimentConfigError, OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
 
     print("\nExperiment specification:")
     print(yaml.safe_dump(source_config, sort_keys=False).rstrip())
     print(f"\nResolved plan: {plan_path} (sha256:{plan_digest})")
+    if args.publish_training_outputs:
+        assert publication_owner is not None and publication_targets is not None
+        print(f"\nTraining-output publication owner: {publication_owner}")
+        for target_name, command_names in publication_targets.items():
+            print(f"  {target_name}: {', '.join(command_names)}")
+        if not args.yes and input("\nPublish these target outputs? [y/N] ").strip().lower() != "y":
+            print("Aborted.")
+            return
+        try:
+            saved_plan_path, saved_plan_digest = save_resolved_plan(config)
+            print(f"\nSaved resolved plan: {saved_plan_path} (sha256:{saved_plan_digest})")
+            state_path, state_digest = publish_training_outputs(config)
+            print(f"Published canonical training outputs: {state_path} (sha256:{state_digest})")
+        except (ExperimentConfigError, OSError) as exc:
+            raise SystemExit(str(exc)) from exc
+        return
     if args.target:
         print(f"\nExecution target: {args.target}")
     if args.parallel > 1:
@@ -722,7 +1139,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     try:
-        saved_plan_path, saved_plan_digest = save_resolved_plan(config)
+        saved_plan_path, saved_plan_digest = save_resolved_plan(config, target=args.target)
         print(f"\nSaved resolved plan: {saved_plan_path} (sha256:{saved_plan_digest})")
         for stage in stages:
             if args.parallel > 1 and stage != "analysis":
@@ -733,18 +1150,27 @@ def main(argv: list[str] | None = None) -> None:
                     target=args.target,
                     parallel=args.parallel,
                     gpus=gpus,
+                    skip_completed=frozenset(completed_training),
+                    onpolicy_target_attestation=onpolicy_target_attestation,
                 )
                 continue
             for index, spec in enumerate(_entries(config, stage, target=args.target), start=1):
                 name = str(spec.get("name") or f"{stage}-{index}")
-                command = command_argv(spec, context, strict=True)
+                if stage == "training" and name in completed_training:
+                    print(f"\n[{stage}:{name}] SKIPPED: validated completed checkpoint", flush=True)
+                    continue
+                command = _with_onpolicy_target_attestation(
+                    command_argv(spec, context, strict=True),
+                    stage=stage,
+                    attestation=onpolicy_target_attestation,
+                )
                 print(f"\n[{stage}:{name}] {shlex.join(command)}")
                 checkpoint = run_command(command)
                 if checkpoint:
                     context["checkpoint"] = checkpoint
                     if stage == "training":
                         context[f"training.{name}.checkpoint"] = checkpoint
-                        save_training_checkpoint(config, name, checkpoint)
+                        save_training_checkpoint(config, name, checkpoint, target=args.target)
     except (ExperimentConfigError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc)) from exc
 

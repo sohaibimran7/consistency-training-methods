@@ -1,0 +1,46 @@
+{
+  "schema": "ctm-artifact-backup-record-v1",
+  "archive": {
+    "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-artifact-preservation-20260908/local-artifacts.tar",
+    "sha256": "0ee19210e69bee4810899d7403d3d0156ba2cb2fbf4ffc31d939679ddbbc857d",
+    "bytes": 18977730560
+  },
+  "inventory_sha256": "cc9896551918b3c2146c1015276af1897f454376d08eeed811f704be8653726e",
+  "verified_files": 8619,
+  "verified_bytes": 18967069872,
+  "unavailable_hashes": [
+    {
+      "sha256": "e228248c1ec5c6a8de9c1bf3ba8ac014ac364e76a5331aed27996839122d0a51",
+      "locations": [
+        {
+          "path": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/rmct-r5-relaunch-20260908/repaired-chain.json",
+          "reason": "content changed since initial inventory"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "path": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/artifact-backup-verification-20260908.json",
+    "sha256": "af0321c2166725804de631d38ebaa716789431918409e25a13b552264d767b0e"
+  },
+  "restore_tool": "scripts/restore_artifacts.py",
+  "limitations": [
+    "Symlink targets and original file modes were not captured. Restored files use current process defaults.",
+    "Initial-inventory scope only; active experiment outputs created later require another capture.",
+    "The older scheduling receipt that changed during capture is unavailable. A separate delta preserves its newer state.",
+    "This copy shares the Isambard account with campaign artifacts. It is independent of the laptop, not an independently administered backup service."
+  ],
+  "additional_evidence_archive": {
+    "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-artifact-preservation-20260908/ctm-consolidation-evidence-20260908-1435.tar.gz",
+    "sha256": "3e8d9e807b44c97c290ed728bc96889d22d62878af409eacf898a8e2197c5f3d",
+    "bytes": 1425797,
+    "contents": "Full local and remote inventories, artifact verification and actual AITA restoration evidence, baseline CI log, latest stable Gemma source delta and current RMCT scheduling receipts."
+  },
+  "restore_check": {
+    "path": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/artifact-restore-check-20260908.json",
+    "sha256": "66d0bef983dba9e437c0d62be98d61854239b959624494c6ac68e7904de6311d",
+    "restored_artifact": "artifacts/elephant-aita-ntaflip-r006-results-20260821/completion.json",
+    "destination": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-artifact-preservation-20260908/restore-check-aita",
+    "result": "Verified all blobs and restored selected file; no selected identity missing."
+  }
+}

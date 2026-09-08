@@ -58,8 +58,18 @@ class FakeEngine:
             return {token: SimpleNamespace(logprob=value)}
 
         completions = [
-            SimpleNamespace(token_ids=[7, 8], logprobs=[lp_dict(7, -0.5), lp_dict(8, -0.7)]),
-            SimpleNamespace(token_ids=[9], logprobs=[lp_dict(9, -1.2)]),
+            SimpleNamespace(
+                token_ids=[7, 8],
+                logprobs=[lp_dict(7, -0.5), lp_dict(8, -0.7)],
+                finish_reason="stop",
+                stop_reason=8,
+            ),
+            SimpleNamespace(
+                token_ids=[9],
+                logprobs=[lp_dict(9, -1.2)],
+                finish_reason="stop",
+                stop_reason=9,
+            ),
         ]
         return [SimpleNamespace(outputs=completions) for _ in prompts]
 
@@ -92,7 +102,11 @@ class FakeScoringEngine:
                 prompt_logprobs[-1][tokens[-1]].logprob = math.inf
             outputs.append(
                 SimpleNamespace(
-                    outputs=[],
+                    outputs=(
+                        [SimpleNamespace(token_ids=[200001], logprobs=None, finish_reason="stop", stop_reason=200001)]
+                        if params.kwargs.get("max_tokens") is None
+                        else []
+                    ),
                     prompt_token_ids=returned_tokens,
                     prompt_logprobs=prompt_logprobs,
                 )
@@ -200,6 +214,45 @@ class TestVLLMSampler:
         assert call.params.kwargs["ignore_eos"] is False
         assert call.params.kwargs["logprobs"] == 0
 
+    def test_no_cap_request_preserves_none_and_requires_stop_termination(self):
+        engine = FakeEngine()
+        sampler = make_sampler(engine)
+
+        sequences = sampler.sample(
+            [5, 6],
+            max_tokens=None,
+            temperature=1.0,
+            stop=[200001, 200008],
+            num_samples=2,
+            use_base=True,
+        )
+
+        assert engine.calls[0].params.kwargs["max_tokens"] is None
+        assert [sequence.tokens for sequence in sequences] == [[7, 8], [9]]
+
+    def test_no_cap_request_rejects_context_length_termination(self):
+        engine = FakeEngine()
+        original_generate = engine.generate
+
+        def length_terminated(*args, **kwargs):
+            outputs = original_generate(*args, **kwargs)
+            outputs[0].outputs[0].finish_reason = "length"
+            outputs[0].outputs[0].stop_reason = None
+            return outputs
+
+        engine.generate = length_terminated
+        sampler = make_sampler(engine)
+
+        with pytest.raises(RuntimeError, match="did not terminate through an EOS/stop token"):
+            sampler.sample(
+                [5],
+                max_tokens=None,
+                temperature=1.0,
+                stop=[200001, 200008],
+                num_samples=1,
+                use_base=True,
+            )
+
     def test_ignore_eos_is_explicit_opt_in(self):
         engine = FakeEngine()
         sampler = make_sampler(engine)
@@ -269,6 +322,35 @@ class TestVLLMSampler:
 
         sampler.score_completions([[10]], [[7]], use_base=True)
         assert engine.calls[1].lora_request is None
+
+    def test_uncapped_parity_scorer_preserves_none_and_requires_eos(self):
+        engine = FakeScoringEngine()
+        sampler = make_sampler(engine)
+
+        scores = sampler.score_completions_uncapped_eos_tail(
+            [[10, 11]],
+            [[7, 8]],
+            use_base=True,
+        )
+
+        assert scores[0] == pytest.approx([-2.07, -3.08])
+        assert engine.calls[0].params.kwargs["max_tokens"] is None
+
+    def test_uncapped_parity_scorer_rejects_non_eos_tail(self):
+        engine = FakeScoringEngine()
+        original_generate = engine.generate
+
+        def length_terminated(*args, **kwargs):
+            outputs = original_generate(*args, **kwargs)
+            outputs[0].outputs[0].finish_reason = "length"
+            outputs[0].outputs[0].stop_reason = None
+            return outputs
+
+        engine.generate = length_terminated
+        sampler = make_sampler(engine)
+
+        with pytest.raises(RuntimeError, match="did not terminate through an EOS/stop token"):
+            sampler.score_completions_uncapped_eos_tail([[10]], [[7]], use_base=True)
 
     @pytest.mark.parametrize(
         ("malformed", "message"),

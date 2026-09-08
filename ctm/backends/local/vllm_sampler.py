@@ -31,10 +31,10 @@ from ctm.backends.local.qwen35_vllm_compat import (
 
 
 def _qwen35_runtime_lora_is_unsafe(model_name: str) -> bool:
-    """Return whether the validated vLLM stack would drop this model's PEFT LoRA.
+    """Return whether vLLM 0.26 would silently drop this model's PEFT LoRA.
 
     Qwen3.5 PEFT checkpoints trained through Transformers name their text
-    blocks ``model.layers.*``.  The validated stack serves Qwen3.5 through a conditional
+    blocks ``model.layers.*``.  vLLM 0.26 serves Qwen3.5 through a conditional
     wrapper whose runtime blocks are ``language_model.model.layers.*`` and its
     adapter mapper lacks that bridge.  The server accepts the adapter but uses
     zero of its tensors.  This matters for policy rollouts as much as for
@@ -206,7 +206,7 @@ class VLLMSampler:
             except (OSError, ValueError) as exc:
                 raise ValueError(
                     "vLLM LoRA policy sampling for Qwen3.5 is disabled for raw PEFT adapters: "
-                    "the validated vLLM stack maps no `model.layers.*` tensors to "
+                    "vLLM 0.26 maps no `model.layers.*` tensors to "
                     "`language_model.model.layers.*`. Publish the per-version, hash-bound "
                     "Qwen3.5 compatibility snapshot before sampling. "
                     f"Validation failed for {adapter_dir!r}: {exc}"
@@ -234,7 +234,7 @@ class VLLMSampler:
         self,
         prompt_tokens: list[int],
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -255,7 +255,7 @@ class VLLMSampler:
         self,
         prompt_tokens_batch: list[list[int]],
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -285,7 +285,10 @@ class VLLMSampler:
         )
         if len(outputs) != len(prompt_tokens_batch):
             raise RuntimeError(f"vLLM returned {len(outputs)} prompt results for a batch of {len(prompt_tokens_batch)}")
-        return [self._extract_sequences(output) for output in outputs]
+        return [
+            self._extract_sequences(output, require_eos_only=max_tokens is None)
+            for output in outputs
+        ]
 
     def score_completions(
         self,
@@ -302,6 +305,47 @@ class VLLMSampler:
         token after the scored context.
         """
 
+        return self._score_completions_with_tail(
+            prompt_tokens_batch,
+            completion_tokens_batch,
+            use_base=use_base,
+            tail_max_tokens=1,
+            require_eos_only=False,
+        )
+
+    def score_completions_uncapped_eos_tail(
+        self,
+        prompt_tokens_batch: list[list[int]],
+        completion_tokens_batch: list[list[int]],
+        *,
+        use_base: bool,
+    ) -> list[list[float]]:
+        """Prompt-score continuations while the API's unused tail is uncapped.
+
+        vLLM exposes the requested teacher-forced values as prompt logprobs but
+        still starts a continuation after that prompt.  Muse parity probes use
+        this method so that continuation has ``max_tokens=None`` and must stop
+        through EOS.  It is deliberately separate from the historical scorer:
+        production Muse training never calls either prompt-scoring path.
+        """
+
+        return self._score_completions_with_tail(
+            prompt_tokens_batch,
+            completion_tokens_batch,
+            use_base=use_base,
+            tail_max_tokens=None,
+            require_eos_only=True,
+        )
+
+    def _score_completions_with_tail(
+        self,
+        prompt_tokens_batch: list[list[int]],
+        completion_tokens_batch: list[list[int]],
+        *,
+        use_base: bool,
+        tail_max_tokens: int | None,
+        require_eos_only: bool,
+    ) -> list[list[float]]:
         if len(prompt_tokens_batch) != len(completion_tokens_batch):
             raise ValueError(
                 "prompt_tokens_batch and completion_tokens_batch must have the same length, "
@@ -324,7 +368,7 @@ class VLLMSampler:
         combined = [prompt + completion for prompt, completion in zip(prompts, completions)]
         params = self._api.SamplingParams(
             n=1,
-            max_tokens=1,
+            max_tokens=tail_max_tokens,
             temperature=0.0,
             prompt_logprobs=0,
         )
@@ -336,6 +380,9 @@ class VLLMSampler:
         )
         if len(outputs) != len(combined):
             raise RuntimeError(f"vLLM returned {len(outputs)} score results for a batch of {len(combined)}")
+        if require_eos_only:
+            for output in outputs:
+                self._extract_sequences(output, require_eos_only=True)
 
         scores: list[list[float]] = []
         for request_index, (output, expected_tokens, prompt, completion) in enumerate(
@@ -398,9 +445,20 @@ class VLLMSampler:
         return scores
 
     @staticmethod
-    def _extract_sequences(output: Any) -> list[SampledSequence]:
+    def _extract_sequences(
+        output: Any,
+        *,
+        require_eos_only: bool = False,
+    ) -> list[SampledSequence]:
         sequences: list[SampledSequence] = []
         for completion in output.outputs:
+            if require_eos_only:
+                finish_reason = getattr(completion, "finish_reason", None)
+                if finish_reason != "stop":
+                    raise RuntimeError(
+                        "uncapped vLLM generation did not terminate through an EOS/stop token: "
+                        f"finish_reason={finish_reason!r}, stop_reason={getattr(completion, 'stop_reason', None)!r}"
+                    )
             tokens = list(completion.token_ids)
             logprobs: Optional[list[float]] = None
             if completion.logprobs is not None:

@@ -1,0 +1,108 @@
+{
+  "schema_version": "switch-gate-cost-v1",
+  "calculated_at": "2026-07-29T12:46:03Z",
+  "currency": "USD",
+  "pricing_units": "per 1,000,000 tokens",
+  "pricing_source": "https://tinker-docs.thinkingmachines.ai/tinker/models/",
+  "assumptions": {
+    "uncached_input_pricing": true,
+    "num_choices": 1,
+    "automatic_retries": 0,
+    "screen_requests_per_model": 200,
+    "confirmation_requests_per_advanced_model": 1200,
+    "hle_requests_per_advanced_model": 700,
+    "maximum_output_tokens_per_request": 20480,
+    "screen_runs_for_all_three_models": true,
+    "confirmation_and_hle_run_only_for_models_passing_the_screen": true
+  },
+  "models": {
+    "Qwen/Qwen3.5-4B": {
+      "renderer": "qwen3_5",
+      "tokenizer_revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "prices": {
+        "input": 0.33,
+        "cached_input": 0.066,
+        "output": 1.005
+      },
+      "input_tokens": {
+        "screen": 87859,
+        "confirmation_n600": 521088,
+        "hle_clean_plus_six_biases": 578914,
+        "all_if_advanced": 1187861
+      },
+      "request_prompt_stats": {
+        "screen": {"requests": 200, "mean": 439.295, "p50": 433, "p95": 734, "max": 1254},
+        "confirmation_n600": {"requests": 1200, "mean": 434.24, "p50": 393, "p95": 756, "max": 1443},
+        "hle_clean_plus_six_biases": {"requests": 700, "mean": 827.02, "p50": 573, "p95": 2598, "max": 7873}
+      },
+      "projected_cost": {
+        "average_output_1000": {"screen": 0.2300, "confirmation": 1.3780, "hle": 0.8945, "all": 2.5025},
+        "average_output_4000": {"screen": 0.8330, "confirmation": 4.9960, "hle": 3.0050, "all": 8.8340},
+        "every_output_at_20480": {"screen": 4.1455, "confirmation": 24.8708, "hle": 14.5987, "all": 43.6150}
+      }
+    },
+    "Qwen/Qwen3.5-9B": {
+      "renderer": "qwen3_5",
+      "tokenizer_revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+      "prices": {
+        "input": 0.66,
+        "cached_input": 0.132,
+        "output": 1.995
+      },
+      "input_tokens": {
+        "screen": 87859,
+        "confirmation_n600": 521088,
+        "hle_clean_plus_six_biases": 578914,
+        "all_if_advanced": 1187861
+      },
+      "request_prompt_stats": {
+        "screen": {"requests": 200, "mean": 439.295, "p50": 433, "p95": 734, "max": 1254},
+        "confirmation_n600": {"requests": 1200, "mean": 434.24, "p50": 393, "p95": 756, "max": 1443},
+        "hle_clean_plus_six_biases": {"requests": 700, "mean": 827.02, "p50": 573, "p95": 2598, "max": 7873}
+      },
+      "projected_cost": {
+        "average_output_1000": {"screen": 0.4570, "confirmation": 2.7379, "hle": 1.7786, "all": 4.9735},
+        "average_output_4000": {"screen": 1.6540, "confirmation": 9.9199, "hle": 5.9681, "all": 17.5420},
+        "every_output_at_20480": {"screen": 8.2295, "confirmation": 49.3730, "hle": 28.9824, "all": 86.5849}
+      }
+    },
+    "Qwen/Qwen3-8B": {
+      "renderer": "qwen3",
+      "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "prices": {
+        "input": 0.195,
+        "cached_input": 0.039,
+        "output": 0.60
+      },
+      "input_tokens": {
+        "screen": 84653,
+        "confirmation_n600": 501783,
+        "hle_clean_plus_six_biases": 561094,
+        "all_if_advanced": 1147530
+      },
+      "request_prompt_stats": {
+        "screen": {"requests": 200, "mean": 423.265, "p50": 410, "p95": 709, "max": 1226},
+        "confirmation_n600": {"requests": 1200, "mean": 418.1525, "p50": 380, "p95": 731, "max": 1437},
+        "hle_clean_plus_six_biases": {"requests": 700, "mean": 801.5628571428572, "p50": 552, "p95": 2562, "max": 7489}
+      },
+      "projected_cost": {
+        "average_output_1000": {"screen": 0.1365, "confirmation": 0.8178, "hle": 0.5294, "all": 1.4838},
+        "average_output_4000": {"screen": 0.4965, "confirmation": 2.9778, "hle": 1.7894, "all": 5.2638},
+        "every_output_at_20480": {"screen": 2.4741, "confirmation": 14.8434, "hle": 8.7110, "all": 26.0286}
+      }
+    }
+  },
+  "portfolio_cost": {
+    "screen_all_three": {
+      "average_output_1000": 0.8235,
+      "average_output_4000": 2.9835,
+      "every_output_at_20480": 14.8491
+    },
+    "all_three_advance_and_complete": {
+      "average_output_1000": 8.9598,
+      "average_output_4000": 31.6398,
+      "every_output_at_20480": 156.2286
+    }
+  },
+  "interpretation": "The maximum is a one-attempt model-token envelope, not a prediction. Runs stop on a failed request because automatic retries are disabled."
+}

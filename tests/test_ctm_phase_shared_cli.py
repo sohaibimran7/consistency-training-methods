@@ -17,6 +17,7 @@ import pytest
 from ctm.backends.cli import (
     add_backend_args,
     build_backend,
+    build_base_generation_backend,
     describe_backend,
     resolve_phase_shared_args,
     resolve_rollout_parallel_args,
@@ -37,10 +38,32 @@ def test_phase_shared_cli_is_fail_closed_for_unintegrated_callers():
     for option in (
         "--local-phase-shared",
         "--local-vllm-sleep-during-training",
-        "--local-rollout-gpus",
+        "--local-training-gpus",
+        "--local-replica-start-timeout-seconds",
     ):
         with pytest.raises(SystemExit):
-            parser.parse_args([option, "0"] if option == "--local-rollout-gpus" else [option])
+            parser.parse_args([option, "0"] if option.endswith("seconds") or option.endswith("gpus") else [option])
+
+
+def test_dedicated_rollout_workers_remain_available_without_phase_sharing():
+    parser = argparse.ArgumentParser()
+    add_backend_args(parser)
+
+    args = parser.parse_args(
+        [
+            "--local-rollout-gpus",
+            "0,1",
+            "--local-rollout-status-dir",
+            "worker-status",
+            "--local-rollout-seed-base",
+            "42",
+        ]
+    )
+
+    assert args.local_phase_shared is False
+    assert args.local_rollout_gpus == "0,1"
+    assert args.local_rollout_status_dir == "worker-status"
+    assert args.local_rollout_seed_base == 42
 
 
 class _FakeLocalBackend:
@@ -181,6 +204,7 @@ def test_phase_shared_uses_first_training_gpu_as_rank_zero_and_allows_overlap(
         (["--local-phase-shared"], "requires --backend local"),
         (["--backend", "local", "--local-phase-shared", "--local-sampler", "hf"], "requires --local-sampler vllm"),
         (["--backend", "local", "--local-phase-shared", "--local-full-finetune"], "requires LoRA"),
+        (["--backend", "local", "--local-phase-shared", "--local-device-map", "auto"], "incompatible with --local-device-map"),
         (["--backend", "local", "--local-training-gpus", "0,1"], "requires --local-phase-shared"),
     ],
 )
@@ -231,3 +255,21 @@ def test_phase_shared_rejects_a_legacy_coordinator_device_that_does_not_match_ra
     )
     with pytest.raises(ValueError, match="first --local-training-gpus entry"):
         build_backend(args)
+
+
+def test_phase_shared_cannot_be_accidentally_used_for_frozen_base_generation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-a,GPU-b")
+    args = _parse(
+        [
+            "--backend",
+            "local",
+            "--local-phase-shared",
+            "--local-rollout-status-dir",
+            str(tmp_path / "status"),
+        ]
+    )
+    with pytest.raises(ValueError, match="training topology"):
+        build_base_generation_backend(args, model="unit/model", default_status_dir=tmp_path / "base")

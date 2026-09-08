@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Literal, Optional, Sequence, Callable, Any
 
 from tinker import types
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from tqdm import tqdm
 
 from tinker_cookbook.utils.ml_log import setup_logging
@@ -107,6 +107,43 @@ _resolve_indices = adv_math.resolve_indices
 _select_rollouts = adv_math.select_rollouts
 
 
+def _per_item_consistency_gap_aggregates(
+    batch_items: Sequence[BatchItem],
+    training_indices: Sequence[int],
+) -> dict[int, dict[str, float | int]]:
+    """Summarize signed and absolute rate gaps before batch-level cancellation.
+
+    ``train/consistency_gap_<index>`` is intentionally retained as the
+    historical signed batch aggregate.  It can be close to zero when equally
+    large positive and negative question-level gaps cancel.  The monitor-facing
+    aggregates here are computed one question at a time, so a controller can
+    form an exact multi-update mean with ``absolute_sum / count`` rather than
+    taking an unweighted mean of already-averaged update metrics.
+
+    A question contributes only when both its reference rate and the requested
+    training-perturbation rate were successfully estimated.  Missing rates are
+    represented by a zero count, never by a zero gap.
+    """
+
+    indices = sorted(set(training_indices))
+    aggregates: dict[int, dict[str, float | int]] = {
+        index: {"signed_sum": 0.0, "absolute_sum": 0.0, "count": 0} for index in indices
+    }
+    for item in batch_items:
+        if item.p_ref is None:
+            continue
+        for index in indices:
+            rate = item.p_hat.get(index)
+            if rate is None:
+                continue
+            gap = rate - item.p_ref
+            aggregate = aggregates[index]
+            aggregate["signed_sum"] = float(aggregate["signed_sum"]) + gap
+            aggregate["absolute_sum"] = float(aggregate["absolute_sum"]) + abs(gap)
+            aggregate["count"] = int(aggregate["count"]) + 1
+    return aggregates
+
+
 # =============================================================================
 # Configuration Classes
 # =============================================================================
@@ -142,12 +179,34 @@ class TrainingLoopConfig(BaseModel):
     # Normalize each reward population within a datapoint by default. ``pooled``
     # instead standardizes that population across every datapoint in the batch.
     normalize: Literal["pooled", "per_item"] = "per_item"
+    # Keep the historical random per-epoch order by default.  Sealed segment
+    # datasets can opt out to consume their supplied (for example interleaved)
+    # row order deterministically on every epoch.
+    shuffle_datapoints: bool = True
+
+
+def _epoch_datapoint_batches(
+    n_datapoints: int,
+    batch_size: int,
+    *,
+    shuffle_datapoints: bool,
+) -> list[list[int]]:
+    """Build one epoch's index batches, optionally preserving source order."""
+
+    datapoint_order = list(range(n_datapoints))
+    if shuffle_datapoints:
+        random.shuffle(datapoint_order)
+    return [datapoint_order[i : i + batch_size] for i in range(0, n_datapoints, batch_size)]
 
 
 class GenerationConfig(BaseModel):
     """Generation config."""
 
-    max_new_tokens: int = 16384
+    # ``None`` is an explicit EOS-only policy. Backends must preserve it as
+    # ``max_tokens=None`` rather than resolving a library default.  Existing
+    # experiments retain their historical integer default; protected no-cap
+    # plans opt in explicitly and attest the resulting runtime request.
+    max_new_tokens: int | None = 16384
     temperature: float = 0.7
 
 
@@ -224,6 +283,18 @@ class RLConfig(BaseModel):
     # Free-form provenance supplied by the selected adapter and CLI;
     # flows into the run manifest via the config dump — the registry generator reads it.
     run_metadata: dict = {}
+
+    @field_validator("kl_discount_factor", mode="before")
+    @classmethod
+    def _valid_kl_discount_factor(cls, value: float) -> float:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or not 0 <= value <= 1
+        ):
+            raise ValueError("kl_discount_factor must be a finite number in [0, 1]")
+        return float(value)
 
 
 # =============================================================================
@@ -1214,9 +1285,11 @@ class RLTrainer:
                         pending_initial_rollouts[dp_idx].extend(result.sampled_rollouts)
 
         for epoch in range(self.config.loop.n_epochs):
-            shuffled = list(range(n_datapoints))
-            random.shuffle(shuffled)
-            batches = [shuffled[i : i + batch_size] for i in range(0, n_datapoints, batch_size)]
+            batches = _epoch_datapoint_batches(
+                n_datapoints,
+                batch_size,
+                shuffle_datapoints=self.config.loop.shuffle_datapoints,
+            )
 
             # ── Sampling helpers ──────────────────────────────────────────
 
@@ -1473,6 +1546,7 @@ class RLTrainer:
                         training_idx,
                         need_p_ref_init,
                         pbar,
+                        optimizer_step=optimizer_step,
                         skipped_empty_batch=True,
                     )
                     self._log_rollouts(global_step, epoch)
@@ -1575,6 +1649,7 @@ class RLTrainer:
                     training_idx,
                     need_p_ref_init,
                     pbar,
+                    optimizer_step=optimizer_step,
                 )
                 self._log_rollouts(global_step, epoch)
 
@@ -1748,6 +1823,7 @@ class RLTrainer:
         training_idx,
         need_p_ref_init,
         pbar,
+        optimizer_step,
         skipped_empty_batch=False,
     ):
         """Compute and log all metrics for a training step, including zero-signal skips."""
@@ -1755,9 +1831,14 @@ class RLTrainer:
             compute_kl_sample_train(grad_datums, training_logprobs) if grad_datums and training_logprobs else {}
         )
 
+        # A missing reference rate is normally filtered before this method is
+        # called.  Keep metric logging robust for empty/parse-failed batches as
+        # well: an unavailable rate must not be treated as a numerical zero.
+        resolved_items = [item for item in batch_items if item.p_ref is not None]
+
         # Rate variance (consistency measure)
         all_rates = []
-        for item in batch_items:
+        for item in resolved_items:
             all_rates.extend(item.p_hat.values())
             all_rates.append(item.p_ref)
         rate_var = 0.0
@@ -1765,16 +1846,18 @@ class RLTrainer:
             mean_rate = sum(all_rates) / len(all_rates)
             rate_var = sum((r - mean_rate) ** 2 for r in all_rates) / len(all_rates)
 
-        avg_p_ref = sum(item.p_ref for item in batch_items) / len(batch_items) if batch_items else 0.0
+        avg_p_ref = sum(item.p_ref for item in resolved_items) / len(resolved_items) if resolved_items else 0.0
         # p_ref_init can be None for an item even when need_p_ref_init (anchor on) — e.g.
         # the anchor model failed to parse all ref rollouts for that datapoint. Average only
         # the resolved ones; None if none resolved. (The reward path already handles None.)
         _p_ref_inits = [item.p_ref_init for item in batch_items if item.p_ref_init is not None]
         avg_p_ref_init = (sum(_p_ref_inits) / len(_p_ref_inits) if _p_ref_inits else None) if need_p_ref_init else None
         avg_p_hat = {}
-        for item in batch_items:
+        for item in resolved_items:
             for pert_idx, rate in item.p_hat.items():
-                avg_p_hat[pert_idx] = avg_p_hat.get(pert_idx, 0.0) + rate / len(batch_items)
+                avg_p_hat[pert_idx] = avg_p_hat.get(pert_idx, 0.0) + rate / len(resolved_items)
+
+        per_item_gaps = _per_item_consistency_gap_aggregates(resolved_items, training_idx)
 
         cons_reward_mean = sum(consistency_rewards) / len(consistency_rewards) if consistency_rewards else 0.0
         anchor_reward_mean = sum(anchor_rewards) / len(anchor_rewards) if anchor_rewards else 0.0
@@ -1796,6 +1879,7 @@ class RLTrainer:
             "rollout/grader_failure_rate": grader_failure_rate,
             "rollout/grader_sample_count": grader_sample_count,
             "train/skipped_empty_batch": int(skipped_empty_batch),
+            "train/optimizer_step": optimizer_step,
             "train/n_consistency_rollouts": len(consistency_rewards),
             "train/n_anchor_rollouts": len(anchor_rewards),
             "train/avg_response_length": avg_response_len,
@@ -1825,6 +1909,20 @@ class RLTrainer:
         for pert_idx, rate in avg_p_hat.items():
             step_metrics[f"train/p_hat_{pert_idx}"] = rate
             step_metrics[f"train/consistency_gap_{pert_idx}"] = rate - avg_p_ref
+
+        # These sums/counts are deliberately logged alongside the update mean.
+        # A controller evaluating a 16-update block should sum the absolute
+        # values and counts, then divide, so parse-rate variation cannot give
+        # every update equal weight regardless of how many questions it covers.
+        for pert_idx, aggregate in per_item_gaps.items():
+            signed_sum = float(aggregate["signed_sum"])
+            absolute_sum = float(aggregate["absolute_sum"])
+            count = int(aggregate["count"])
+            step_metrics[f"train/consistency_gap_item_signed_sum_{pert_idx}"] = signed_sum
+            step_metrics[f"train/consistency_gap_abs_sum_{pert_idx}"] = absolute_sum
+            step_metrics[f"train/consistency_gap_abs_count_{pert_idx}"] = count
+            if count:
+                step_metrics[f"train/consistency_gap_abs_mean_{pert_idx}"] = absolute_sum / count
 
         for (pert_idx, trait_val), rewards in reward_by_pert_trait.items():
             trait_key = f"{trait_val:.0f}" if trait_val == int(trait_val) else f"{trait_val:.2f}"

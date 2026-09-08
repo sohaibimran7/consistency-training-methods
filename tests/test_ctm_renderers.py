@@ -73,6 +73,39 @@ def test_hf_renderer_fails_closed_when_template_cannot_prove_the_sft_boundary():
         )
 
 
+def test_hf_renderer_uses_exact_assistant_content_offsets_when_completed_prefix_changes():
+    class BoundaryTokenizer(_HFTokenizer):
+        def _render(self, messages, *, add_generation_prompt):
+            rendered = "".join(f"<{message['role']}>{message['content']}" for message in messages)
+            if add_generation_prompt:
+                rendered += "<assistant-open>"
+            elif messages and messages[-1]["role"] == "assistant":
+                rendered += "<assistant-end>"
+            return rendered
+
+        def apply_chat_template(self, messages, *, tokenize, add_generation_prompt, return_dict=False):
+            rendered = self._render(messages, add_generation_prompt=add_generation_prompt)
+            return [ord(char) for char in rendered] if tokenize else rendered
+
+        def __call__(self, text, *, add_special_tokens, return_offsets_mapping):
+            assert add_special_tokens is False and return_offsets_mapping is True
+            return {
+                "input_ids": [ord(char) for char in text],
+                "offset_mapping": [(index, index + 1) for index in range(len(text))],
+            }
+
+    tokenizer = BoundaryTokenizer()
+    renderer = HuggingFaceChatTemplateRenderer(tokenizer)
+    messages = [{"role": "user", "content": "question"}, {"role": "assistant", "content": "answer"}]
+
+    model_input, weights = renderer.build_supervised_example(messages)
+
+    rendered = tokenizer._render(messages, add_generation_prompt=False)
+    boundary = rendered.rfind("answer")
+    assert model_input.to_ints() == [ord(char) for char in rendered]
+    assert weights.tolist() == [0.0] * boundary + [1.0] * (len(rendered) - boundary)
+
+
 def test_local_renderer_resolution_uses_hf_without_consulting_tinker(monkeypatch):
     tokenizer = _HFTokenizer()
     monkeypatch.setattr("ctm.backends.renderers.AutoTokenizer.from_pretrained", lambda model: tokenizer)
