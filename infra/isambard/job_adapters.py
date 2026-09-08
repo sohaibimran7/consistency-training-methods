@@ -28,6 +28,8 @@ RMCT_R5_INTERACTIVE_GPU_DIAGNOSTIC = "rmct_r5_interactive_gpu_diagnostic"
 GEMMA_MAIN_16GPU = "gemma_main_16gpu"
 GEMMA_SMOKE = "gemma_smoke"
 GEMMA_EOS_DEBUG = "gemma_eos_debug"
+BAYESIAN_EVAL = "bayesian_eval"
+GEMMA_LUNA_GRADE_CPU = "gemma_luna_grade_cpu"
 
 PROFILES = frozenset(
     {
@@ -36,6 +38,8 @@ PROFILES = frozenset(
         GEMMA_MAIN_16GPU,
         GEMMA_SMOKE,
         GEMMA_EOS_DEBUG,
+        BAYESIAN_EVAL,
+        GEMMA_LUNA_GRADE_CPU,
     }
 )
 
@@ -47,6 +51,8 @@ _RMCT_SEGMENT_WRAPPER = Path("infra/isambard/run_qwen35_rmct_convergence_r5_pati
 _GEMMA_MAIN_WRAPPER = Path("infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu.sbatch")
 _GEMMA_SMOKE_WRAPPER = Path("infra/isambard/run_gemma4_12b_base_two_bias_smoke.sbatch")
 _GEMMA_DEBUG_WRAPPER = Path("infra/isambard/debug_gemma_eos.sbatch")
+_BAYESIAN_WRAPPER = Path("infra/isambard/run_batch.sh")
+_GEMMA_LUNA_WRAPPER = Path("infra/isambard/run_gemma4_12b_base_two_bias_luna_grade.sbatch")
 
 _GEMMA_CAMPAIGN_NAME = "gemma4-12b-base-two-bias-50x21-16gpu-v1"
 
@@ -536,6 +542,99 @@ def _build_gemma_debug(
     )
 
 
+def _build_gemma_luna_grade_cpu(
+    *,
+    request_id: str,
+    owner: str,
+    checkout: Path,
+    remote_dir: str,
+    output_root: str,
+    mode: str,
+    minutes: int,
+    env: dict[str, str],
+) -> dict[str, Any]:
+    _require_mode(GEMMA_LUNA_GRADE_CPU, mode, {"batch"})
+    _require_minutes(GEMMA_LUNA_GRADE_CPU, minutes, 360)
+    supplied = _allow_environment(
+        env, allowed={"CTM_RMCT_LUNA_ENV_FILE", "CTM_GEMMA4_LUNA_PYTHON"}, required={"CTM_RMCT_LUNA_ENV_FILE"}
+    )
+    _absolute_configuration(supplied, {"CTM_RMCT_LUNA_ENV_FILE", "CTM_GEMMA4_LUNA_PYTHON"})
+    if "CTM_GEMMA4_LUNA_PYTHON" in supplied:
+        interpreter = PurePosixPath(supplied["CTM_GEMMA4_LUNA_PYTHON"])
+        runtime_root = interpreter.parent.parent if interpreter.parent.name == "bin" else interpreter.parent
+        _disjoint_output(output_root, str(runtime_root), field="the Luna interpreter runtime tree")
+    if PurePosixPath(output_root).name != _GEMMA_CAMPAIGN_NAME:
+        raise AdapterError(f"Gemma campaign output_root must be named {_GEMMA_CAMPAIGN_NAME!r}")
+    derived_root = output_root + "/derived-luna-no-cap-v1"
+    resources = _resources(nodes=1, gpus=0, minutes=minutes, memory_mb=64 * 1024, cpus_per_task=16)
+    resources["ntasks"] = 1
+    return _request(
+        request_id=request_id,
+        owner=owner,
+        mode=mode,
+        output_roots=[output_root],
+        script=_capture_wrapper(checkout, _GEMMA_LUNA_WRAPPER),
+        resources=resources,
+        remote_dir=remote_dir,
+        env={
+            "REPO_DIR": remote_dir,
+            "CTM_GEMMA4_EVAL_PARENT_ROOT": str(PurePosixPath(output_root).parent),
+            "CTM_GEMMA4_EVAL_CAMPAIGN_ROOT": output_root,
+            "CTM_GEMMA4_LUNA_OUTPUT_ROOT": derived_root,
+            "CTM_GEMMA4_PUBLICATION_DIR": derived_root + "/publication",
+            "CTM_GEMMA4_LUNA_MODE": "grade-and-publish",
+            **supplied,
+        },
+    )
+
+
+def _disjoint_output(output_root: str, protected_root: str, *, field: str) -> None:
+    """Keep writable results outside both frozen source and runtime trees."""
+    if (
+        output_root == protected_root
+        or output_root.startswith(protected_root.rstrip("/") + "/")
+        or protected_root.startswith(output_root + "/")
+    ):
+        raise AdapterError(f"output_root must be disjoint from {field}")
+
+
+def _build_bayesian_eval(
+    *,
+    request_id: str,
+    owner: str,
+    checkout: Path,
+    remote_dir: str,
+    output_root: str,
+    mode: str,
+    minutes: int,
+    env: dict[str, str],
+) -> dict[str, Any]:
+    _require_mode(BAYESIAN_EVAL, mode, {"batch"})
+    _require_at_most_minutes(BAYESIAN_EVAL, minutes, 1440)
+    fields = {"BR_CONFIG", "BR_CONFIG_SHA256", "BR_PYTHON"}
+    supplied = _allow_environment(env, allowed=fields, required=fields)
+    _absolute_configuration(supplied, {"BR_CONFIG", "BR_PYTHON"})
+    _under(supplied["BR_CONFIG"], remote_dir, field="env.BR_CONFIG")
+    if supplied["BR_CONFIG"] == remote_dir:
+        raise AdapterError("env.BR_CONFIG must name a file inside remote_dir")
+    if re.fullmatch(r"[0-9a-f]{64}", supplied["BR_CONFIG_SHA256"]) is None:
+        raise AdapterError("BR_CONFIG_SHA256 must contain exactly 64 lowercase hexadecimal characters")
+    _disjoint_output(output_root, remote_dir, field="remote_dir")
+    interpreter = PurePosixPath(supplied["BR_PYTHON"])
+    runtime_root = interpreter.parent.parent if interpreter.parent.name == "bin" else interpreter.parent
+    _disjoint_output(output_root, str(runtime_root), field="the BR_PYTHON runtime tree")
+    return _request(
+        request_id=request_id,
+        owner=owner,
+        mode=mode,
+        output_roots=[output_root],
+        script=_capture_wrapper(checkout, _BAYESIAN_WRAPPER),
+        resources=_resources(nodes=1, gpus=1, minutes=minutes, memory_mb=98304, cpus_per_gpu=16),
+        remote_dir=remote_dir,
+        env={"BR_REPO_DIR": remote_dir, "BR_OUTPUT_ROOT": output_root, **supplied},
+    )
+
+
 def build_request(
     profile: str,
     *,
@@ -562,7 +661,8 @@ def build_request(
         raise AdapterError(f"checkout must be a regular local directory: {local_checkout}")
     remote = _remote_path(remote_dir, field="remote_dir")
     output = _remote_path(output_root, field="output_root")
-    _under(output, remote, field="output_root")
+    if profile != BAYESIAN_EVAL:
+        _under(output, remote, field="output_root")
     requested_minutes = _positive_minutes(minutes)
     configuration = _environment(env)
 
@@ -576,6 +676,10 @@ def build_request(
         "minutes": requested_minutes,
         "env": configuration,
     }
+    if profile == BAYESIAN_EVAL:
+        return _build_bayesian_eval(**common)
+    if profile == GEMMA_LUNA_GRADE_CPU:
+        return _build_gemma_luna_grade_cpu(**common)
     if profile == RMCT_R5_SEGMENT:
         return _build_rmct_segment(**common)
     if profile == RMCT_R5_INTERACTIVE_GPU_DIAGNOSTIC:
@@ -590,8 +694,10 @@ def build_request(
 
 __all__ = [
     "AdapterError",
+    "BAYESIAN_EVAL",
     "GEMMA_EOS_DEBUG",
     "GEMMA_MAIN_16GPU",
+    "GEMMA_LUNA_GRADE_CPU",
     "GEMMA_SMOKE",
     "PROFILES",
     "RMCT_R5_INTERACTIVE_GPU_DIAGNOSTIC",

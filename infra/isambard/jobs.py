@@ -24,6 +24,17 @@ DEFAULT_STATE = Path.home() / ".local/share/ctm-isambard/jobs"
 DEFAULT_HOST = "a5v.aip2.isambard"
 
 
+def _code_fingerprint():
+    root = Path(__file__).resolve().parent
+    return {
+        name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+        for name in ("jobs.py", "job_controller.py", "job_transport.py", "job_adapters.py")
+    }
+
+
+LOADED_CODE_FINGERPRINT = _code_fingerprint()
+
+
 def public_state(value):
     """Print ownership/status, not captured programs or environment values."""
     if isinstance(value, dict):
@@ -89,9 +100,22 @@ def run_loop(controller, backend, args):
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return {"runner": "already-running"}
+        info = {
+            "pid": os.getpid(),
+            "scope": backend.scope,
+            "started_at": time.time(),
+            "code_fingerprint": LOADED_CODE_FINGERPRINT,
+        }
+        lock.seek(0)
+        lock.truncate()
+        json.dump(info, lock, sort_keys=True)
+        lock.flush()
+        os.fsync(lock.fileno())
         deadline = time.monotonic() + args.duration
         previous = None
         while True:
+            if _code_fingerprint() != LOADED_CODE_FINGERPRINT:
+                return {"runner": "code-updated", "resume": "isambard-jobs start"}
             result = controller.tick()
             safe = public_state(result)
             digest = json.dumps(safe, sort_keys=True)
@@ -161,7 +185,7 @@ def parser():
     protect.add_argument("--output-root", action="append", required=True)
     protect.add_argument("--remote-dir", required=True)
     protect.add_argument("--mode", choices=("interactive", "batch"), default="batch")
-    prepare = sub.add_parser("prepare", help="create a reviewable RMCT/Gemma request; does not submit")
+    prepare = sub.add_parser("prepare", help="create a reviewable experiment request; does not submit")
     prepare.add_argument("profile")
     prepare.add_argument("--id", required=True)
     prepare.add_argument("--owner", required=True)
@@ -236,7 +260,9 @@ def main(argv=None):
         else:
             raise ValueError("unsupported command")
         emit(result)
-        if args.command in {"tick", "run"} and (result.get("last_snapshot_error") or result.get("runner") == "paused"):
+        if args.command in {"tick", "run"} and (
+            result.get("last_snapshot_error") or result.get("runner") in {"paused", "code-updated"}
+        ):
             return 2
         return 0
     except (OSError, ValueError, RuntimeError) as exc:

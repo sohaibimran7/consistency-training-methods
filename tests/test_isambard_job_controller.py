@@ -16,6 +16,7 @@ from infra.isambard.job_controller import (
     ControllerError,
     OwnershipError,
     SubmissionRejected,
+    ValidationError,
 )
 
 
@@ -106,6 +107,44 @@ def test_one_tick_admits_one_batch_and_one_interactive_with_stable_token(tmp_pat
     assert single_record(result, "interactive")["status"] == "submitted"
     assert stat.S_IMODE(controller.state_dir.stat().st_mode) == 0o700
     assert stat.S_IMODE(controller.state_path.stat().st_mode) == 0o600
+
+
+def test_cpu_only_batch_preserves_cpu_topology_and_output_ownership(tmp_path):
+    clock = Clock()
+    backend = FakeBackend()
+    controller = Controller(tmp_path / "state", backend, "user@cluster", clock)
+    cpu_only = request("luna", gpus=0, output_root="/remote/results/luna")
+    cpu_only["resources"].update(
+        {"minutes": 360, "memory_mb": 65_536, "cpus_per_task": 16, "ntasks": 1, "ntasks_per_node": 1}
+    )
+
+    queued = controller.enqueue(cpu_only)
+
+    stored = single_record(queued, "luna")
+    assert stored["resources"] == cpu_only["resources"]
+    with pytest.raises(ConflictError, match="luna"):
+        controller.enqueue(request("gpu-copy", output_root="/remote/results/luna", gpus=4))
+
+
+@pytest.mark.parametrize(
+    ("mode", "gpus", "extra"),
+    [
+        ("batch", -1, {}),
+        ("batch", True, {}),
+        ("interactive", 0, {}),
+        ("batch", 0, {"cpus_per_gpu": 1}),
+        ("batch", 0, {"cpus_per_gpu": 0}),
+        ("batch", 0, {"gpus_per_node": 1}),
+        ("batch", 0, {"gpus_per_node": 0}),
+    ],
+)
+def test_cpu_only_validation_rejects_invalid_gpu_shapes(tmp_path, mode, gpus, extra):
+    controller = Controller(tmp_path / "state", FakeBackend(), "user@cluster", Clock())
+    candidate = request("invalid", mode=mode, gpus=gpus)
+    candidate["resources"].update(extra)
+
+    with pytest.raises(ValidationError):
+        controller.enqueue(candidate)
 
 
 def test_interactive_capacity_includes_unmanaged_reservation_jobs(tmp_path):

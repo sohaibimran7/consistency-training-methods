@@ -127,6 +127,15 @@ elif action == "submit":
         sys.exit(0)
     if not re.fullmatch(r"ctm-[A-Za-z0-9_-]{8,80}", token):
         raise RuntimeError("invalid controller token")
+    gpu_count = res.get("gpus")
+    if type(gpu_count) is not int or gpu_count < 0:
+        raise RuntimeError("gpus must be a non-negative integer")
+    if gpu_count == 0:
+        if r.get("mode") != "batch":
+            raise RuntimeError("CPU-only requests must use batch mode")
+        gpu_shaped = [key for key in ("cpus_per_gpu", "gpus_per_node") if key in res]
+        if gpu_shaped:
+            raise RuntimeError("CPU-only requests cannot declare GPU-shaped resources")
     spool = pathlib.Path(r["remote_dir"]) / ".isambard-jobs" / token
     # An existing intent directory is deliberately never replayed. If the SSH
     # response was lost, reconciliation must find the original scheduler job.
@@ -138,6 +147,8 @@ elif action == "submit":
     script += "export SLURM_EXPORT_ENV=ALL\n"
     script += "export CTM_ISAMBARD_REQUEST_ID=" + shlex.quote(r["id"]) + "\n"
     script += "export CTM_ISAMBARD_OWNER=" + shlex.quote(r["owner"]) + "\n"
+    if gpu_count == 0:
+        script += "unset CUDA_VISIBLE_DEVICES\n"
     script += r["script"]
     script_path = spool / "job.sh"
     with script_path.open("x") as f:
@@ -146,8 +157,10 @@ elif action == "submit":
         f.flush()
         os.fsync(f.fileno())
     argv = ["sbatch", "--parsable", "--job-name", token,
-            "--nodes", str(res["nodes"]), "--gpus", str(res["gpus"]),
-            "--time", str(res["minutes"]), "--mem", str(res["memory_mb"]) + "M",
+            "--nodes", str(res["nodes"])]
+    if gpu_count:
+        argv += ["--gpus", str(gpu_count)]
+    argv += ["--time", str(res["minutes"]), "--mem", str(res["memory_mb"]) + "M",
             "--chdir", r["remote_dir"], "--output", str(spool / "slurm-%j.out"),
             "--error", str(spool / "slurm-%j.err"), "--export=NONE",
             "--no-requeue", "--open-mode=append"]
@@ -276,17 +289,29 @@ def validate_request(request):
         if key not in resources:
             raise ValueError("missing resource field: " + key)
     for key, value in resources.items():
-        if type(value) is not int or value < 1:
+        if type(value) is not int:
+            raise ValueError("resources must be integers: " + key)
+        if key == "gpus":
+            if value < 0:
+                raise ValueError("gpus must be a non-negative integer")
+        elif value < 1:
             raise ValueError("resources must be positive integers: " + key)
+    mode = request.get("mode")
+    if mode not in {"interactive", "batch"}:
+        raise ValueError("mode must be either interactive or batch")
+    if resources["gpus"] == 0:
+        if mode != "batch":
+            raise ValueError("CPU-only requests must use batch mode")
+        gpu_shaped = [key for key in ("cpus_per_gpu", "gpus_per_node") if key in resources]
+        if gpu_shaped:
+            raise ValueError("CPU-only requests cannot declare GPU-shaped resources: " + ", ".join(gpu_shaped))
     if "cpus_per_task" in resources and "cpus_per_gpu" in resources:
         raise ValueError("choose cpus_per_task or cpus_per_gpu, not both")
     if "gpus_per_node" in resources and resources["gpus_per_node"] * resources["nodes"] != resources["gpus"]:
         raise ValueError("GPU resource fields disagree")
     if resources["gpus"] > 4 * resources["nodes"]:
         raise ValueError("AIP2 nodes have four GPUs")
-    if request.get("mode") == "interactive" and (
-        resources["nodes"] > 4 or resources["gpus"] > 16 or resources["minutes"] > 480
-    ):
+    if mode == "interactive" and (resources["nodes"] > 4 or resources["gpus"] > 16 or resources["minutes"] > 480):
         raise ValueError("interactive limit is 4 nodes, 16 GPUs, 480 minutes")
     for name, value in request.get("env", {}).items():
         if not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name) or not isinstance(value, str) or "\x00" in value:

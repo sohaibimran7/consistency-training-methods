@@ -103,6 +103,12 @@ def _require_positive_int(value: Any, field: str) -> int:
     return value
 
 
+def _require_nonnegative_int(value: Any, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValidationError("resources.{} must be a non-negative integer.".format(field))
+    return value
+
+
 def _normal_remote_path(value: Any, field: str) -> str:
     """Require an already-normalised non-root POSIX path.
 
@@ -537,7 +543,18 @@ class Controller:
         missing_resources = [field for field in resource_names if field not in resources_raw]
         if missing_resources:
             raise ValidationError("resources is missing: {}.".format(", ".join(missing_resources)))
-        resources = {field: _require_positive_int(resources_raw[field], field) for field in resource_names}
+        resources = {
+            field: _require_positive_int(resources_raw[field], field) for field in resource_names if field != "gpus"
+        }
+        resources["gpus"] = _require_nonnegative_int(resources_raw["gpus"], "gpus")
+        if resources["gpus"] == 0:
+            if mode != "batch":
+                raise ValidationError("CPU-only requests must use batch mode; interactive requests require GPUs.")
+            gpu_shaped = [field for field in ("cpus_per_gpu", "gpus_per_node") if field in resources_raw]
+            if gpu_shaped:
+                raise ValidationError(
+                    "CPU-only batch requests cannot declare GPU-shaped resources: {}.".format(", ".join(gpu_shaped))
+                )
         optional_resource_names = ("cpus_per_task", "cpus_per_gpu", "ntasks", "ntasks_per_node", "gpus_per_node")
         for field in optional_resource_names:
             if field in resources_raw:

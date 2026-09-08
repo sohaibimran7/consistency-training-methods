@@ -106,6 +106,15 @@ isambard-auth check
 isambard-jobs start
 ```
 
+The collector records its PID and loaded module fingerprints in its private
+`runner-*.lock` file. A collector running this version stops before its next
+dispatch if installed modules change. After upgrading, verify that the previous
+collector has released its runner lock, then start a fresh collector. For a
+controlled handoff from older versions, acquire the shared controller state
+lock before stopping only the identified local collector; this waits for any
+in-flight state transition/SSH operation to finish. Release that lock before
+starting the replacement. Preserve the state directory and all Slurm jobs.
+
 An uncertain submission stays `unknown`: its output claim and interactive
 capacity remain blocked.  Never enqueue a replacement or retry automatically
 after a lost submission response.  Investigate it with the owner first; do not
@@ -132,6 +141,8 @@ that exact wrapper is absent from the supplied local checkout.
 | `gemma_main_16gpu` | batch | 4 nodes, 16 GPUs, 720 min, 409600 MiB, 16 CPUs/GPU, 4 GPUs/node | Main Gemma campaign. |
 | `gemma_smoke` | interactive or batch | 1 node, 1 GPU, 120 min, 98304 MiB, 16 CPUs/GPU, 1 GPU/node | Bounded Gemma smoke run. |
 | `gemma_eos_debug` | interactive or batch | 1 node, 1 GPU, 30 min, 98304 MiB, 16 CPUs/GPU, 1 GPU/node | Bounded Gemma EOS diagnostic. |
+| `gemma_luna_grade_cpu` | batch | 1 node, 0 GPUs, 360 min, 65536 MiB, 16 CPUs/task, 1 task | Grade and publish an existing Gemma campaign using its maintained Luna wrapper. |
+| `bayesian_eval` | batch | 1 node, 1 GPU, 1–1440 min, 98304 MiB, 16 CPUs/GPU | Bayesian runtime probe or evaluation selected by a frozen, checksummed configuration. |
 
 The Gemma profiles require a non-secret snapshot path; the EOS diagnostic also
 requires its manifest path.  The adapter rejects unrecognised profile
@@ -139,6 +150,34 @@ configuration rather than silently passing it through.  Do not add
 `--exclusive` to a one-GPU top-level request: it reserves a whole GH200 node.
 Do not pass `--qos=interactive_qos`; reservation selection is handled by the
 controller.
+
+`gemma_luna_grade_cpu` requires `CTM_RMCT_LUNA_ENV_FILE`, a normalized absolute
+path to the protected remote environment file. It optionally accepts
+`CTM_GEMMA4_LUNA_PYTHON`, a normalized absolute path to a separate compatible
+CPU grading interpreter whose runtime tree is disjoint from campaign outputs.
+No other caller environment entries are accepted. The adapter never reads the
+protected file or stores its contents, and it does not modify either runtime.
+`output_root` is the original campaign root; the adapter derives
+`derived-luna-no-cap-v1` and its `publication` child beneath it and claims the
+whole campaign, including the preflight receipt. The maintained wrapper
+validates file permissions and campaign custody before loading credentials.
+It still requires the existing pinned runtime and `SCRATCHDIR` in the cluster
+environment. CPU batch submissions omit GPU flags and clear inherited
+`CUDA_VISIBLE_DEVICES`; zero-GPU interactive jobs and conflicting GPU resource
+fields are rejected.
+
+`bayesian_eval` captures the Bayesian project's `infra/isambard/run_batch.sh`
+from the supplied local checkout. Its only caller environment entries are
+`BR_CONFIG` (normalized absolute config path inside `remote_dir`),
+`BR_CONFIG_SHA256` (64 lowercase hexadecimal characters), and `BR_PYTHON`
+(normalized absolute pinned interpreter path). It injects `BR_REPO_DIR` and
+`BR_OUTPUT_ROOT`. Unlike the CTM profiles, its output root must be outside and
+disjoint from the source checkout and interpreter runtime tree. For an
+interpreter under `bin/`, the runtime tree is the parent of `bin/`; otherwise
+it is the interpreter's containing directory. The maintained wrapper and
+runner verify the config checksum, resolved path containment, frozen source
+hashes, and pinned package versions before scientific execution. This initial
+profile supports one GPU; it does not silently scale the allocation.
 
 ## Existing jobs and output ownership
 

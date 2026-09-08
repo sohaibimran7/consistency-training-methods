@@ -95,13 +95,15 @@ def _build(
     )
 
 
-def test_supported_profiles_are_explicit_and_five_concrete_workflows():
+def test_supported_profiles_are_explicit():
     assert adapters.PROFILES == {
         "rmct_r5_segment",
         "rmct_r5_interactive_gpu_diagnostic",
         "gemma_main_16gpu",
         "gemma_smoke",
         "gemma_eos_debug",
+        "bayesian_eval",
+        "gemma_luna_grade_cpu",
     }
 
 

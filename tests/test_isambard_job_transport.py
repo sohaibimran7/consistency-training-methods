@@ -13,7 +13,9 @@ import textwrap
 from pathlib import Path
 from typing import Optional
 
-from infra.isambard.job_transport import REMOTE_PROGRAM, SSHBackend
+import pytest
+
+from infra.isambard.job_transport import REMOTE_PROGRAM, SSHBackend, validate_request
 
 _FAKE_SCHEDULER = """#!/usr/bin/env python3
 import json
@@ -185,6 +187,7 @@ def test_submit_uses_exact_interactive_sbatch_contract_and_keeps_values_out_of_s
     assert "export SLURM_EXPORT_ENV=ALL" in captured
     assert "export CTM_ISAMBARD_REQUEST_ID=request-001" in captured
     assert "export CTM_ISAMBARD_OWNER=agent-a" in captured
+    assert "unset CUDA_VISIBLE_DEVICES\n" not in captured
     assert captured.endswith(request["script"])
     assert stat.S_IMODE((spool / "job.sh").stat().st_mode) == 0o600
     receipt = json.loads((spool / "submission.json").read_text(encoding="utf-8"))
@@ -249,6 +252,71 @@ def test_submit_preserves_full_batch_topology_without_interactive_options(tmp_pa
     ]
     assert "--reservation=interactive" not in actual
     assert not any("qos" in item.lower() for item in actual)
+    assert "unset CUDA_VISIBLE_DEVICES\n" not in _records(log)[0]["script"]
+
+
+def test_cpu_only_batch_omits_all_gpu_sbatch_flags(tmp_path: Path) -> None:
+    binaries, log = _fake_scheduler(tmp_path)
+    remote_dir = tmp_path / "remote"
+    remote_dir.mkdir()
+    request = _request(
+        remote_dir,
+        mode="batch",
+        resources={
+            "nodes": 1,
+            "gpus": 0,
+            "minutes": 360,
+            "memory_mb": 65_536,
+            "cpus_per_task": 16,
+            "ntasks": 1,
+            "ntasks_per_node": 1,
+        },
+    )
+
+    completed = _invoke_remote({"action": "submit", "user": "alice", "request": request}, binaries=binaries, log=log)
+
+    assert completed.returncode == 0, completed.stderr
+    calls = _records(log)
+    assert len(calls) == 2
+    for call in calls:
+        assert "--gpus" not in call["argv"]
+        assert "--cpus-per-gpu" not in call["argv"]
+        assert "--gpus-per-node" not in call["argv"]
+        assert "--partition=workq" in call["argv"]
+        assert "--reservation=interactive" not in call["argv"]
+        assert "--no-requeue" in call["argv"]
+    assert calls[0]["argv"][-2:] == ["--test-only", str(remote_dir / ".isambard-jobs" / request["token"] / "job.sh")]
+    assert calls[1]["argv"][-1] == str(remote_dir / ".isambard-jobs" / request["token"] / "job.sh")
+    assert "--cpus-per-task" in calls[1]["argv"]
+    assert "16" in calls[1]["argv"]
+    assert "--ntasks-per-node" in calls[1]["argv"]
+    captured = calls[0]["script"]
+    assert "unset CUDA_VISIBLE_DEVICES\n" in captured
+    assert captured.index("unset CUDA_VISIBLE_DEVICES\n") > captured.index("export USER_SETTING=")
+    assert captured.index("unset CUDA_VISIBLE_DEVICES\n") < captured.index(request["script"])
+
+
+@pytest.mark.parametrize(
+    ("mode", "gpus", "extra"),
+    [
+        ("batch", -1, {}),
+        ("batch", True, {}),
+        ("interactive", 0, {}),
+        ("batch", 0, {"cpus_per_gpu": 1}),
+        ("batch", 0, {"cpus_per_gpu": 0}),
+        ("batch", 0, {"gpus_per_node": 1}),
+        ("batch", 0, {"gpus_per_node": 0}),
+    ],
+)
+def test_transport_validation_rejects_invalid_cpu_only_gpu_shapes(tmp_path: Path, mode, gpus, extra) -> None:
+    candidate = _request(
+        tmp_path / "remote",
+        mode=mode,
+        resources={"nodes": 1, "gpus": gpus, "minutes": 60, "memory_mb": 1024, "cpus_per_task": 1, **extra},
+    )
+
+    with pytest.raises(ValueError):
+        validate_request(candidate)
 
 
 def test_canonicalize_resolves_remote_checkout_and_output_aliases(tmp_path: Path) -> None:

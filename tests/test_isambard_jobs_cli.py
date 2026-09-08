@@ -169,6 +169,19 @@ class _LoopController:
         return self.state
 
 
+def test_collector_stops_before_dispatch_when_installed_code_changes(monkeypatch, tmp_path):
+    controller = _LoopController({"requests": []})
+    backend = SimpleNamespace(scope="cluster/user")
+    args = SimpleNamespace(state_dir=tmp_path, duration=60)
+    monkeypatch.setattr(jobs, "_code_fingerprint", lambda: {"changed": "new-version"})
+    result = jobs.run_loop(controller, backend, args)
+    assert result["runner"] == "code-updated"
+    assert controller.tick_calls == 0
+    info = json.loads(next(tmp_path.glob("runner-*.lock")).read_text())
+    assert info["code_fingerprint"] == jobs.LOADED_CODE_FINGERPRINT
+    assert info["scope"] == backend.scope
+
+
 def test_runner_uses_controller_status_field_and_pauses_on_snapshot_error(tmp_path: Path) -> None:
     backend = SimpleNamespace(scope="fake.isambard:22/alice")
     completed = _LoopController({"requests": [{"id": "done", "status": "terminal"}]})
