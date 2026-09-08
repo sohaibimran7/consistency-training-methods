@@ -103,6 +103,10 @@ def test_r3_verifier_binds_fixed_parent_artifact_preflight_and_compiled_physical
     assert "verify-sealed-segment-custody" in text
     for critical in (
         "ctm/artifacts.py",
+        "ctm/backends/run_metadata.py",
+        "ctm/identity.py",
+        "ctm/provenance.py",
+        "ctm/experiments/records.py",
         "ctm/cli_safety.py",
         "ctm/__init__.py",
         "ctm/backends/__init__.py",

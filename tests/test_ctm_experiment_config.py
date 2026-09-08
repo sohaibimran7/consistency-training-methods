@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from ctm.experiments import records
 from scripts import run_experiment as experiment
 from scripts.rmct_paper_vast_more_methods.experiment_factory import compile_experiment
 
@@ -65,6 +66,19 @@ def test_command_arguments_support_flags_lists_and_nested_json():
         "--task-args",
         '{"limit":3}',
     ]
+
+
+def test_command_reference_declarations_are_runner_metadata_not_child_arguments():
+    argv = experiment.command_argv(
+        {
+            "command": ["python", "tool.py"],
+            "inputs": ["input.jsonl"],
+            "outputs": ["output.json"],
+            "args": {"data_manifest": "input.jsonl"},
+        },
+        {},
+    )
+    assert argv == ["python", "tool.py", "--data-manifest", "input.jsonl"]
 
 
 def test_gpu_count_is_runner_metadata_not_a_child_argument():
@@ -562,6 +576,96 @@ def test_runner_captures_training_checkpoint(capsys):
     assert timing["status"] == "passed"
     assert timing["return_code"] == 0
     assert timing["elapsed_seconds"] >= 0
+
+
+def test_runner_records_approved_invocation_without_recording_dry_run(monkeypatch, tmp_path):
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    (source_root / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    input_path = tmp_path / "input.jsonl"
+    input_path.write_text('{"id": 1}\n', encoding="utf-8")
+    output_path = tmp_path / "output.txt"
+    config_path = tmp_path / "recorded.yaml"
+    config_path.write_text(
+        json.dumps(
+            {
+                "name": "recorded-runner",
+                "analysis": [
+                    {
+                        "name": "write",
+                        "command": [
+                            sys.executable,
+                            "-c",
+                            "from pathlib import Path; Path('output.txt').write_text('ok', encoding='utf-8')",
+                        ],
+                        "args": {"data_manifest": "input.jsonl"},
+                        "inputs": ["input.jsonl"],
+                        "outputs": ["output.txt"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(experiment, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(experiment, "default_source_root", lambda: source_root)
+
+    experiment.main([str(config_path), "--dry-run"])
+    assert not (tmp_path / "logs").exists()
+
+    experiment.main([str(config_path), "--yes"])
+    attempts = records.list_attempt_records(tmp_path / "logs" / "experiments" / "recorded-runner" / "attempts")
+    assert len(attempts) == 1
+    attempt = records.ExperimentAttempt(
+        attempt_id=attempts[0].name,
+        directory=attempts[0],
+        bundle_root=tmp_path / "logs" / "experiments",
+    )
+    verified = records.verify_attempt_record(attempt, source_root=source_root, allowed_path_roots=[tmp_path])
+    command_directory = next((attempt.directory / "commands").iterdir())
+    command = records.ExperimentCommand(
+        attempt=attempt,
+        command_id=command_directory.name,
+        directory=command_directory,
+        declared_outputs=("output.txt",),
+        inferred_outputs=(),
+        working_directory=tmp_path,
+    )
+    command_record = records.verify_command_record(command, allowed_path_roots=[tmp_path])
+
+    assert output_path.read_text(encoding="utf-8") == "ok"
+    assert verified["lifecycle"]["status"] == "succeeded"
+    assert verified["attempt"]["runner"]["argv"][-2:] == [str(config_path), "--yes"]
+    assert command_record["lifecycle"]["status"] == "succeeded"
+    assert command_record["command"]["cuda_placement"]["mode"] == "ambient"
+    assert command_record["command"]["argv"][-2:] == ["--data-manifest", "input.jsonl"]
+
+
+def test_runner_fails_closed_before_launch_when_attempt_record_creation_fails(monkeypatch, tmp_path):
+    config_path = tmp_path / "record-failure.yaml"
+    config_path.write_text(
+        json.dumps(
+            {
+                "name": "record-failure",
+                "analysis": [{"command": [sys.executable, "-c", "pass"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(experiment, "PROJECT_ROOT", tmp_path)
+
+    def fail_attempt_record(*args, **kwargs):
+        raise records.ExperimentRecordError("record storage unavailable")
+
+    monkeypatch.setattr(
+        experiment,
+        "create_attempt_record",
+        fail_attempt_record,
+    )
+    monkeypatch.setattr(experiment, "run_command", lambda *args, **kwargs: pytest.fail("child launched without an attempt record"))
+
+    with pytest.raises(SystemExit, match="record storage unavailable"):
+        experiment.main([str(config_path), "--yes"])
 
 
 def test_runner_ignores_human_checkpoint_prose():

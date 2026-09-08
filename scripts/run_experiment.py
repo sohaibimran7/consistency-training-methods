@@ -31,7 +31,16 @@ sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
 from ctm.cli_safety import reject_inline_secrets
+from ctm.experiments.records import (
+    ExperimentAttempt,
+    ExperimentRecordError,
+    complete_attempt_record,
+    complete_command_record,
+    create_attempt_record,
+    start_command_record,
+)
 from ctm.importing import load_callable
+from ctm.provenance import default_source_root
 
 STAGE_ORDER = ("data_generation", "data_preparation", "training", "evaluation", "analysis", "rendering")
 STAGE_ALIASES = {
@@ -320,7 +329,9 @@ def command_argv(spec: Mapping[str, Any], context: Mapping[str, Any], *, strict:
     command = rendered.get("command")
     if not isinstance(command, list) or not command or any(not isinstance(token, str) for token in command):
         raise ExperimentConfigError("each command needs a non-empty string-list command")
-    unknown = sorted(set(rendered) - {"name", "target", "resource", "gpu_count", "command", "args"})
+    unknown = sorted(
+        set(rendered) - {"name", "target", "resource", "gpu_count", "command", "args", "inputs", "outputs"}
+    )
     if unknown:
         raise ExperimentConfigError(f"unknown command field(s): {unknown}")
     return [*command, *_argument_tokens(rendered.get("args"))]
@@ -772,6 +783,96 @@ def run_command(
     return checkpoint
 
 
+def attempt_records_path(config: Mapping[str, Any], *, target: str | None = None) -> Path:
+    """Return the immutable-attempt directory for one execution scope."""
+
+    state_path = output_state_path(config) if target is None else output_state_path(config, target=target)
+    return state_path.parent / "attempts"
+
+
+def _effective_runner_argv(argv: list[str] | None) -> list[str]:
+    """Preserve the actual CLI argv, including a program entry for direct calls."""
+
+    if argv is None:
+        return [str(value) for value in sys.argv]
+    return [str(Path(__file__)), *(str(value) for value in argv)]
+
+
+def _create_execution_attempt(
+    config: Mapping[str, Any],
+    *,
+    source_yaml: Path,
+    runner_argv: Sequence[str],
+    target: str | None,
+    stages: Sequence[str],
+    resolved_plan: Path,
+) -> ExperimentAttempt:
+    """Capture source/runtime once after approval and before any child launch."""
+
+    bundle_root = PROJECT_ROOT / "logs" / "experiments"
+    return create_attempt_record(
+        attempt_records_path(config, target=target),
+        experiment_name=str(config["name"]),
+        runner_argv=runner_argv,
+        source_yaml=source_yaml,
+        resolved_plan_text=resolved_plan_text(config, target=target),
+        resolved_plan_path=resolved_plan,
+        # This resolves from the package module rather than from the caller's
+        # ambient cwd, including when the runner is invoked from elsewhere.
+        source_root=default_source_root(),
+        bundle_root=bundle_root,
+        bundle_directory=bundle_root / "source-bundles",
+        working_directory=Path.cwd(),
+        execution_target=target,
+        selected_stages=stages,
+    )
+
+
+def _recorded_run_command(
+    attempt: ExperimentAttempt,
+    *,
+    spec: Mapping[str, Any],
+    context: Mapping[str, Any],
+    stage: str,
+    name: str,
+    command: Sequence[str],
+    env: Mapping[str, str] | None = None,
+    label: str | None = None,
+    cuda_visible_devices: Sequence[str] | str | None = None,
+    cuda_placement_mode: str | None = None,
+) -> str | None:
+    """Record one child lifecycle around the existing streaming subprocess call."""
+
+    rendered_spec = _render(spec, context, strict=True)
+    command_record = start_command_record(
+        attempt,
+        stage=stage,
+        name=name,
+        argv=command,
+        cuda_visible_devices=cuda_visible_devices,
+        cuda_placement_mode=cuda_placement_mode,
+        declared_inputs=rendered_spec.get("inputs"),
+        declared_outputs=rendered_spec.get("outputs"),
+        working_directory=PROJECT_ROOT,
+    )
+    try:
+        if env is None and label is None:
+            checkpoint = run_command(command)
+        else:
+            checkpoint = run_command(command, env=env, label=label)
+    except KeyboardInterrupt as exc:
+        complete_command_record(command_record, outcome="interrupted", error=exc)
+        raise
+    except subprocess.CalledProcessError as exc:
+        complete_command_record(command_record, outcome="failed", return_code=exc.returncode, error=exc)
+        raise
+    except BaseException as exc:
+        complete_command_record(command_record, outcome="error", error=exc)
+        raise
+    complete_command_record(command_record, outcome="succeeded", return_code=0, checkpoint=checkpoint)
+    return checkpoint
+
+
 def _missing_executables(preview: Sequence[tuple[str, str, list[str]]]) -> dict[str, str]:
     """Map each command executable absent from PATH to the first command needing it."""
 
@@ -820,6 +921,7 @@ def _run_stage_parallel(
     gpus: Sequence[str],
     skip_completed: frozenset[str] = frozenset(),
     onpolicy_target_attestation: Path | None = None,
+    attempt: ExperimentAttempt | None = None,
 ) -> None:
     """Run independent commands concurrently with exclusive one-or-more-GPU bundles."""
 
@@ -839,15 +941,16 @@ def _run_stage_parallel(
                 ),
                 command_resource(spec, stage),
                 command_gpu_count(spec, stage),
+                spec,
             )
         )
     if not work:
         return
 
-    needs_gpu = any(resource == "gpu" for _, _, resource, _ in work)
+    needs_gpu = any(resource == "gpu" for _, _, resource, _, _ in work)
     if needs_gpu and not gpus:
         raise ExperimentConfigError(f"parallel {stage} execution includes GPU commands; pass --gpus with the visible GPU ids")
-    largest_bundle = max((gpu_count for _, _, _, gpu_count in work), default=0)
+    largest_bundle = max((gpu_count for _, _, _, gpu_count, _ in work), default=0)
     if largest_bundle > len(gpus):
         raise ExperimentConfigError(f"parallel {stage} command requests {largest_bundle} GPU(s), but only {len(gpus)} were supplied")
     gpu_order = {gpu: index for index, gpu in enumerate(gpus)}
@@ -872,8 +975,8 @@ def _run_stage_parallel(
             available_gpus.sort(key=gpu_order.__getitem__)
             gpu_condition.notify_all()
 
-    def run_one(item: tuple[str, list[str], str, int]) -> tuple[str, str | None]:
-        name, command, resource, gpu_count = item
+    def run_one(item: tuple[str, list[str], str, int, Mapping[str, Any]]) -> tuple[str, str | None]:
+        name, command, resource, gpu_count, spec = item
         assigned_gpus: list[str] = []
         child_env = None
         try:
@@ -883,7 +986,20 @@ def _run_stage_parallel(
             suffix = f" gpu={','.join(assigned_gpus)}" if assigned_gpus else " cpu"
             label = f"{stage}:{name}{suffix}"
             print(f"\n[{label}] {shlex.join(command)}", flush=True)
-            return name, run_command(command, env=child_env, label=label)
+            if attempt is None:
+                return name, run_command(command, env=child_env, label=label)
+            return name, _recorded_run_command(
+                attempt,
+                spec=spec,
+                context=context,
+                stage=stage,
+                name=name,
+                command=command,
+                env=child_env,
+                label=label,
+                cuda_visible_devices=assigned_gpus if resource == "gpu" else os.environ.get("CUDA_VISIBLE_DEVICES"),
+                cuda_placement_mode="runner_assigned" if resource == "gpu" else "ambient",
+            )
         finally:
             release_gpus(assigned_gpus)
 
@@ -962,6 +1078,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     parser = _parser()
+    runner_argv = _effective_runner_argv(argv)
     args = parser.parse_args(argv)
     onpolicy_target_attestation: Path | None = None
     try:
@@ -1114,13 +1231,33 @@ def main(argv: list[str] | None = None) -> None:
         if not args.yes and input("\nPublish these target outputs? [y/N] ").strip().lower() != "y":
             print("Aborted.")
             return
+        attempt: ExperimentAttempt | None = None
         try:
             saved_plan_path, saved_plan_digest = save_resolved_plan(config)
             print(f"\nSaved resolved plan: {saved_plan_path} (sha256:{saved_plan_digest})")
+            attempt = _create_execution_attempt(
+                config,
+                source_yaml=args.config,
+                runner_argv=runner_argv,
+                target=None,
+                stages=(),
+                resolved_plan=saved_plan_path,
+            )
             state_path, state_digest = publish_training_outputs(config)
             print(f"Published canonical training outputs: {state_path} (sha256:{state_digest})")
-        except (ExperimentConfigError, OSError) as exc:
+        except KeyboardInterrupt as exc:
+            if attempt is not None:
+                complete_attempt_record(attempt, outcome="interrupted", error=exc)
+            raise
+        except (ExperimentConfigError, ExperimentRecordError, OSError) as exc:
+            if attempt is not None:
+                complete_attempt_record(attempt, outcome="error", error=exc)
             raise SystemExit(str(exc)) from exc
+        else:
+            try:
+                complete_attempt_record(attempt, outcome="succeeded")
+            except ExperimentRecordError as exc:
+                raise SystemExit(str(exc)) from exc
         return
     if args.target:
         print(f"\nExecution target: {args.target}")
@@ -1138,9 +1275,18 @@ def main(argv: list[str] | None = None) -> None:
         print("Aborted.")
         return
 
+    attempt: ExperimentAttempt | None = None
     try:
         saved_plan_path, saved_plan_digest = save_resolved_plan(config, target=args.target)
         print(f"\nSaved resolved plan: {saved_plan_path} (sha256:{saved_plan_digest})")
+        attempt = _create_execution_attempt(
+            config,
+            source_yaml=args.config,
+            runner_argv=runner_argv,
+            target=args.target,
+            stages=stages,
+            resolved_plan=saved_plan_path,
+        )
         for stage in stages:
             if args.parallel > 1 and stage != "analysis":
                 _run_stage_parallel(
@@ -1152,6 +1298,7 @@ def main(argv: list[str] | None = None) -> None:
                     gpus=gpus,
                     skip_completed=frozenset(completed_training),
                     onpolicy_target_attestation=onpolicy_target_attestation,
+                    attempt=attempt,
                 )
                 continue
             for index, spec in enumerate(_entries(config, stage, target=args.target), start=1):
@@ -1165,14 +1312,39 @@ def main(argv: list[str] | None = None) -> None:
                     attestation=onpolicy_target_attestation,
                 )
                 print(f"\n[{stage}:{name}] {shlex.join(command)}")
-                checkpoint = run_command(command)
+                checkpoint = _recorded_run_command(
+                    attempt,
+                    spec=spec,
+                    context=context,
+                    stage=stage,
+                    name=name,
+                    command=command,
+                    cuda_visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES"),
+                    cuda_placement_mode="ambient",
+                )
                 if checkpoint:
                     context["checkpoint"] = checkpoint
                     if stage == "training":
                         context[f"training.{name}.checkpoint"] = checkpoint
                         save_training_checkpoint(config, name, checkpoint, target=args.target)
-    except (ExperimentConfigError, subprocess.CalledProcessError) as exc:
+    except KeyboardInterrupt as exc:
+        if attempt is not None:
+            complete_attempt_record(attempt, outcome="interrupted", error=exc)
+        raise
+    except (ExperimentConfigError, ExperimentRecordError, OSError, subprocess.CalledProcessError) as exc:
+        if attempt is not None:
+            outcome = "failed" if isinstance(exc, subprocess.CalledProcessError) else "error"
+            complete_attempt_record(attempt, outcome=outcome, error=exc)
         raise SystemExit(str(exc)) from exc
+    except BaseException as exc:
+        if attempt is not None:
+            complete_attempt_record(attempt, outcome="error", error=exc)
+        raise
+    else:
+        try:
+            complete_attempt_record(attempt, outcome="succeeded")
+        except ExperimentRecordError as exc:
+            raise SystemExit(str(exc)) from exc
 
 
 if __name__ == "__main__":
