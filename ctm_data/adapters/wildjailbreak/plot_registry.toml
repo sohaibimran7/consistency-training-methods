@@ -1,0 +1,8 @@
+[valences.harmful]
+display_name = "Harmful"
+
+[valences.benign]
+display_name = "Benign"
+
+[ordering]
+valences = ["harmful", "benign"]

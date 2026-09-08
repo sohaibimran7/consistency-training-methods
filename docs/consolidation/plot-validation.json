@@ -1,0 +1,18 @@
+{
+  "schema": "ctm-plot-consolidation-validation-v1",
+  "focused_tests_passed": 85,
+  "focused_test_seconds": 55.24,
+  "source_log_directory": "/Users/work/.codex/worktrees/9e79/consistency-training-methods/logs/adapter-smoke-20260724T133708Z/evalaware",
+  "successful_logs_read": 4,
+  "rows_rendered": 2,
+  "scientific_scope": "One sample each for F6 Safety and Capability. Smoke wiring only; no completed experiment claim.",
+  "recipe_sha256": "ff59ca18ff3dc3740d6f2a5d3586b8dafc83730faefd96c8f30303d17d371b00",
+  "recipe_bytes_unchanged": true,
+  "rendered_svg": {
+    "uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/plot-refactor-9e79-evalaware.svg",
+    "bytes": 12889,
+    "sha256": "f04c0915ab2953c2f4319dc04ad5b389d30d6a42a8d23d521a9bc3560d32adad"
+  },
+  "wheel_registry_check": "Isolated wheel contains byte-identical MCQ, EvalAwareBench and WildJailbreak registry TOMLs.",
+  "aggregation": "MCQ pairing, native qids, generation provenance, missing values, denominators and significance remain adapter owned."
+}

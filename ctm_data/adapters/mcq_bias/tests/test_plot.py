@@ -244,7 +244,7 @@ def test_renderer_uses_custom_significance_note_instead_of_default_test_claim(tm
 
 
 def test_renderer_can_center_only_conditions_present_in_each_facet(tmp_path: Path, monkeypatch):
-    import ctm_data.adapters.mcq_bias.plot as plot_module
+    import ctm_data.adapters._plot as plot_module
 
     rows = []
     for model, available in (

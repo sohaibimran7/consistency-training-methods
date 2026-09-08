@@ -1,4 +1,4 @@
-"""Render publication MCQ-bias figures from chart-ready JSON."""
+"""Render EvalAwareBench factor/valence publication figures."""
 
 from __future__ import annotations
 
@@ -18,17 +18,25 @@ from ctm_data.adapters._plot import (
 from ctm_data.adapters._plot import render_publication_plot as _render_publication_plot
 
 _SCHEMA = PlotSchema(
-    category_field="bias_type",
-    category_label_field="bias_label",
-    category_section="biases",
-    category_order_key="biases",
-    category_order_spec="bias_order",
-    category_labels_spec="bias_labels",
+    category_field="factor_set",
+    category_label_field="factor_label",
+    category_section="factors",
+    category_order_key="factors",
+    category_order_spec="factor_order",
+    category_labels_spec="factor_labels",
     default_registry_path=Path(__file__).with_name("plot_registry.toml"),
-    training_categories_field="training_biases",
-    auto_column_field="training_biases",
-    held_out_label="held_out_mean",
+    auto_column_field="valence",
+    category_label_rotation=0.0,
+    category_label_alignment="center",
 )
+
+
+def _defaults(spec: Mapping[str, object]) -> dict[str, object]:
+    facet_labels = {"valence": {"safety": "Safety", "capability": "Capability"}}
+    supplied = spec.get("facet_labels")
+    if isinstance(supplied, Mapping):
+        facet_labels.update(supplied)
+    return {"zero_line": True, **spec, "facet_labels": facet_labels}
 
 
 def render_publication_plot(
@@ -40,11 +48,9 @@ def render_publication_plot(
     facet_callback: FacetCallback | None = None,
     bar_style_callback: BarStyleCallback | None = None,
 ) -> None:
-    """Render the established MCQ-bias grouped-bar design."""
-
     _render_publication_plot(
         rows,
-        spec,
+        _defaults(spec),
         output,
         schema=_SCHEMA,
         theme_callback=theme_callback,
@@ -57,7 +63,8 @@ def main(argv: list[str] | None = None) -> None:
     render_plot_cli(
         argv,
         schema=_SCHEMA,
-        description="Render publication MCQ-bias plots from chart-ready JSON",
+        description="Render EvalAwareBench factor/valence plots from chart-ready JSON",
+        prepare_spec=_defaults,
     )
 
 
@@ -65,10 +72,4 @@ if __name__ == "__main__":
     main()
 
 
-__all__ = [
-    "FacetLayout",
-    "PlotFacet",
-    "PlotTheme",
-    "main",
-    "render_publication_plot",
-]
+__all__ = ["FacetLayout", "PlotFacet", "PlotTheme", "main", "render_publication_plot"]

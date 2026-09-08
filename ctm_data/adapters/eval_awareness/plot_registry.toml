@@ -1,0 +1,29 @@
+# EvalAwareBench-specific factor labels. Training-condition presentation remains
+# overridable in each chart spec or in a project registry supplied with --spec.
+
+[factors.baseline]
+display_name = "Baseline"
+
+[factors.F1]
+display_name = "F1"
+[factors.F2]
+display_name = "F2"
+[factors.F3]
+display_name = "F3"
+[factors.F4]
+display_name = "F4"
+[factors.F5]
+display_name = "F5"
+[factors.F6]
+display_name = "F6"
+[factors.F7]
+display_name = "F7"
+[factors.F8]
+display_name = "F8"
+[factors.F9]
+display_name = "F9"
+[factors.F10]
+display_name = "F10"
+
+[ordering]
+factors = ["baseline", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]

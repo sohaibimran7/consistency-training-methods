@@ -14,6 +14,9 @@ from statistics import NormalDist
 from typing import Any, Literal
 
 from ctm.artifacts import write_atomic_bytes
+from ctm_data.adapters._analysis import json_object as _json_object
+from ctm_data.adapters._analysis import parse_runs as _parse_runs
+from ctm_data.adapters._analysis import read_logs as _read_logs
 
 
 @dataclass(frozen=True)
@@ -1005,40 +1008,6 @@ def aggregate_sycophancy_tradeoff(
             }
         )
     return sorted(output, key=lambda row: row["condition"])
-
-
-def _parse_runs(values: Sequence[str]) -> dict[str, list[Path]]:
-    runs: dict[str, list[Path]] = defaultdict(list)
-    for value in values:
-        if "=" not in value:
-            raise ValueError(f"--run must be NAME=LOG_DIR, got {value!r}")
-        name, raw_path = value.split("=", 1)
-        if not name or not raw_path:
-            raise ValueError(f"--run must be NAME=LOG_DIR, got {value!r}")
-        path = Path(raw_path)
-        if not path.is_dir():
-            raise ValueError(f"log directory for {name!r} does not exist: {path}")
-        runs[name].append(path)
-    return dict(runs)
-
-
-def _read_logs(path: Path) -> list[Any]:
-    from inspect_ai.log import read_eval_log
-
-    files = sorted(path.rglob("*.eval"))
-    if not files:
-        raise ValueError(f"no .eval logs found under {path}")
-    return [read_eval_log(str(file)) for file in files]
-
-
-def _json_object(value: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise argparse.ArgumentTypeError(f"expected a JSON object: {exc}") from exc
-    if not isinstance(parsed, dict):
-        raise argparse.ArgumentTypeError("expected a JSON object")
-    return parsed
 
 
 def main(argv: list[str] | None = None) -> None:
