@@ -1,5 +1,9 @@
 # Vast.ai launchers (x86 CUDA instances)
 
+For the two-host EvalAwareBench Figure 6 generation run, use the pinned,
+minimal-runtime instructions in [FIGURE6.md](FIGURE6.md). The training setup
+below is intentionally separate.
+
 Vast.ai uses the same `LocalBackend` implementation as Isambard. Instances are
 provisioned through Docker and accessed through SSH rather than SLURM.
 

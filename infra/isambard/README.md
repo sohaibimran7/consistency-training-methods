@@ -178,6 +178,47 @@ norm ratio `0.9999873`), sleep/wake and worker-effect checks, and the
 20,480/40,960/49,152-token capacity-only sweep. The sweep does not establish
 throughput or choose between three-lane and four-lane production topologies.
 
+## GPU environment profiles
+
+`setup_gpu_env.sh` defaults to `--profile training` (the phase-shared
+vLLM 0.21.0 CUDA 12.9 stack). Figure 6 launchers explicitly select
+`--profile figure6` (vLLM 0.26.0 / PyTorch 2.11), using
+`vllm-figure6-constraints.txt`. Keep these in separate clean checkouts and
+virtual environments. A successful setup records its profile in `.venv/`
+and refuses to convert that environment to the other profile.
+
+These are distinct historical runtime requirements. Neither profile upgrades
+an existing campaign directory as part of consolidation. The shared install,
+dependency check and GPU import gates run only when setup is explicitly invoked.
+
+## EvalAwareBench Figure 6 generation
+
+The seven-model target-generation run has dedicated manifests and launchers:
+
+- `experiments/eval_awareness/figure6/models.yaml` pins every model revision,
+  display label, comparison family/stage, prompt protocol, and tensor-parallel
+  size.
+- `experiments/eval_awareness/figure6/protocol.yaml` pins the 1,800 conditions,
+  three samples per condition, generation settings, dataset revision, and
+  prompt hashes. The completed Qwen inputs are tracked under the adjacent
+  `inputs/` directory; the deferred Llama scratchpad prompt remains external.
+- `experiments/eval_awareness/figure6/README.md` is the end-to-end runbook.
+
+The cached model snapshots are approximately 1,088.8 GB. Verify at least
+1,300 GB of usable shared project/scratch cache capacity before prefetching.
+On 2026-07-29 the proposed scratch path reported about 4.9 TB filesystem-wide
+free and the project path about 200 TB, but `lfs quota -u` showed only the
+default rather than a personal limit; project-owner confirmation is still
+required.
+All models serve in bfloat16; the MO checkpoints stored in float32 are
+downcast while loading. The standard Llama prefetch excludes `original/*.pth`
+so the listed 141.1 GB safetensors estimate remains meaningful.
+
+One 24-hour all-model target array pass has a ceiling of 240 GPU-hours, or
+60 NHR. The optional 12-hour one-GPU prefetch adds at most 3 NHR, making the
+combined single-pass ceiling 63 NHR. Pilot consumption is separate and should
+end as soon as its 300 generations per model complete.
+
 ## Evaluating a checkpoint
 
 The generic runner can load a LocalBackend LoRA checkpoint directly through the
