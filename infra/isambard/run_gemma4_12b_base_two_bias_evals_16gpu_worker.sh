@@ -48,6 +48,10 @@ export TORCHINDUCTOR_CACHE_DIR="$worker_tmp/torchinductor"
 export TRITON_CACHE_DIR="$worker_tmp/triton"
 export CUDA_CACHE_PATH="$worker_tmp/cuda-cache"
 
+# A one-device CUDA_VISIBLE_DEVICES value does not establish distinct physical
+# GPUs. All sixteen ranks must attest unique CUDA UUIDs before weights load.
+"$python_bin" "${launcher%/*}/gemma_gpu_binding.py" --campaign-root "$campaign_root"
+
 exec "$python_bin" "$launcher" worker \
     --campaign-root "$campaign_root" \
     --rank "$rank" \

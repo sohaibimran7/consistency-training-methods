@@ -10,7 +10,12 @@ CTM = ROOT / "ctm"
 GENERIC_SCRIPTS = tuple(
     ROOT / "scripts" / name for name in ("train_bct.py", "train_rlct.py", "run_evals.py", "run_experiment.py")
 )
-FORBIDDEN_ROOTS = {"ctm_data", "datasets", "mcq_bias"}
+# CTM is reusable library code. It must not depend on experiment factories or
+# invocation scripts in addition to concrete data adapters/packages.
+FORBIDDEN_CTM_IMPORT_ROOTS = {"ctm_data", "datasets", "mcq_bias", "experiments", "scripts"}
+# Generic runners have their own narrower policy: they may load task factories
+# by path, but must not import concrete data adapter packages directly.
+FORBIDDEN_GENERIC_SCRIPT_IMPORT_ROOTS = {"ctm_data", "datasets", "mcq_bias"}
 FORBIDDEN_BENCHMARK_TERMS = {"evalawarebench", "mcq_bias", "wildjailbreak"}
 
 
@@ -31,7 +36,7 @@ def test_ctm_never_imports_dataset_packages_or_adapters():
         if "_archive" in path.parts:
             continue
         for imported in _imports(path):
-            if imported.split(".", 1)[0] in FORBIDDEN_ROOTS:
+            if imported.split(".", 1)[0] in FORBIDDEN_CTM_IMPORT_ROOTS:
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
     assert violations == []
 
@@ -52,7 +57,7 @@ def test_generic_runner_scripts_do_not_import_or_name_benchmarks():
     violations = []
     for path in GENERIC_SCRIPTS:
         for imported in _imports(path):
-            if imported.split(".", 1)[0] in FORBIDDEN_ROOTS:
+            if imported.split(".", 1)[0] in FORBIDDEN_GENERIC_SCRIPT_IMPORT_ROOTS:
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
         source = path.read_text().lower()
         found = sorted(term for term in FORBIDDEN_BENCHMARK_TERMS if term in source)

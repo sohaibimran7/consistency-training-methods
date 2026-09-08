@@ -531,6 +531,29 @@ def _stable_deployment_record(record: Mapping[str, Any]) -> dict[str, Any]:
     return stable
 
 
+def _generation_implementation() -> dict[str, Any]:
+    """Bind the decoder and launch path, not just model/package versions."""
+
+    sources = (
+        "ctm/evals/hf_eos_kernel.py",
+        "ctm/evals/hf_eos_only.py",
+        "ctm/evals/local_model.py",
+        "ctm/evals/runner.py",
+        "infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu.py",
+        "infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu.sbatch",
+        "infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu_worker.sh",
+        "infra/isambard/run_gemma4_12b_base_two_bias_smoke.sbatch",
+        "infra/isambard/gemma_gpu_binding.py",
+        "infra/isambard/trace_gemma_hf_loads.py",
+    )
+    return {name: _identity(PROJECT_ROOT / name, label=f"Gemma generation source {name}") for name in sources}
+
+
+def _require_generation_implementation(contract: Mapping[str, Any]) -> None:
+    if contract.get("generation_implementation") != _generation_implementation():
+        raise GemmaEvaluationError("Gemma generation implementation changed or is not receipt-bound; prepare a fresh attempt")
+
+
 def prepare(
     *,
     campaign_root: str | Path,
@@ -559,6 +582,7 @@ def prepare(
         "configuration": _identity(CONFIG_PATH, label="Gemma evaluation configuration"),
         "model_snapshot": _snapshot_identity(),
         "runtime": runtime,
+        "generation_implementation": _generation_implementation(),
         "model_args": dict(MODEL_ARGS),
         "sampling": {**GENERATION_CONFIG, "termination": "model_eos_only"},
         "stage2": {
@@ -580,6 +604,7 @@ def prepare(
             "raw_shards_immutable_after_generation": True,
             "termination": "model_eos_only",
             "discarded_one_gpu_smoke_required_before_campaign": True,
+            "discarded_smoke_single_model_load_trace_required": True,
         },
         "outputs": {name: str(path) for name, path in paths.items()},
     }
@@ -896,6 +921,7 @@ def worker(*, campaign_root: str | Path, rank: int, python: str) -> dict[str, An
         raise GemmaEvaluationError("Gemma worker Python is unavailable")
     _require_eos_runtime(require_gpu=True)
     contract, paths, specs = _load_contract(campaign_root)
+    _require_generation_implementation(contract)
     _require_discarded_smoke(paths)
     rank_root = paths["live"] / f"rank-{rank:03d}"
     receipt_path = paths["shard_receipts"] / f"rank-{rank:03d}.json"
@@ -1146,6 +1172,45 @@ def _load_rank_receipt(path: Path, *, rank: int, contract: Path) -> dict[str, An
     return receipt
 
 
+def _require_single_model_load_trace(path: Path) -> None:
+    """Reject the reproduced usage-metadata double load before a full run."""
+
+    _identity(path, label="discarded Gemma model-load trace")
+    try:
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    except (ValueError, OSError) as exc:
+        raise GemmaEvaluationError("Gemma model-load trace is unreadable or incomplete") from exc
+    if not rows or any(not isinstance(row, dict) for row in rows):
+        raise GemmaEvaluationError("Gemma model-load trace has no complete event records")
+    if any(row.get("schema") != "gemma-hf-load-trace-v1" for row in rows):
+        raise GemmaEvaluationError("Gemma model-load trace has an unrecognised schema")
+    if len({row.get("pid") for row in rows}) != 1 or rows[0].get("pid") is None:
+        raise GemmaEvaluationError("Gemma model-load trace must describe one evaluator process")
+    events = [row.get("event") for row in rows]
+    if (events.count("target_start") != 1 or events.count("target_return") != 1
+            or events.count("final") != 1 or events[-1] != "final"
+            or any(event in {"hook_unavailable", "call_raise", "target_raise"} for event in events)):
+        raise GemmaEvaluationError("Gemma model-load trace lacks a successful fully instrumented completion")
+    model_ids = set()
+    for hook in (
+        "inspect_huggingfaceapi_init",
+        "transformers_auto_image_text_from_pretrained",
+        "transformers_pretrained_from_pretrained",
+        "transformers_modeling_utils_convert_and_load_state_dict",
+    ):
+        starts = [row for row in rows if row.get("hook") == hook and row.get("event") == "call_start"]
+        returns = [row for row in rows if row.get("hook") == hook and row.get("event") == "call_return"]
+        if len(starts) != 1 or len(returns) != 1 or starts[0].get("call_id") != returns[0].get("call_id"):
+            raise GemmaEvaluationError(f"Gemma smoke must load exactly one GPU model: {hook}")
+        if hook in {"transformers_auto_image_text_from_pretrained", "transformers_pretrained_from_pretrained"}:
+            model_ids.add(returns[0].get("result_object_id"))
+    final = rows[-1]
+    if (len(model_ids) != 1 or None in model_ids
+            or final.get("alive_model_object_ids") != list(model_ids)
+            or _mapping(final.get("cuda")).get("initialized") is not True):
+        raise GemmaEvaluationError("Gemma smoke must finish with exactly the original GPU model resident")
+
+
 def _require_discarded_smoke(paths: Mapping[str, Path]) -> dict[str, Any]:
     """Require the separate compatibility evidence before generating the matrix."""
 
@@ -1166,6 +1231,10 @@ def _require_discarded_smoke(paths: Mapping[str, Path]) -> dict[str, Any]:
     source = smoke_log.get("path")
     if not isinstance(source, str) or _identity(source, label="discarded Gemma smoke EvalLog") != dict(smoke_log):
         raise GemmaEvaluationError("discarded Gemma smoke EvalLog identity changed")
+    trace_path = paths["smoke"] / "model-load-trace.jsonl"
+    if receipt.get("model_load_trace") != _identity(trace_path, label="discarded Gemma model-load trace"):
+        raise GemmaEvaluationError("discarded Gemma smoke lacks its bound model-load trace")
+    _require_single_model_load_trace(trace_path)
     return receipt
 
 
@@ -1270,13 +1339,21 @@ def merge(*, campaign_root: str | Path) -> dict[str, Any]:
     return {"campaign": CAMPAIGN_NAME, "merged_cells": output, "total_generations": TOTAL_GENERATIONS}
 
 
-def discarded_smoke(*, campaign_root: str | Path, python: str) -> dict[str, Any]:
+def _traced_smoke_command(command: Sequence[str], trace_file: Path) -> list[str]:
+    """Instrument the actual eval child, leaving every evaluation arg intact."""
+
+    return [command[0], str(PROJECT_ROOT / "infra/isambard/trace_gemma_hf_loads.py"),
+            "--trace-file", str(trace_file), *command[1:]]
+
+
+def discarded_smoke(*, campaign_root: str | Path, python: str, trace_model_loads: bool = False) -> dict[str, Any]:
     """Generate and validate two discarded clean prompts on one GPU."""
 
     if not Path(python).is_file() or not os.access(python, os.X_OK):
         raise GemmaEvaluationError("Gemma smoke Python is unavailable")
     _require_eos_runtime(require_gpu=True)
     contract, paths, _specs = _load_contract(campaign_root)
+    _require_generation_implementation(contract)
     receipt_path = paths["smoke"] / "receipt.json"
     if receipt_path.exists() or receipt_path.is_symlink():
         receipt = _read_json(receipt_path, label="discarded Gemma smoke receipt")
@@ -1308,6 +1385,9 @@ def discarded_smoke(*, campaign_root: str | Path, python: str) -> dict[str, Any]
         str(attempt),
         "--yes",
     ]
+    trace_file = paths["smoke"] / "model-load-trace.jsonl" if trace_model_loads else None
+    if trace_file is not None:
+        command = _traced_smoke_command(command, trace_file)
     result = subprocess.run(command, cwd=str(PROJECT_ROOT), env=os.environ.copy(), check=False)
     if result.returncode:
         raise GemmaEvaluationError(f"discarded Gemma smoke evaluator exited {result.returncode}; preserved attempt: {attempt}")
@@ -1335,6 +1415,9 @@ def discarded_smoke(*, campaign_root: str | Path, python: str) -> dict[str, Any]
         "termination": "model_eos_only",
         "smoke_log": _identity(candidates[0], label="discarded Gemma smoke EvalLog"),
     }
+    if trace_file is not None:
+        _require_single_model_load_trace(trace_file)
+        receipt["model_load_trace"] = _identity(trace_file, label="discarded Gemma model-load trace")
     _write_once_json(receipt_path, receipt, label="discarded Gemma smoke receipt")
     return {"status": "generated", "receipt": _identity(receipt_path, label="discarded Gemma smoke receipt")}
 
@@ -1386,6 +1469,7 @@ def _parser() -> argparse.ArgumentParser:
     smoke_parser = commands.add_parser("discarded-smoke", help="run the one-GPU two-question compatibility smoke")
     smoke_parser.add_argument("--campaign-root", required=True, type=Path)
     smoke_parser.add_argument("--python", required=True)
+    smoke_parser.add_argument("--trace-model-loads", action="store_true")
 
     commands.add_parser("dry-run", help="prove the static 1,050-generation topology without writes")
     return parser
@@ -1408,7 +1492,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "merge":
             result = merge(campaign_root=args.campaign_root)
         elif args.command == "discarded-smoke":
-            result = discarded_smoke(campaign_root=args.campaign_root, python=args.python)
+            result = discarded_smoke(campaign_root=args.campaign_root, python=args.python, trace_model_loads=args.trace_model_loads)
         elif args.command == "dry-run":
             result = dry_run()
         else:  # pragma: no cover - argparse selects only declared commands

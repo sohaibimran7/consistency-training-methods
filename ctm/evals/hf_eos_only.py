@@ -14,10 +14,11 @@ import importlib.metadata
 import os
 from typing import Any
 
-from experiments.elephant_aita_ntaflip.no_cap_hf import (
-    _assert_no_runtime_token_cap,
-    _config_value,
-    _eos_only_model_generate,
+from .hf_eos_kernel import (
+    HFEOSError,
+    assert_no_runtime_token_cap as _assert_no_runtime_token_cap,
+    config_value as _config_value,
+    eos_only_model_generate as _eos_only_model_generate,
 )
 
 
@@ -26,10 +27,6 @@ RUNTIME_ENV_VALUE = "1"
 EXPECTED_INSPECT_ENV = "CTM_HF_EOS_ONLY_EXPECTED_INSPECT"
 EXPECTED_TRANSFORMERS_ENV = "CTM_HF_EOS_ONLY_EXPECTED_TRANSFORMERS"
 RUNTIME_SCHEMA = "ctm-native-hf-eos-only-no-token-cap-v1"
-
-
-class HFEOSError(RuntimeError):
-    """The requested native-HF run would not be provably uncapped/EOS-only."""
 
 
 def _required_environment() -> tuple[str, str]:

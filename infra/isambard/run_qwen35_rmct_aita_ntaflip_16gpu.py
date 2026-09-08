@@ -201,6 +201,7 @@ CRITICAL_SOURCES = (
     "infra/isambard/run_qwen35_rmct_aita_ntaflip_16gpu_worker.sh",
     "scripts/run_evals.py",
     "ctm/evals/runner.py",
+    "ctm/evals/hf_eos_kernel.py",
     "ctm/evals/local_model.py",
     "ctm/training/resume_state.py",
     "experiments/elephant_aita_ntaflip/__init__.py",

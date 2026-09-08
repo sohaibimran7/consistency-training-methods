@@ -259,6 +259,53 @@ def configure_gemma4_unified_hf_api(api: Any, *, model_source: str | None = None
     return adapter
 
 
+def _gemma4_unified_context_length(api: Any) -> int:
+    """Read the true context window from the already-loaded Gemma wrapper.
+
+    Inspect's ACP usage mapper receives only the rendered ``hf/...`` model
+    string.  If that string is absent from its model-info registry, Inspect
+    resolves it by constructing another provider instance.  For a local Gemma
+    snapshot that would load the full model a second time.  The first wrapper
+    already exposes its authoritative configuration, so use that factual
+    context window rather than guessing a model-family default.
+    """
+
+    config = getattr(getattr(api, "model", None), "config", None)
+    for candidate in (config, getattr(config, "text_config", None)):
+        context_length = getattr(candidate, "max_position_embeddings", None)
+        if (
+            isinstance(context_length, int)
+            and not isinstance(context_length, bool)
+            and context_length > 0
+        ):
+            return context_length
+    raise ValueError(
+        "Gemma 4 unified model configuration has no positive max_position_embeddings context length"
+    )
+
+
+def _register_gemma4_unified_model_info(resolved: Any) -> None:
+    """Register exact local-model metadata before Inspect maps usage events.
+
+    ``set_model_info`` is Inspect's supported custom-model metadata API.  The
+    key is deliberately ``str(resolved)`` because that is the exact value put
+    on each ``ModelEvent``; registering a source path or a canonical alias
+    would leave ACP's later string lookup free to reconstruct a second HF
+    provider.  This records only the context window read from the model that
+    is already resident; it does not alter generation or its EOS-only policy.
+    """
+
+    model_name = str(resolved)
+    if not model_name:
+        raise ValueError("Gemma 4 unified model has no exact resolved Inspect model name")
+    from inspect_ai.model import ModelInfo, set_model_info
+
+    set_model_info(
+        model_name,
+        ModelInfo(context_length=_gemma4_unified_context_length(getattr(resolved, "api", None))),
+    )
+
+
 def gemma4_unified_hf_model(
     model: str,
     *,
@@ -302,6 +349,7 @@ def gemma4_unified_hf_model(
     )
     api = getattr(resolved, "api", None)
     configure_gemma4_unified_hf_api(api, model_source=model.removeprefix("hf/"))
+    _register_gemma4_unified_model_info(resolved)
     return resolved
 
 

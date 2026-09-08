@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import csv
 import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -63,6 +64,29 @@ def _stage(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pair_count: int =
     _install_tiny_official_contract(monkeypatch, source, pair_count=pair_count)
     prepare.build_manifest(source, tmp_path / "stage")
     return tmp_path / "stage" / prepare.MANIFEST_FILENAME
+
+
+def test_aita_runtime_policy_bytes_and_legacy_eos_aliases_are_preserved():
+    """The generic kernel must not rewrite the frozen r005 policy contract."""
+
+    from ctm.evals import hf_eos_kernel
+    from experiments.elephant_aita_ntaflip import no_cap_hf
+
+    payload = (
+        json.dumps(
+            no_cap_hf.runtime_policy(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    assert hashlib.sha256(payload).hexdigest() == "9b2d54bfbc9291d04d96dd20367def44d62f348b58ac3871011d5064c32ec043"
+    assert no_cap_hf.NoTokenCapRuntimeError is hf_eos_kernel.HFEOSError
+    assert no_cap_hf._eos_only_model_generate is hf_eos_kernel.eos_only_model_generate
+    assert no_cap_hf._eos_ids is hf_eos_kernel.eos_ids
+    assert prepare.assert_no_token_cap_mapping is hf_eos_kernel.assert_no_token_cap_mapping
+    assert prepare.TOKEN_CAP_FIELD_NAMES is hf_eos_kernel.TOKEN_CAP_FIELD_NAMES
 
 
 def test_prepare_joins_by_id_stages_immutable_pair_artifact_and_four_pair_shards(monkeypatch, tmp_path):

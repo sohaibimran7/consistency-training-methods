@@ -26,6 +26,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from ctm.evals.hf_eos_kernel import TOKEN_CAP_FIELD_NAMES, assert_no_token_cap_mapping
+
 
 BENCHMARK = "elephant-aita-nta-flip"
 # ``v1`` was the capped r004 campaign.  Keep it readable so historical
@@ -67,26 +69,6 @@ LEGACY_RUNTIME_GENERATION_CONFIG: dict[str, Any] = {
     **CONCURRENCY_CONFIG,
 }
 
-# These names include the common aliases surfaced by Inspect, Transformers,
-# OpenAI-compatible APIs, and saved generation configurations.  ``max_length``
-# is included because Transformers treats it as an output-generation bound.
-# Connection/task/sample limits are intentionally not listed: they are not
-# token-generation limits.
-TOKEN_CAP_FIELD_NAMES = frozenset(
-    {
-        "max_tokens",
-        "max_new_tokens",
-        "max_output_tokens",
-        "max_completion_tokens",
-        "max_generation_tokens",
-        "generation_max_tokens",
-        "completion_max_tokens",
-        "output_max_tokens",
-        "max_length",
-        "generation_max_length",
-    }
-)
-_TOKEN_CAP_COMPACT_NAMES = frozenset(name.replace("_", "") for name in TOKEN_CAP_FIELD_NAMES)
 NO_TOKEN_CAP_POLICY: dict[str, Any] = {
     "schema": "elephant-aita-nta-flip-no-token-cap-v1-r005",
     "output_termination": "model_eos_only",
@@ -135,47 +117,6 @@ PAIR_ARTIFACT_FILENAME = "aita-nta-flip-pairs.jsonl"
 MANIFEST_FILENAME = "aita-nta-flip.manifest.json"
 
 _HEX = frozenset("0123456789abcdef")
-
-
-def assert_no_token_cap_mapping(value: Any, *, label: str) -> None:
-    """Reject an explicit or nested output-token limit.
-
-    This applies to every r005 sampling/runtime/receipt configuration.  A
-    missing key is meaningful: Inspect's HF provider otherwise supplies a
-    mutable default, which r005 replaces with EOS-only sampling at runtime.
-    """
-
-    def normalize_key(raw_key: object) -> str:
-        """Normalize snake/kebab/camel case without broad substring matches."""
-
-        value = str(raw_key).replace("-", "_")
-        normalized: list[str] = []
-        for index, character in enumerate(value):
-            if character.isupper() and index > 0 and value[index - 1] != "_":
-                normalized.append("_")
-            normalized.append(character.lower())
-        return "".join(normalized)
-
-    def walk(candidate: Any, path: str) -> None:
-        if isinstance(candidate, Mapping):
-            for raw_key, nested in candidate.items():
-                key = normalize_key(raw_key)
-                compact_key = "".join(character.lower() for character in str(raw_key) if character.isalnum())
-                nested_path = f"{path}.{raw_key}"
-                # Inspect/Transformers object dumps can include optional fields
-                # with a ``None`` value.  That is an absent cap, not an
-                # inherited cap.  Any concrete value is forbidden.
-                if (
-                    key in TOKEN_CAP_FIELD_NAMES
-                    or compact_key in _TOKEN_CAP_COMPACT_NAMES
-                ) and nested is not None:
-                    raise ValueError(f"{label} must not contain output-token cap field {nested_path!r}")
-                walk(nested, nested_path)
-        elif isinstance(candidate, (list, tuple)):
-            for index, nested in enumerate(candidate):
-                walk(nested, f"{path}[{index}]")
-
-    walk(value, label)
 
 
 def _sha256(payload: bytes) -> str:

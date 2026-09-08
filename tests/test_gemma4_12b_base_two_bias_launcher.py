@@ -43,6 +43,84 @@ def _linked_snapshot(tmp_path: Path, revision: str) -> tuple[Path, Path]:
     return snapshot, weight
 
 
+def test_generation_contract_binds_decoder_and_gpu_launch_sources(monkeypatch):
+    import pytest
+
+    module = _load_launcher()
+    identity = module._generation_implementation()
+    assert "ctm/evals/hf_eos_kernel.py" in identity
+    assert "experiments/elephant_aita_ntaflip/no_cap_hf.py" not in identity
+    assert "infra/isambard/gemma_gpu_binding.py" in identity
+    contract = {"generation_implementation": identity}
+    module._require_generation_implementation(contract)
+    monkeypatch.setattr(module, "_generation_implementation", lambda: {"changed": True})
+    with pytest.raises(module.GemmaEvaluationError, match="implementation changed"):
+        module._require_generation_implementation(contract)
+    with pytest.raises(module.GemmaEvaluationError, match="not receipt-bound"):
+        module._require_generation_implementation({})
+
+
+def test_trace_bootstrap_preserves_complete_eval_command(tmp_path):
+    module = _load_launcher()
+    original = ["/pinned/python", "/repo/scripts/run_evals.py", "--model", "hf/gemma", "--yes"]
+    traced = module._traced_smoke_command(original, tmp_path / "trace.jsonl")
+    assert traced[0] == original[0]
+    assert traced[1].endswith("infra/isambard/trace_gemma_hf_loads.py")
+    assert traced[2:4] == ["--trace-file", str(tmp_path / "trace.jsonl")]
+    assert traced[4:] == original[1:]
+    args = module._parser().parse_args(["discarded-smoke", "--campaign-root", str(tmp_path),
+                                        "--python", "/pinned/python", "--trace-model-loads"])
+    assert args.trace_model_loads is True
+
+
+def _single_model_trace_rows():
+    base = {"schema": "gemma-hf-load-trace-v1", "pid": 12}
+    rows = [{**base, "event": "target_start"}]
+    for call_id, hook in enumerate((
+        "inspect_huggingfaceapi_init",
+        "transformers_auto_image_text_from_pretrained",
+        "transformers_pretrained_from_pretrained",
+        "transformers_modeling_utils_convert_and_load_state_dict",
+    ), start=1):
+        common = {**base, "hook": hook, "call_id": call_id}
+        rows.extend([{**common, "event": "call_start"},
+                     {**common, "event": "call_return", "result_object_id": 42}])
+    return rows + [{**base, "event": "target_return"},
+                   {**base, "event": "final", "alive_model_object_ids": [42],
+                    "cuda": {"initialized": True}}]
+
+
+def test_smoke_trace_accepts_nested_auto_and_base_returning_same_model(tmp_path):
+    module = _load_launcher()
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text("".join(json.dumps(row) + "\n" for row in _single_model_trace_rows()))
+    module._require_single_model_load_trace(trace)
+
+
+def test_smoke_trace_rejects_duplicate_model_construction_and_retention(tmp_path):
+    import pytest
+
+    module = _load_launcher()
+    for fault in ("duplicate_constructor", "duplicate_load", "two_alive", "different_return", "missing_final", "missing_hook"):
+        rows = _single_model_trace_rows()
+        if fault == "duplicate_constructor":
+            rows.insert(-2, {**rows[1], "call_id": 5})
+        elif fault == "duplicate_load":
+            rows.insert(-2, {**rows[7], "call_id": 5})
+        elif fault == "two_alive":
+            rows[-1]["alive_model_object_ids"] = [42, 43]
+        elif fault == "different_return":
+            rows[6]["result_object_id"] = 43
+        elif fault == "missing_final":
+            rows.pop()
+        else:
+            rows.insert(-2, {**rows[0], "event": "hook_unavailable"})
+        trace = tmp_path / f"{fault}.jsonl"
+        trace.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        with pytest.raises(module.GemmaEvaluationError):
+            module._require_single_model_load_trace(trace)
+
+
 def test_snapshot_identity_allows_hf_blob_links_and_binds_their_content(tmp_path, monkeypatch):
     module = _load_launcher()
     snapshot, weight = _linked_snapshot(tmp_path, module.MODEL_REVISION)

@@ -113,7 +113,13 @@ mkdir -p "$evaluation_parent"
     --stage2-artifact-root "$artifact_root" \
     --yes
 
+# Verify that the pinned Torch runtime supplies the physical UUID used by the
+# main campaign's all-rank uniqueness barrier. This probe generates no tokens.
+srun --label --exclusive --exact --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=16 \
+    "$python_bin" "$repo_root/infra/isambard/gemma_gpu_binding.py" --probe-single
+
 exec srun --label --exclusive --exact --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=16 \
     "$python_bin" "$launcher" discarded-smoke \
     --campaign-root "$campaign_root" \
-    --python "$python_bin"
+    --python "$python_bin" \
+    --trace-model-loads

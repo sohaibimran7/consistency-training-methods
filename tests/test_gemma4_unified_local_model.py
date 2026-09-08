@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+import inspect_ai.model as inspect_model
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from ctm.evals import local_model as module
@@ -50,7 +51,12 @@ class _Processor:
 
 def _gemma_api():
     return SimpleNamespace(
-        model=SimpleNamespace(config=SimpleNamespace(model_type="gemma4_unified")),
+        model=SimpleNamespace(
+            config=SimpleNamespace(
+                model_type="gemma4_unified",
+                text_config=SimpleNamespace(max_position_embeddings=131072),
+            )
+        ),
         model_name="/pinned/gemma-snapshot",
         api_key=None,
         tokenizer_call_args={},
@@ -176,6 +182,59 @@ def test_gemma4_unified_loader_forces_image_text_auto_class_and_has_no_cap(monke
     assert captured["kwargs"]["do_sample"] is True
     assert captured["kwargs"]["config"].max_tokens is None
     assert resolved.api.tokenizer is not None
+
+
+def test_gemma4_metadata_registration_blocks_inspect_provider_reconstruction(monkeypatch):
+    """ACP usage lookup must use the first loaded model's exact metadata key."""
+
+    import inspect_ai.model._model as inspect_model_impl
+    import inspect_ai.model._model_info as inspect_model_info
+
+    # Isolate the supported public registration API from other test process
+    # state.  The lookup below deliberately uses the real Inspect resolver.
+    monkeypatch.setattr(inspect_model_info, "_custom_models", {})
+    monkeypatch.setattr(inspect_model_info, "_result_cache", {})
+    processor = _Processor()
+
+    class ResolvedModel:
+        def __init__(self):
+            self.api = _gemma_api()
+
+        def __str__(self):
+            return "hf//pinned/gemma-snapshot"
+
+    resolved = ResolvedModel()
+    first_constructions = []
+
+    def first_get_model(model, **kwargs):
+        first_constructions.append((model, kwargs))
+        return resolved
+
+    monkeypatch.setattr(inspect_model, "get_model", first_get_model)
+    monkeypatch.setattr(module, "_load_gemma4_unified_processor", lambda source, *, token: processor)
+
+    assert module.gemma4_unified_hf_model(
+        "hf//pinned/gemma-snapshot",
+        model_args={module.GEMMA4_UNIFIED_PROCESSOR_MODEL_ARG: True},
+        generation_config={"temperature": 1.0, "top_p": 0.95},
+    ) is resolved
+    assert len(first_constructions) == 1
+
+    fallback_constructions = []
+
+    def unexpected_metadata_fallback(*args, **kwargs):
+        fallback_constructions.append((args, kwargs))
+        raise AssertionError("metadata lookup attempted a second HF construction")
+
+    # ``_resolve_model_info`` imports this implementation-level function when
+    # a string is not registered.  A correct exact registration returns before
+    # it reaches this fallback.
+    monkeypatch.setattr(inspect_model_impl, "get_model", unexpected_metadata_fallback)
+    info = inspect_model.get_model_info(str(resolved))
+
+    assert info is not None
+    assert info.context_length == 131072
+    assert fallback_constructions == []
 
 
 @pytest.mark.parametrize("field", ["max_tokens", "max_new_tokens", "output_token_cap"])
