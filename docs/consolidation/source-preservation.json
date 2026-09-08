@@ -177,7 +177,9 @@
       "snapshot": "snapshots/d6d6.json",
       "availability": "preserved_source",
       "host": "laptop",
-      "snapshot_in_archive": "20260908-initial/snapshots/d6d6.json"
+      "snapshot_in_archive": "20260908-initial/snapshots/d6d6.json",
+      "preserved_commit": "c78cafa7ad848498c589e522a2d3742ad17bbae1",
+      "preserved_ref": "refs/tags/archive/d6d6-source-20260908-initial"
     },
     {
       "root": "/Users/work/.codex/worktrees/db11/consistency-training-methods",
@@ -263,7 +265,11 @@
       "captured_at": "2026-09-08T13:12:59.258005Z",
       "tree_sha256": "f35393dea1b4ccaa7e134c0acbcafbfb200a184a3a91335a180ab3d04c43871d",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 180,
+      "snapshot": "snapshots/consistency-training-methods-figure6.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/consistency-training-methods-figure6.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -272,7 +278,11 @@
       "captured_at": "2026-09-08T13:12:58.992914Z",
       "tree_sha256": "81ae409ed2168bd110994a8c344104d0b48cd7f0af131ce9b11d02b662c301c1",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 386,
+      "snapshot": "snapshots/consistency-training-methods.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/consistency-training-methods.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -281,7 +291,11 @@
       "captured_at": "2026-09-08T13:13:00.048158Z",
       "tree_sha256": "b896ef604abf644e17c13f16fdf6845da30a90dc22929bfb5edc4b5e977e9e26",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 577,
+      "snapshot": "snapshots/ctm-gemma4-12b-base-eval-20260825.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-gemma4-12b-base-eval-20260825.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -290,7 +304,11 @@
       "captured_at": "2026-09-08T13:13:00.966095Z",
       "tree_sha256": "bb2babfe4fa729c5718c781f7caecd09bb5ac56f73a91de90c9069aae7a0aa30",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 575,
+      "snapshot": "snapshots/ctm-gemma4-12b-base-eval-20260908.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-gemma4-12b-base-eval-20260908.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -299,7 +317,11 @@
       "captured_at": "2026-09-08T13:13:01.919422Z",
       "tree_sha256": "55b7abc1408709787c675de5ea7ccbe81fa1d00cfd028c4a6281ff0e94192e10",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 578,
+      "snapshot": "snapshots/ctm-gemma4-12b-base-eval-repaired-20260908.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-gemma4-12b-base-eval-repaired-20260908.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -308,7 +330,11 @@
       "captured_at": "2026-09-08T13:13:02.541978Z",
       "tree_sha256": "d1639a327d87ab8bb27faa8aeebd8403faffd2ca49dd9d32d8f965c3bb1aab47",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 383,
+      "snapshot": "snapshots/ctm-methods-aita-ntaflip-r001-20260824.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-methods-aita-ntaflip-r001-20260824.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -317,7 +343,11 @@
       "captured_at": "2026-09-08T13:13:03.134288Z",
       "tree_sha256": "5f1a7f5ce05141ccf1e287a03297bbd6b121a6dd7f3ff1cbbfb2450fa9627444",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 399,
+      "snapshot": "snapshots/ctm-phase-shared-20260811.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-phase-shared-20260811.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -326,7 +356,11 @@
       "captured_at": "2026-09-08T13:13:03.687091Z",
       "tree_sha256": "1fd8fb89bb832114e1fde909bba4dc0a83fe74c1f785d535006c0c30760c6bbc",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 357,
+      "snapshot": "snapshots/ctm-qwen35-recovery-20260803.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-qwen35-recovery-20260803.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -335,7 +369,11 @@
       "captured_at": "2026-09-08T13:13:03.901365Z",
       "tree_sha256": "92a6c066f91d00a2dba6bf8b490a9389331a4302bad335726d2710493ce9fa48",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 140,
+      "snapshot": "snapshots/ctm-rmct-20260724.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-rmct-20260724.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -344,7 +382,11 @@
       "captured_at": "2026-09-08T13:13:04.456449Z",
       "tree_sha256": "668751453be52bc0757d62a5a9a6b7d033d6fa2b99fa1d8f6bdd8a72dce7ec53",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 379,
+      "snapshot": "snapshots/ctm-rmct-aita-ntaflip-r005-20260821.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-rmct-aita-ntaflip-r005-20260821.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -353,7 +395,11 @@
       "captured_at": "2026-09-08T13:13:04.999440Z",
       "tree_sha256": "98bf580a2f3ba74f3be3de03e5319ea0d0678e2295c6a1e3c6a30806f194d457",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 379,
+      "snapshot": "snapshots/ctm-rmct-aita-ntaflip-r006-20260821.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-rmct-aita-ntaflip-r006-20260821.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -362,7 +408,11 @@
       "captured_at": "2026-09-08T13:13:05.429861Z",
       "tree_sha256": "b34c87b8457e13de30d8afa868ca71c9209c96009e5a513a87d54306d303ab31",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 262,
+      "snapshot": "snapshots/ctm-rmct-convergence-20260813.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-rmct-convergence-20260813.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -371,7 +421,11 @@
       "captured_at": "2026-09-08T13:13:05.819507Z",
       "tree_sha256": "ce3e011d194950ad6d06d66e3f30d24dde8a3795cc857420d30f3c41f6744a55",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 326,
+      "snapshot": "snapshots/ctm-rmct-convergence-gcall-r2-20260814.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-rmct-convergence-gcall-r2-20260814.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -386,7 +440,11 @@
         "original_tree_sha256": "05be6dc0abd1eb0bda8484e0eaa56c7a0c2504c06356fdf4419090db686fb18e",
         "reason": "Archived installed environments are not repository source; initial capture retained locally under _archive."
       },
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 188,
+      "snapshot": "snapshots/ctm-rmct-full-20260725.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-rmct-full-20260725.json"
     },
     {
       "schema": "ctm-preserved-source-v1",
@@ -395,7 +453,11 @@
       "captured_at": "2026-09-08T13:13:55.250269Z",
       "tree_sha256": "09154d2623411b7fef8a58662381aef1a348d1f87adaaa96d7299bf72eedd387",
       "scope": "source roots and top-level configs plus readiness records; runtime env, model weights, generated datasets, logs, checkpoints, credentials and caches excluded",
-      "host": "isambard"
+      "host": "isambard",
+      "availability": "preserved_source",
+      "file_count": 529,
+      "snapshot": "snapshots/ctm-rmct-two-bias-eval-20260820.json",
+      "snapshot_in_archive": "20260908-initial/remote/snapshots/ctm-rmct-two-bias-eval-20260820.json"
     }
   ],
   "limitations": [

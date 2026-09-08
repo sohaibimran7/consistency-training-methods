@@ -65,6 +65,7 @@ ExternalURI: TypeAlias = Annotated[str, Field(min_length=1), AfterValidator(_ext
 
 SchemaVersion: TypeAlias = Literal[1]
 ExperimentStatus: TypeAlias = Literal[
+    "unconfirmed",
     "planned",
     "active",
     "complete",

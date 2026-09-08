@@ -1,0 +1,8 @@
+{
+  "source_snapshot_sha256": "2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+  "commit": "c78cafa7ad848498c589e522a2d3742ad17bbae1",
+  "tree": "68aeb43ad36ea38a339c760f4bd3af4cf7d475bb",
+  "ref": "refs/tags/archive/d6d6-source-20260908-initial",
+  "parent": "bc6828e7eaf868a7073b2975bd9ad2d59b7ca536",
+  "files": 616
+}

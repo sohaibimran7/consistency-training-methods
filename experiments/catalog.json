@@ -1,0 +1,2088 @@
+{
+  "schema_version": 1,
+  "experiments": [
+    {
+      "id": "irpan-2510-27062",
+      "question": "Can the registered Irpan reconstruction be reproduced with the pinned sources, checkpoints and evaluations?",
+      "status": "planned",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/paper_reproductions/irpan_2510_27062/experiment.yaml",
+            "availability": "available"
+          },
+          "sha256": "e6f260c1f68606ec8764a46e3dab5adb40789f6c80ce6f45c01472d2f38f929a"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+          "note": "Restore 20260908-initial/snapshots/ad75.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "repo_path",
+            "path": "requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "02a6da52926ed631a2d1b2ad1c0b3be84a56e24eab286f77aca04b7aa6cff1bc",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "The shipped full plan still requires source/model/checkpoint values. Offline smoke fixtures prove wiring, not a completed scientific reproduction."
+      ]
+    },
+    {
+      "id": "mcq-wrong-argument-cross-bias",
+      "question": "How does training on distractor arguments transfer to held-out MCQ biases?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/mcq_bias/wrong_argument_cross_bias/experiment.yaml",
+            "availability": "available"
+          },
+          "sha256": "7621eb24156787f7a8989028b356840ecd3bec68cbe4ab4c7f2e3714f5fcd040"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+          "note": "Restore 20260908-initial/snapshots/ad75.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "repo_path",
+            "path": "requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "02a6da52926ed631a2d1b2ad1c0b3be84a56e24eab286f77aca04b7aa6cff1bc",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "The merged template and analysis specification exist; no accepted run was established by this inventory."
+      ]
+    },
+    {
+      "id": "internal-consistency-method-comparison",
+      "question": "How do the specified internal-consistency objectives compare under a common experiment plan?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/internal_consistency/method_comparison.yaml",
+            "availability": "available"
+          },
+          "sha256": "665da3f53f18dc7d53ad414d95ace45c7f0915afe72d6c02d0f51c0d6a328de3"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+          "note": "Restore 20260908-initial/snapshots/ad75.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "repo_path",
+            "path": "requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "02a6da52926ed631a2d1b2ad1c0b3be84a56e24eab286f77aca04b7aa6cff1bc",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Keep objective-specific losses and controls distinct. A plan alone does not establish completed conditions."
+      ]
+    },
+    {
+      "id": "rmct-paper-more-methods",
+      "question": "How do the registered RMCT and supervised/internal-consistency methods compare on MCQ bias evaluations?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/rmct_paper_vast_more_methods/experiment.yaml",
+            "availability": "available"
+          },
+          "sha256": "31a33828d905f1da407687cc3943aec64ff258d4593d8c31360edfa8fa511eeb"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+          "note": "Restore 20260908-initial/snapshots/ad75.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "repo_path",
+            "path": "requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "02a6da52926ed631a2d1b2ad1c0b3be84a56e24eab286f77aca04b7aa6cff1bc",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "dense-qwen-stage1",
+      "question": "How do the Stage 1 dense-Qwen methods compare with matched data and declared generation settings?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_paper_vast_dense_models/qwen3_5_9b.yaml",
+            "availability": "available"
+          },
+          "sha256": "117574f2a24ecc04425ffa5b97e536cee08c5464ce14d9bd3b1c96ac0a4bf9f0"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "training_evaluation_archive",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/stage1-vast-staging-20260731",
+            "availability": "available"
+          }
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-paper-more-methods"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [
+        {
+          "role": "current_task",
+          "location": {
+            "kind": "external",
+            "uri": "urn:codex:task:019fbbe5-f62d-76f2-98c8-cd14ac3284cb",
+            "availability": "available"
+          }
+        }
+      ],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Several repaired, capped/uncapped, CoT/no-CoT and checkpoint variants exist. Acceptance must be attached to a specific condition/attempt, not this family name."
+      ]
+    },
+    {
+      "id": "act-repair-gate",
+      "question": "Does the repaired ACT objective pass the registered correctness gate?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/act_repair_gate/README.md",
+            "availability": "available"
+          },
+          "sha256": "d16858d4ff63c951e5649b1e7cdefe8317bd37525d410a102f1525d0a3ac7db1"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "dense-qwen-stage1"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "act-expanded",
+      "question": "How does expanded ACT training behave under its separate protocol?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/act_expanded/README.md",
+            "availability": "available"
+          },
+          "sha256": "ad1289007d1476d5c3920e4f1445f058b923ce6b9d8971cfa57a04bb3bac9ebe"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "dense-qwen-stage1"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "act-max",
+      "question": "How does the ACT maximum-scale continuation behave under its separate protocol?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/act_max/README.md",
+            "availability": "available"
+          },
+          "sha256": "8c8ab91eaab0996791b3f249e76b3a8063697afe9d63c75fa1d1a9b97deb6c38"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "dense-qwen-stage1"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "stage1-iid-cot",
+      "question": "What are the paired in-domain bias-switch and acknowledgement rates on the frozen CoT diagnostic populations?",
+      "status": "diagnostic_only",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/stage1_iid_diagnostic/README.md",
+            "availability": "available"
+          },
+          "sha256": "129e68082970baad31cf04ff89b2a4fcfa1957f9ce8019facdabb10a46933ab4"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "analysis",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/stage1-iid-diagnostic-20260731/analysis.json",
+            "availability": "available"
+          },
+          "sha256": "06887379ddb4eec60004c04c53b51833eaa21d4ac53ddc8fcac1fa20a1140c57"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "dense-qwen-stage1"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "The frozen train_eval and heldout_in_domain sets are separate from the training run. The RMCT first-64 subset is explicitly identified."
+      ]
+    },
+    {
+      "id": "stage1-iid-no-cot",
+      "question": "What are the paired in-domain diagnostic rates with the separately frozen no-CoT protocol?",
+      "status": "diagnostic_only",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/stage1_iid_diagnostic_none/README.md",
+            "availability": "available"
+          },
+          "sha256": "61b8df198cc849b55decc30eb46f405bc2defbf7d320f461407edfaf14522c3a"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "dataset_manifest",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/stage1-iid-diagnostic-none-20260801/manifest.json",
+            "availability": "available"
+          },
+          "sha256": "8cdd4da0575a125b01b2b9b62d9c0e07176142eec6194e72e8abd04401ca2fec"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "dense-qwen-stage1"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Do not merge populations or prompt protocols with the CoT diagnostic merely because the validation and plotting mechanics match."
+      ]
+    },
+    {
+      "id": "stage2-ood-hle",
+      "question": "How do Stage 1 checkpoints transfer to the frozen HLE out-of-domain evaluation?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/stage2_ood_hle/README.md",
+            "availability": "available"
+          },
+          "sha256": "1ec39e5af65d51e0970108fd6304a1eabf48ed7ec761916337979f26d46efdde"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "analysis",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/stage2-ood-all-completed-20260805/analysis.json",
+            "availability": "available"
+          },
+          "sha256": "344723be24750d1f9c4df149a0b51acc7e8cad8caa1d0ad388172eb09c44f723"
+        },
+        {
+          "role": "provenance_receipt",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/stage2-ood-all-completed-20260805/provenance-receipt.json",
+            "availability": "available"
+          },
+          "sha256": "8c57679a5737d6acab868fc02899d52c97a31b8a9085346b6b1788a1566474cf"
+        },
+        {
+          "role": "significance_analysis",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/stage2-ood-all-completed-standard-significance-20260805/analysis.json",
+            "availability": "available"
+          },
+          "sha256": "71069bb306c83de34e51be03a13e03126a8e71fcb1349a4c3c8aa39df9b8825d"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "dense-qwen-stage1"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "A nine-condition provenance receipt exists. Condition completeness, exact input retrieval and accepted publication status are being checked separately; the directory name is not the acceptance criterion."
+      ]
+    },
+    {
+      "id": "rmct-256",
+      "question": "What is the outcome of the frozen 256-scale RMCT training protocol?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_256/plan.py",
+            "availability": "available"
+          },
+          "sha256": "f66bd3947ca28a46512d4b6df040711b1d40c61aa8477d2c501f10e27addaa3d"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "dense-qwen-stage1"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Historical protocol/source retained. Later continuations import earlier plan modules; this source is not safe to archive solely because a newer run exists."
+      ]
+    },
+    {
+      "id": "rmct-512",
+      "question": "What changes under the explicit 512-scale RMCT continuation?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_512/plan.py",
+            "availability": "available"
+          },
+          "sha256": "4198b452cddb2c8abb473011f67155d8d1250dfe63c0da50101d6c3b417f3581"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-256"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Historical protocol/source retained. Later continuations import earlier plan modules; this source is not safe to archive solely because a newer run exists."
+      ]
+    },
+    {
+      "id": "rmct-256-convergence",
+      "question": "Does the registered 256-scale continuation reach its stopping criterion?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_256_convergence/plan.py",
+            "availability": "available"
+          },
+          "sha256": "b118065314d7cc369465d07529a582944efc0d4e25436c374553f8771b4f024e"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-256"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Historical protocol/source retained. Later continuations import earlier plan modules; this source is not safe to archive solely because a newer run exists."
+      ]
+    },
+    {
+      "id": "rmct-convergence",
+      "question": "Does the original registered RMCT convergence protocol reach its target?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence/plan.py",
+            "availability": "available"
+          },
+          "sha256": "f183fefcdeb35f3c77781cb2d1b1d66fad2650a18499730d5d68b3d7563b9763"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-256"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Historical protocol/source retained. Later continuations import earlier plan modules; this source is not safe to archive solely because a newer run exists."
+      ]
+    },
+    {
+      "id": "rmct-convergence-accelerated",
+      "question": "Does the accelerated RMCT continuation preserve its stated update protocol?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence_accelerated/plan.py",
+            "availability": "available"
+          },
+          "sha256": "50bd432f4ae31dcf48a55525379f1ac0101a429857f62a3f30be0c36c564fb28"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-convergence"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Historical protocol/source retained. Later continuations import earlier plan modules; this source is not safe to archive solely because a newer run exists."
+      ]
+    },
+    {
+      "id": "rmct-convergence-r4",
+      "question": "What did the r4 repaired RMCT continuation establish before its failure and r5 amendment?",
+      "status": "superseded",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence_r4_recovery/plan.py",
+            "availability": "available"
+          },
+          "sha256": "44a456bab2bb24738d6c492d5f45f72b481a6135f3389dcbd780abbe8134ef6b"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "failure_parent",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/rmct-convergence-gcall-r2-mb40960-r4-20260818/failure-parent.json",
+            "availability": "available"
+          },
+          "sha256": "bd4f08cd876d59463eb6c015e2a999090aa729f36ffe7baf56800cf401a9923b"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-convergence-accelerated"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Superseded as the current continuation by r5; still a live source dependency of r5. Historical outputs remain evidence."
+      ]
+    },
+    {
+      "id": "rmct-convergence-r5",
+      "question": "Does uncapped RMCT continuation reach the registered threshold with the amended patience rule?",
+      "status": "active",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence_r5_patience/plan.py",
+            "availability": "available"
+          },
+          "sha256": "a2451ba6f358d9856ecc1fc6f9f43572fd04b08d155e66b925e0d65598a23c88"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        },
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:ce3e011d194950ad6d06d66e3f30d24dde8a3795cc857420d30f3c41f6744a55",
+          "note": "Restore 20260908-initial/remote/snapshots/ctm-rmct-convergence-gcall-r2-20260814.json with the included restore.py and corresponding blobs. Observed source copy preserved at 2026-09-08T13:13:05.819507Z; compare with the attempt attestation before attributing historical output."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "launch_chain",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/rmct-r5-relaunch-20260908/repaired-chain.json",
+            "availability": "available"
+          },
+          "sha256": "e228248c1ec5c6a8de9c1bf3ba8ac014ac364e76a5331aed27996839122d0a51"
+        },
+        {
+          "role": "runtime_source",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+            "availability": "available"
+          },
+          "note": "Source copy preserved separately; current backend files match PR9 and later trainer/plan files match the development tree."
+        }
+      ],
+      "lineage": {
+        "supersedes": [
+          "rmct-convergence-r4"
+        ],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [
+        {
+          "role": "current_task",
+          "location": {
+            "kind": "external",
+            "uri": "urn:codex:task:01a038bd-e1ed-7070-8769-657ad91480cf",
+            "availability": "available"
+          }
+        }
+      ],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Owner reported the scheduled chain held while an uncapped single-update diagnostic is verified. Source and attempt status remain active and provisional. No convergence result is accepted here."
+      ]
+    },
+    {
+      "id": "rmct-step176-two-bias",
+      "question": "What are the observed MCQ switch and acknowledgement metrics for the sealed r005 step-176 checkpoint?",
+      "status": "diagnostic_only",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_two_bias_eval/contract.py",
+            "availability": "available"
+          },
+          "sha256": "328d6cfc9ee2b2e026761743994a3e1edae406ccb2ded0ef73cade768042e132"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:09154d2623411b7fef8a58662381aef1a348d1f87adaaa96d7299bf72eedd387",
+          "note": "Restore 20260908-initial/remote/snapshots/ctm-rmct-two-bias-eval-20260820.json with the included restore.py and corresponding blobs. Observed source copy preserved at 2026-09-08T13:13:55.250269Z; compare with the attempt attestation before attributing historical output."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "publication_manifest",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/rmct-r005-standard-publication-by-dataset-20260821/manifest.json",
+            "availability": "available"
+          },
+          "sha256": "492cf4b36129821e792febf210f3a03c21b0341ecb163d1f124045c74d0b0958"
+        },
+        {
+          "role": "chart_rows",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/rmct-r005-standard-publication-by-dataset-20260821/chart-rows.json",
+            "availability": "available"
+          },
+          "sha256": "c5e15114f35f67cc89d2387d19c5b4f9cc79bf528977b21b90eb52113d18f99c"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-convergence-r4"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Publication manifest explicitly limits the untrained comparison to a descriptive historical reference because its runtime identity differs. Preserve that caveat in every figure."
+      ]
+    },
+    {
+      "id": "elephant-aita-r006",
+      "question": "What are final-answer-only NTA/NTA rates for base and RMCT steps 16, 64 and 176 under the modified AITA protocol?",
+      "status": "complete",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/elephant_aita_ntaflip/tasks.py",
+            "availability": "available"
+          },
+          "sha256": "9fe41b60fb50dbde21df967913a51f7d8b8b33eb79adba0819bb3519ec508bc7"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:98bf580a2f3ba74f3be3de03e5319ea0d0678e2295c6a1e3c6a30806f194d457",
+          "note": "Restore 20260908-initial/remote/snapshots/ctm-rmct-aita-ntaflip-r006-20260821.json with the included restore.py and corresponding blobs. Observed source copy preserved at 2026-09-08T13:13:04.999440Z; compare with the attempt attestation before attributing historical output."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        },
+        {
+          "role": "historical_launch_attestation",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/lus/lfs1aip2/projects/a5v/sohaib.a5v/ctm-rmct-aita-ntaflip-r006-20260821/repo/logs/rmct-evaluations/elephant-aita-nta-flip-qwen35-rmct-16gpu-v3-r006/launch-contract.json",
+            "availability": "available"
+          },
+          "sha256": "4107e17d46c6779336c1da135cc0260db2ca27bbb3e9a0c364f90341302e9e88",
+          "note": "Verified historical launch/source/model/runtime contract. It is not a fully reconstructed GPU environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "result",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/elephant-aita-ntaflip-r006-results-20260821/completion.json",
+            "availability": "available"
+          },
+          "sha256": "c1305da6a94028070107b9666ffbd3d752be444b6e008dd698abd3a79df2e36a"
+        },
+        {
+          "role": "completion_verification",
+          "location": {
+            "kind": "repo_path",
+            "path": "docs/consolidation/aita-completion-evidence.json",
+            "availability": "available"
+          },
+          "sha256": "7875eee8b1e9aeb2cb698b93f42f61f914d025d49bcfa007d94a263d8d4fa9cd"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "rmct-convergence-r4"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "All four conditions contain 3182 generations over the same 1591 paired IDs.",
+        "Completion receipt and recursively referenced input, checkpoint, raw evaluation and source records have matching hashes at their recorded locations.",
+        "Historical publication loader reconstructs identical binary final-answer-only NTA/NTA counts and verifies shared data custody."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "The r006 completion receipt is verified: all 116 referenced files (912,210,600 bytes) were available on Isambard with matching hashes.",
+        "Offline replay from preserved source validated shared paired IDs and exactly reproduced completion counts: base 1113, step16 1082, step64 1091, step176 1135 out of 1591.",
+        "Complete only for this modified final-answer-only protocol and four-condition scope. This does not establish a faithful original-paper reproduction or a fresh stochastic rerun. Historical environment rebuild and retention gaps remain explicit."
+      ]
+    },
+    {
+      "id": "gemma-base-screen-20260825",
+      "question": "Does the Gemma base model meet the registered susceptibility screen across both biases?",
+      "status": "invalidated",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu.py",
+            "availability": "available"
+          },
+          "sha256": "f69cc44c544b661feb74b1dd4739ece92b6a22b9f2a3e89b4998eb0381813d9e"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:b896ef604abf644e17c13f16fdf6845da30a90dc22929bfb5edc4b5e977e9e26",
+          "note": "Restore 20260908-initial/remote/snapshots/ctm-gemma4-12b-base-eval-20260825.json with the included restore.py and corresponding blobs. Observed source copy preserved at 2026-09-08T13:13:00.048158Z; compare with the attempt attestation before attributing historical output."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "failed_attempt_audit",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/gemma4-12b-failed-attempt-audit-20260908",
+            "availability": "available"
+          }
+        },
+        {
+          "role": "failed_attempt",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260825/repo/logs/gemma4-12b-base-evaluations/attempt-0004",
+            "availability": "available"
+          },
+          "note": "Owner verified 148 clean, two incomplete HLE and 16 biased outputs. Incomplete screen; never an accepted suitability result."
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [
+        {
+          "role": "current_task",
+          "location": {
+            "kind": "external",
+            "uri": "urn:codex:task:01a080f9-4717-7e51-ae52-60f173ed7ee9",
+            "availability": "available"
+          }
+        }
+      ],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Historical attempt is invalid as a completed screen. The current launcher contains repairs; restore the remote August source snapshot for the historical implementation."
+      ]
+    },
+    {
+      "id": "gemma-eos-diagnostic-20260908",
+      "question": "Does EOS-only decoding finish the two selected long HLE examples without truncation?",
+      "status": "diagnostic_only",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/infra/isambard/debug_gemma_eos.py",
+            "availability": "available"
+          },
+          "sha256": "eb32d749d8bbe29baf0e97e16b181bfab4f7f145524840a360bf6369fe1e8d94"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:bb2babfe4fa729c5718c781f7caecd09bb5ac56f73a91de90c9069aae7a0aa30",
+          "note": "Restore 20260908-initial/remote/snapshots/ctm-gemma4-12b-base-eval-20260908.json with the included restore.py and corresponding blobs. Observed source copy preserved at 2026-09-08T13:13:00.966095Z; compare with the attempt attestation before attributing historical output."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "diagnostic_output",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260908/repo/logs/eos-debug-0001",
+            "availability": "available"
+          },
+          "note": "Job 6401027 was running at the owner update; completion.json exists only after both EOS events. This diagnostic is not scored."
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "gemma-base-screen-20260825"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [
+        {
+          "role": "current_task",
+          "location": {
+            "kind": "external",
+            "uri": "urn:codex:task:01a080f9-4717-7e51-ae52-60f173ed7ee9",
+            "availability": "available"
+          }
+        }
+      ],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Decoder repair is active: the owner identified omitted saved suppress_tokens for image/audio. Running frozen diagnostic source remains unchanged.",
+        "Subsequent owner update: job 6401027 ended TIMEOUT after 30:07 with no EOS after 23,808 forwards (peak allocated memory about 24.7 GB); failed diagnostic remains preserved."
+      ]
+    },
+    {
+      "id": "gemma-base-screen-repaired-20260908",
+      "question": "Does the repaired Gemma two-bias screen meet the complete clean/biased pairing contract?",
+      "status": "planned",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu.py",
+            "availability": "available"
+          },
+          "sha256": "f69cc44c544b661feb74b1dd4739ece92b6a22b9f2a3e89b4998eb0381813d9e"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:55b7abc1408709787c675de5ea7ccbe81fa1d00cfd028c4a6281ff0e94192e10",
+          "note": "Restore 20260908-initial/remote/snapshots/ctm-gemma4-12b-base-eval-repaired-20260908.json with the included restore.py and corresponding blobs. Observed source copy preserved at 2026-09-08T13:13:01.919422Z; compare with the attempt attestation before attributing historical output."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "prepared_runtime",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-repaired-20260908/repo",
+            "availability": "available"
+          },
+          "note": "Prepared but unsubmitted full campaign; contract SHA-256 8fac218a3c5c0282aafb84c515aee69367b220b6cf3b7adc907df8e9d47681cd."
+        },
+        {
+          "role": "model_snapshot",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/lus/lfs1aip2/projects/a5v/sohaib.a5v/cache/gemma4-12b-eval/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+            "availability": "unknown",
+            "availability_note": "Location recorded from a manifest or task report; full content retrieval has not yet been verified by consolidation."
+          },
+          "note": "Exact model snapshot reported by owner; weight bytes not rehashed by consolidation."
+        }
+      ],
+      "lineage": {
+        "supersedes": [
+          "gemma-base-screen-20260825"
+        ],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [
+        {
+          "role": "current_task",
+          "location": {
+            "kind": "external",
+            "uri": "urn:codex:task:01a080f9-4717-7e51-ae52-60f173ed7ee9",
+            "availability": "available"
+          }
+        }
+      ],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "CPU paired scoring follows complete shard merge and retains conditional NaNs. No canonical Gemma suitability result or Gemma training exists yet."
+      ]
+    },
+    {
+      "id": "muse-glimmer-rmct",
+      "question": "Can the pinned Muse Glimmer RMCT replication pass its runtime and training gates?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/muse_glimmer_rmct_replication/muse_glimmer_rmct_replication.yaml",
+            "availability": "available"
+          },
+          "sha256": "5ab3225148540b5c7e790112201ab379807a4568a74d42fe5706ab3b5c4c7709"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "attempt_ledger",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/artifacts/muse-glimmer-training-attempts-20260824/attempts.json",
+            "availability": "available"
+          },
+          "sha256": "cee50ec65a2bfa0e86977a8609efee941599d9f1831ac1eab9bab3b7424ed510"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "switch-gate",
+      "question": "Does the preregistered switch gate satisfy its fixed protocol and acceptance rule?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/switch_gate/protocol.yaml",
+            "availability": "available"
+          },
+          "sha256": "a705ddc7606b16dd46d3863366278d8466e36b99f6566664e01f5f2da205d60e"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "preregistration",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/switch_gate/preregistration.md",
+            "availability": "available"
+          },
+          "sha256": "ebe3c8d03ce84f7da5521513c3c58102ccf22100f4894b24170b2830d10650e1"
+        },
+        {
+          "role": "protocol_lock",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/switch_gate/lock.json",
+            "availability": "available"
+          },
+          "sha256": "33896f237d11222620b50441d90c976a81a72d82a50c5db792b87346fde11ed5"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "rmct-tbsr",
+      "question": "How does the separately defined TBSR RMCT protocol behave?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_tbsr/README.md",
+            "availability": "available"
+          },
+          "sha256": "04cb971c7f2b655c7245e4ad4b4b4c988f270941591c1d3dac03477ac21f7fa1"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "note": "Restore 20260908-initial/snapshots/d6d6.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "eval-awareness-snr-per-item",
+      "question": "How does the specified per-item SNR evaluation-awareness intervention behave?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/eval_awareness/qwen_f6_snr_per_item.yaml",
+            "availability": "available"
+          },
+          "sha256": "ea011140332253d8382ce27d7bebb6c059db85b53e024fab87c5838b11cbf394"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:0b367b55bfcaff5f6f8ed12d82194a88b682899f1f89f0ef3e4b0502a879d09c",
+          "note": "Restore 20260908-initial/snapshots/ad75.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "repo_path",
+            "path": "requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "02a6da52926ed631a2d1b2ad1c0b3be84a56e24eab286f77aca04b7aa6cff1bc",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests."
+      ]
+    },
+    {
+      "id": "figure6-qwen-subset",
+      "question": "How do the three selected Qwen models compare across the registered Figure 6 conditions?",
+      "status": "unconfirmed",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/eval_awareness/figure6/protocol.yaml",
+            "availability": "available"
+          },
+          "sha256": "5ae0284e430e8aed2605d3fcbb5339e57a08e9c522d1343c0866ec72f828ece1"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:50c87adea18488cc6fe49120ec8d462186db4bdbce702d7c2ce89c2ae812b7e7",
+          "note": "Restore 20260908-initial/snapshots/primary.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "d0ae97ad173189bb1c864240834cc278da87dc90b9a8d1ffcddcaffbb6967641",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "model_pins",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/eval_awareness/figure6/models.yaml",
+            "availability": "available"
+          },
+          "sha256": "e2f4471cfc84d3cbced18f27263afa28b8f17d9159521d9a2580a9dc724f3cf7"
+        },
+        {
+          "role": "dataset_manifest",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/eval_awareness/figure6/inputs/prompts.jsonl.manifest.json",
+            "availability": "available"
+          },
+          "sha256": "4fc4af708e32f206a699728a7e78debb949078ae6221cb45dceab9347c08c81e"
+        },
+        {
+          "role": "diagnostic_partial_summary",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/figure6-qwen-full/diagnostic-partial-luna-64k/analysis/summary.json",
+            "availability": "available"
+          },
+          "sha256": "af264ba9b9e72c70adb4e3d9a7c1c803ef6bda4fbdeddbe4cd9a85c002daef9a"
+        },
+        {
+          "role": "result_archive",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/figure6-qwen-full",
+            "availability": "available"
+          }
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [
+        {
+          "role": "current_task",
+          "location": {
+            "kind": "external",
+            "uri": "urn:codex:task:019fadcc-f41f-7941-b681-4241880aa0ea",
+            "availability": "available"
+          }
+        }
+      ],
+      "completion_criteria": [
+        "A strict 16,200-row aggregation must validate all generation/judge/source identities, complete cells, required traces and the amendment chain; retain CSV, summary and figures with their raw parents."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Current registered subset is qwen32/qwen_mo_mid/qwen_mo_post, 16,200 judgments, with the explicitly labelled Luna alternative judge. The seven-model reproduction is not complete. Existing diagnostic-partial handoff must not be promoted to a strict accepted result."
+      ]
+    },
+    {
+      "id": "figure6-midtrained-crossover",
+      "question": "Which parts of the midtrained discrepancy are attributable to targets, judges or generation cohorts?",
+      "status": "diagnostic_only",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "ctm_data/adapters/eval_awareness/figure6_crossover.py",
+            "availability": "available"
+          },
+          "sha256": "6536db7e7f135f28d24e993c4325703fb55c5d19c5930a51022626ed5ebed81c"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:50c87adea18488cc6fe49120ec8d462186db4bdbce702d7c2ce89c2ae812b7e7",
+          "note": "Restore 20260908-initial/snapshots/primary.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "d0ae97ad173189bb1c864240834cc278da87dc90b9a8d1ffcddcaffbb6967641",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "diagnostic_summary",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/figure6-qwen-full/crossover/baseline/summary.json",
+            "availability": "available"
+          },
+          "sha256": "b8bfc3202c6123c0692c889fb5402a8a8c02105bd5e166a9890a8d569310db8e"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "figure6-qwen-subset"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Baseline-only attribution diagnostic; it is not a replacement for the complete Figure 6 protocol."
+      ]
+    },
+    {
+      "id": "figure6-runtime-sentinel",
+      "question": "Does the sealed paired sentinel isolate a serving-runtime contribution to the midtrained discrepancy?",
+      "status": "diagnostic_only",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "ctm_data/adapters/eval_awareness/figure6_runtime_comparison.py",
+            "availability": "available"
+          },
+          "sha256": "94970ae7ffd8fb7fc5e4d6e4da7a98316d3ffd5f4c644f48600416d61c01c66e"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:50c87adea18488cc6fe49120ec8d462186db4bdbce702d7c2ce89c2ae812b7e7",
+          "note": "Restore 20260908-initial/snapshots/primary.json with the included restore.py and corresponding blobs. This preserves the observed source, including dirty/new files; it is not proof that every historical run used that state."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "d0ae97ad173189bb1c864240834cc278da87dc90b9a8d1ffcddcaffbb6967641",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "diagnostic_summary",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/figure6-qwen-full/midtrained-targeted-sentinel-isambard-v023/runtime-v023-run-summary.json",
+            "availability": "available"
+          },
+          "sha256": "36bda52425a981fa20f3b9fb0fdf43d20d391d1b2c394ed723b6abe0f591bde7"
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": [
+          "figure6-midtrained-crossover"
+        ]
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "Retain paired targets, frozen source identities, request contracts and blinded diagnostic evidence. A runtime sentinel does not establish a complete Figure 6 result."
+      ]
+    },
+    {
+      "id": "phase-shared-parity",
+      "question": "Does phase-shared replicated training preserve the declared gradient and checkpoint semantics?",
+      "status": "diagnostic_only",
+      "protocol_refs": [
+        {
+          "role": "protocol",
+          "location": {
+            "kind": "repo_path",
+            "path": "docs/phase-shared-local-training.md",
+            "availability": "available"
+          },
+          "sha256": "e4e5b94467d83583db8810ea2bf4cba81bcc6ec8cb56b57bc0d0fdd879908ebd"
+        }
+      ],
+      "source_snapshots": [
+        {
+          "role": "source_recovery_package",
+          "location": {
+            "kind": "external",
+            "uri": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz",
+            "availability": "available"
+          },
+          "sha256": "8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43",
+          "revision": "tree-sha256:6c3c405c3f084b97d98bc3011089160c579e6762279078b7464262d67d29fa5f",
+          "note": "Restore 20260908-initial/snapshots/phase-shared-pr.json with the included restore.py and corresponding blobs. Observed source copy preserved at initial inventory; compare with the attempt attestation before attributing historical output."
+        }
+      ],
+      "environment_refs": [
+        {
+          "role": "dependency_declarations",
+          "location": {
+            "kind": "repo_path",
+            "path": "requirements.txt",
+            "availability": "available"
+          },
+          "sha256": "02a6da52926ed631a2d1b2ad1c0b3be84a56e24eab286f77aca04b7aa6cff1bc",
+          "note": "Direct dependencies are not a complete historical environment lock."
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "four_h100_evidence",
+          "location": {
+            "kind": "external",
+            "uri": "file:///Users/work/consistency-training-methods/artifacts/phase-shared-preflight-4h100-20260810",
+            "availability": "available"
+          }
+        }
+      ],
+      "lineage": {
+        "supersedes": [],
+        "derived_from": []
+      },
+      "owner": "CTM research",
+      "current_task_refs": [],
+      "completion_criteria": [
+        "Verify the protocol-specific input, checkpoint, raw-output and analysis contracts; record the reviewed result and any exclusions."
+      ],
+      "evidence_notes": [
+        "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
+        "PR9 records synthetic four-GH200 pre-optimizer parity and capacity-only evidence. This does not demonstrate production throughput or justify changing an active campaign topology."
+      ]
+    }
+  ]
+}

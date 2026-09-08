@@ -1,0 +1,1155 @@
+{
+  "schema": "ctm-artifact-location-summary-v1",
+  "inventories": {
+    "local": {
+      "inventory_uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/artifacts-local-20260908.json",
+      "inventory_sha256": "cc9896551918b3c2146c1015276af1897f454376d08eeed811f704be8653726e",
+      "captured_at_utc": "2026-09-08T13:31:12.674499+00:00",
+      "scope": [
+        "artifacts",
+        "logs",
+        "data",
+        "checkpoints",
+        "results"
+      ],
+      "retention": "Locations and hashes only, not a backup. Symlink targets are not followed. Live changing files are excluded with errors. No experiment completion inferred.",
+      "groups": [
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/.DS_Store",
+          "files": 1,
+          "bytes": 28676,
+          "hashed_files": 1,
+          "inventory_identity": "23614d1fbdd9afd0a08c4f0c0146804b309b879619343dc8047d0420df71e7b9"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/_remote-archive-20260802",
+          "files": 423,
+          "bytes": 3982541116,
+          "hashed_files": 423,
+          "inventory_identity": "e9542846671e6ec82db3e1873e2bfebd9bee24c8c4d259770e6e8b28a63f8fda"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/_remote-archive-20260803",
+          "files": 1042,
+          "bytes": 2527345558,
+          "hashed_files": 1042,
+          "inventory_identity": "af37f404f440b891becc82b126de164614efab830621d38baca7f07c86a59c60"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/_remote-archive-20260804",
+          "files": 140,
+          "bytes": 125211740,
+          "hashed_files": 140,
+          "inventory_identity": "2e709c8cceab7552e418381f87394b72b8238b0cb4f14a9f347237246e1d8fb0"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/act-repair-gate-20260731",
+          "files": 4,
+          "bytes": 2705836,
+          "hashed_files": 4,
+          "inventory_identity": "5820b856b522e3eb474f2c5b132c1d68959fa14718040036727a14790d0f5ac8"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/cot-transparency-tinker-hle-lr-disaggregated-20260805",
+          "files": 9,
+          "bytes": 2204935,
+          "hashed_files": 9,
+          "inventory_identity": "57143f532bfc3cc97f8b20bfd9821a5bbc1ce982ac8bdb505f41ce21a2bc845e"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/cot-transparency-tinker-lr-sweep-standard-20260805",
+          "files": 9,
+          "bytes": 1620880,
+          "hashed_files": 9,
+          "inventory_identity": "be92d6a8d4a630be6b9284533a8343235ce73745cb0d707de0896ebdebacf199"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/ctm-fresh-rmct-evals-20260803",
+          "files": 648,
+          "bytes": 573619268,
+          "hashed_files": 648,
+          "inventory_identity": "d70d6bb11afe5138dfc9d4d75d86297a83ff4965fecd95b6ed2058357d94180f"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/figure6-qwen-full",
+          "files": 287,
+          "bytes": 1608717404,
+          "hashed_files": 287,
+          "inventory_identity": "d37caa7fb890e2bf3d9c45448d434f77a5cdc1b5d1ba231a96ff75b666c82571"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/fresh-onpolicy-rng-repair-4gpu-20260803",
+          "files": 446,
+          "bytes": 7428256343,
+          "hashed_files": 446,
+          "inventory_identity": "a43e9bb1533b6818083a0e02484ef89686ea5fac574dd7b7e26e2d783435830b"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/generated",
+          "files": 3,
+          "bytes": 810867,
+          "hashed_files": 3,
+          "inventory_identity": "037ecc6dd142bbb0cdc41816234cdd326ccff95a1ce9f5c274110f1e1772b1c7"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/paper-replications",
+          "files": 39,
+          "bytes": 1301955,
+          "hashed_files": 39,
+          "inventory_identity": "c6dbb424134ed781a7c0732bf6f495840f1fa713c8f1d296c4799db97e90e9bb"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/phase-shared-preflight-4h100-20260810",
+          "files": 55,
+          "bytes": 780939427,
+          "hashed_files": 55,
+          "inventory_identity": "b9f43fcfad90a3416eaff40df5022f5292a61830309cf3cabfd5b1fedfd79465"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/phase-shared-preflight-failures-20260811",
+          "files": 76,
+          "bytes": 1299990343,
+          "hashed_files": 76,
+          "inventory_identity": "7ee6355c763262f8ef7b9ca8218828d7452343dd301482e90ee42f799a9459d9"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801",
+          "files": 2,
+          "bytes": 19250369,
+          "hashed_files": 2,
+          "inventory_identity": "166fa6d9e48faef490af04eba70aaf3c2bd0b97837845926fd0090535ed05ae7"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/rmct-hle-qwen3.5-9b-dense-stage1-supervised-recovery-none-20260801",
+          "files": 10,
+          "bytes": 18430140,
+          "hashed_files": 10,
+          "inventory_identity": "2690185358969d1d14f11da691bc53890564f846047305d16e2b1094095fc412"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/rmct256-topology-benchmark-4h100-20260804",
+          "files": 39,
+          "bytes": 437693178,
+          "hashed_files": 39,
+          "inventory_identity": "43084732d45eaf4918b5f02cf6b93ec010353ab5a0854dddf48709bb63ad75d3"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage1-iid-diagnostic-20260731",
+          "files": 216,
+          "bytes": 244125124,
+          "hashed_files": 216,
+          "inventory_identity": "36862505f8c1f7d5049cc95ef33e2e9b296297fb724cf2fb814f7048eb0c03ed"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage1-iid-diagnostic-none-20260801",
+          "files": 3,
+          "bytes": 2609759,
+          "hashed_files": 3,
+          "inventory_identity": "e8fb7fd100fd3c795aab8bc954e0d1c95e8874d2d21168f02b204550802fbc7f"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage1-vast-staging-20260731",
+          "files": 5175,
+          "bytes": 5822026731,
+          "hashed_files": 5175,
+          "inventory_identity": "35cd9e9f63b9f66cb56bae7f1fe4c6b50c840865854a1146fb4bd729fab90e3a"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage2-ood-all-completed-20260805",
+          "files": 15,
+          "bytes": 2559269,
+          "hashed_files": 15,
+          "inventory_identity": "de84d9e0aad2ca07095f8751f27844bd9decca005a5169db223ab5da3e72aee8"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage2-ood-all-completed-standard-significance-20260805",
+          "files": 10,
+          "bytes": 2001228,
+          "hashed_files": 10,
+          "inventory_identity": "0f76f7a40f018311247a6cc84c166a252f899fff75118e1c1eda457cfac1e330"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage2-ood-hle-2x2-20260802",
+          "files": 15,
+          "bytes": 10985419,
+          "hashed_files": 15,
+          "inventory_identity": "b43062cddc0601b816b442c77794eefcf406b3cb539ad55e2d15ed5beb6b5e9a"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage2-ood-hle-2x2-20260802-r1",
+          "files": 15,
+          "bytes": 10985571,
+          "hashed_files": 15,
+          "inventory_identity": "7b68b8ae8e79298206c2b8e1a203ee00c7d7aeaf88906032f4fa2087dadb72de"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage2-ood-partial-canonical-20260804T1100Z",
+          "files": 215,
+          "bytes": 151122814,
+          "hashed_files": 215,
+          "inventory_identity": "4d53c9cf97d399a094265e89bc636e14b487619e4ea3ee27917d37cedaaec1bd"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/stage2-ood-verified-completed-20260804",
+          "files": 10,
+          "bytes": 1158144,
+          "hashed_files": 10,
+          "inventory_identity": "bd7d67b63d165c90d7204d05bdb4f92f749f9a33bbdb751bf8a0ca5b81ad1ac3"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/vast-bct-stage2-ood-hle-complete-20260804",
+          "files": 234,
+          "bytes": 239954947,
+          "hashed_files": 234,
+          "inventory_identity": "1ed749dd842612bb0fcbff4bef978adb9a21b7e6b8268ef11cce1ff4308f1f9f"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/vast-bct-stage2-ood-hle-incremental-20260804",
+          "files": 14,
+          "bytes": 14478218,
+          "hashed_files": 14,
+          "inventory_identity": "0f30884af6121975a50bcd3d09c7664e6b482514e3d90fb9c3ba2abaae7d35a2"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/vast-opct-stage2-complete-20260805",
+          "files": 310,
+          "bytes": 215128115,
+          "hashed_files": 310,
+          "inventory_identity": "618ced09abd85c085745ea4e27bc9b2f1fde376146398237efaed6dbed46a119"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/vast-opct-stage2-incremental-20260804",
+          "files": 209,
+          "bytes": 65562375,
+          "hashed_files": 209,
+          "inventory_identity": "db4458f225287e849036f99d898c9a1c9f6830b25f13b20f3dafb4909f1a2bf9"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/vast-tinker-training-metrics-report-20260805",
+          "files": 14,
+          "bytes": 30558889,
+          "hashed_files": 14,
+          "inventory_identity": "b10a861e227e8eb5f2f497bb91d999458fc196c23f7a217e5cebc0fcf97652ce"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "artifacts/vast-tinker-training-metrics-report-complete-20260805",
+          "files": 33,
+          "bytes": 65293205,
+          "hashed_files": 33,
+          "inventory_identity": "da1b1bb43e611254fee378e1105c7c6863c0b3296de0cb28cd564be53d1c29de"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/.DS_Store",
+          "files": 1,
+          "bytes": 10244,
+          "hashed_files": 1,
+          "inventory_identity": "a442ab0db73986f150cb160b4186281dd7230a7119ed11a6c95371d325006db2"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/evalaware-qwen-f6-eval-from-deployment-debug-two-items",
+          "files": 6,
+          "bytes": 287231,
+          "hashed_files": 6,
+          "inventory_identity": "258824f2c829ab5d0d685dd9eb36acc7dad9794a968213828a4874c1bb1e328b"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/evalaware-qwen-f6-snr-per-item-debug",
+          "files": 5,
+          "bytes": 283179,
+          "hashed_files": 5,
+          "inventory_identity": "eff04b7eadd1c2787278046b77355d6d0a9c96e69ebc987c83f4af7790d504c3"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/evalaware-qwen-f6-snr-per-item-debug-two-items",
+          "files": 6,
+          "bytes": 284057,
+          "hashed_files": 6,
+          "inventory_identity": "7ecb3767aee2419076ecc0dbc0962806cb7bf1a0a9859cd99c06de6a17451744"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/evals",
+          "files": 30,
+          "bytes": 567287,
+          "hashed_files": 30,
+          "inventory_identity": "c66d2d0508d9931ddb286a91825090b2cbc0c343238104dd04ab3ac593cd82b3"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/experiments",
+          "files": 4,
+          "bytes": 29297,
+          "hashed_files": 4,
+          "inventory_identity": "93c86b6aae132c5e0e7284a2e46359cc1ec5430cbf174b4e5fa580b2c1778586"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/remote",
+          "files": 169,
+          "bytes": 8967344,
+          "hashed_files": 169,
+          "inventory_identity": "5c68635f0337402b0805061423bdcbec9c7b71ee0e43ee35057e7fc65b46583a"
+        },
+        {
+          "root": "/Users/work/consistency-training-methods",
+          "prefix": "logs/transformer-stack-jailbreak-gemma3-4b-smoke",
+          "files": 41,
+          "bytes": 95760705,
+          "hashed_files": 41,
+          "inventory_identity": "bfb8dcdbb1d0ad6741a09e65c5371a9286b639b3b0b3839ee37fc3f766d7f8ab"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/.DS_Store",
+          "files": 1,
+          "bytes": 6148,
+          "hashed_files": 1,
+          "inventory_identity": "01f80918a0c606a0547c7519a9132ab1363d64b45b3f5a8fe90e686d02219e9f"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/adapter-smoke-20260724T121638Z",
+          "files": 5,
+          "bytes": 9491,
+          "hashed_files": 5,
+          "inventory_identity": "384c6bd98ced52f97a83ef3a70ed4ad8242ce62d403f1f9664e2a1a14dae98bc"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/adapter-smoke-20260724T121722Z",
+          "files": 13,
+          "bytes": 108448,
+          "hashed_files": 13,
+          "inventory_identity": "58a9152b170035018b06832772bf4c27654f4c6fa94189b56f1b68372a362150"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/adapter-smoke-20260724T133548Z",
+          "files": 5,
+          "bytes": 3283,
+          "hashed_files": 5,
+          "inventory_identity": "656822dd22b175493d03afdcdbebdf4c1c0b62797ee5445f7692b0434edaaf6c"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/adapter-smoke-20260724T133708Z",
+          "files": 19,
+          "bytes": 471684,
+          "hashed_files": 19,
+          "inventory_identity": "4bc74b7bcee9e7f1cd5b1bd291fad482e250814fd5f4c28a3c660cacf0a762f3"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/inspect-smoke-trace.log.gz",
+          "files": 1,
+          "bytes": 5591,
+          "hashed_files": 1,
+          "inventory_identity": "25bfde1d2d1422403d9304220a7b2b16b455bcb3cbb2528767dd66ac91ac0cef"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/inspect-view-trace.log",
+          "files": 1,
+          "bytes": 0,
+          "hashed_files": 1,
+          "inventory_identity": "bb3b560d7296dcb0d31f735ae219bcf0fed729ed58fd01815701640257dae1e6"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+          "prefix": "logs/inspect-view-trace.log.gz",
+          "files": 1,
+          "bytes": 43,
+          "hashed_files": 1,
+          "inventory_identity": "1e85b16ec8bc8ac1d91ff89a4df784fc609acb93004531b5d69401778e0664d1"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+          "prefix": "artifacts/.DS_Store",
+          "files": 1,
+          "bytes": 6148,
+          "hashed_files": 1,
+          "inventory_identity": "900bffb9f95e9a58fe60a5b7520e2fd2df515e658d5778c89623cb78821cac63"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+          "prefix": "artifacts/rmct-cost-analysis-20260805",
+          "files": 3,
+          "bytes": 44078,
+          "hashed_files": 3,
+          "inventory_identity": "29ee668f533b99e5d986b9d99e51e187830c0b48c75e5c23fbc977a581eac647"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+          "prefix": "artifacts/rmct-tbsr",
+          "files": 5,
+          "bytes": 13951607,
+          "hashed_files": 5,
+          "inventory_identity": "2d1c2367d49e5ee8a816682ef396a7c0636eb266c147c21fc99bf127ff801a2a"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+          "prefix": "artifacts/switch-gate",
+          "files": 21,
+          "bytes": 63897254,
+          "hashed_files": 21,
+          "inventory_identity": "d603f77acb0997e71a0dbdaf3572217ca183ed763215e67c8505e8264ee6870f"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+          "prefix": "logs/rmct-tbsr",
+          "files": 34,
+          "bytes": 44619134,
+          "hashed_files": 34,
+          "inventory_identity": "44a6cb21dbd1f5ccfc6232c15da073014b868b0e837e184fa9fffbb86f130e0c"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+          "prefix": "logs/vast-validation",
+          "files": 31,
+          "bytes": 614986,
+          "hashed_files": 31,
+          "inventory_identity": "d116abcc13fd87b453c59d1f49491bc984f41f174179f1be4cba331b8b0e0e93"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/act-max-host-prep-46785829-20260804",
+          "files": 6,
+          "bytes": 128224,
+          "hashed_files": 6,
+          "inventory_identity": "162bf86f4977b24936342e11f0404b9d13bf2a0397fd43de80ff75fcd61424ad"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/act-max-training-20260804",
+          "files": 2,
+          "bytes": 18197863,
+          "hashed_files": 2,
+          "inventory_identity": "46c8f30ec05eaea640f157f37e294dcd8b742f9482e723b10e63b5cdba2b6c57"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/act-repair-gate-20260731",
+          "files": 4,
+          "bytes": 78155,
+          "hashed_files": 4,
+          "inventory_identity": "a3516239258d4100a0c96c29592d7412a759452eb758b61fc18455318a625f96"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/elephant-aita-ntaflip-r006-results-20260821",
+          "files": 5,
+          "bytes": 6001120,
+          "hashed_files": 5,
+          "inventory_identity": "cd3ccb9921db23feeee8369b4442dfde3225864d0111ff29b9feaebe59f3cc60"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/figures-v2",
+          "files": 8,
+          "bytes": 1061682,
+          "hashed_files": 8,
+          "inventory_identity": "a9b1a413b4ccd0ee95c9dd00a9a4f55750940fdb6eddfa68459e979131df8639"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/gemma4-12b-failed-attempt-audit-20260908",
+          "files": 68,
+          "bytes": 5425641,
+          "hashed_files": 68,
+          "inventory_identity": "23567935d1b67fd54cc5d9e99ecf27067f0bd79b83f7eef3615a46691047a258"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-preflight-attempts-20260824",
+          "files": 1,
+          "bytes": 8715,
+          "hashed_files": 1,
+          "inventory_identity": "8e014b96e0cc5f84f4f5bdc51852e51c0f1502186221435cc0ee5c2c264dc127"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-runtime-attempts-20260824",
+          "files": 1,
+          "bytes": 2603,
+          "hashed_files": 1,
+          "inventory_identity": "9962e4d293f4e80adb1612a1fb1f4acf410ff098acd9d9bf100d292d52cacefc"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-training-attempts-20260824",
+          "files": 1,
+          "bytes": 830,
+          "hashed_files": 1,
+          "inventory_identity": "e6f1b5cac5228dee2cbb98e01543a4c47598e49ac2255e98ce2c4ef4b29bce1b"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/onpolicy-qwen35-compat-preflight-per-worker-20260801",
+          "files": 1,
+          "bytes": 103384,
+          "hashed_files": 1,
+          "inventory_identity": "a833fe6402611a37bb0fd8569b793482426edb18924f5f0cbc5d62f930615983"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/onpolicy-qwen35-direct-worker-parity-v2-20260801",
+          "files": 5,
+          "bytes": 15870,
+          "hashed_files": 5,
+          "inventory_identity": "6456ab33cd79c5bd8700e43576efbb30453283765b0957019b8aab7741db017d"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/opct-packing-benchmark-20260803",
+          "files": 2,
+          "bytes": 6289,
+          "hashed_files": 2,
+          "inventory_identity": "b50dcac5c35b9a478fed96c5f7a505707034169a16ab9a35dbd079328ade3b69"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-256-convergence-segments-20260811",
+          "files": 1,
+          "bytes": 17042,
+          "hashed_files": 1,
+          "inventory_identity": "081d28c9a319cd21b46458e1fbc245c004695158b36b7435dfe00f52973bca3c"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-256-training-20260804",
+          "files": 2,
+          "bytes": 1669280,
+          "hashed_files": 2,
+          "inventory_identity": "7134eb9fe94413b4aed7a50481fcefc462589c098cdef8a628282c2d785b1ee6"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-512-continuation-training-20260804",
+          "files": 2,
+          "bytes": 1661555,
+          "hashed_files": 2,
+          "inventory_identity": "89b0984badcaf0c50e0a526bad03603bb1657b0be20211b25ac68dc267ff5816"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-20260814",
+          "files": 1,
+          "bytes": 1696,
+          "hashed_files": 1,
+          "inventory_identity": "d1835305aa99609551d09aa6effb3a25a87e1f8b6dae6640c13e25f62b4f1d78"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-mb40960-r4-20260818",
+          "files": 1,
+          "bytes": 3824,
+          "hashed_files": 1,
+          "inventory_identity": "35b493d3bd3a8b6962445959b82684ca1d0c125b858d90d2a7f40d18fb538bf2"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-mb49152-r3-20260814",
+          "files": 3,
+          "bytes": 556509,
+          "hashed_files": 3,
+          "inventory_identity": "ee376b8d35b0aff8154a94642320329faed25a6a5bd8ecab8e336e87658f606f"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-luna-portable-20260821",
+          "files": 61,
+          "bytes": 32856050,
+          "hashed_files": 61,
+          "inventory_identity": "38feb2cb683cf037cb850a8273224e9928195cdb3dadd646c3cc091a80eebc5f"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-luna-verbalisation-20260821",
+          "files": 77,
+          "bytes": 53166661,
+          "hashed_files": 77,
+          "inventory_identity": "2f3717bde1af5f1692d46f9b6dd887067d197c3fd0814fdbff9f10bcb903e285"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-standard-bias-verbalisation-by-dataset-significance-20260821",
+          "files": 5,
+          "bytes": 570197,
+          "hashed_files": 5,
+          "inventory_identity": "cf06115ecfb5aa5bc80fc412d0a9c8766d8f78cd1a84965e4ba1142292797da1"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-standard-publication-20260821",
+          "files": 5,
+          "bytes": 362016,
+          "hashed_files": 5,
+          "inventory_identity": "6b8521d9a57049b69cf5e52388b435423c34e0f2bdc4cebe1a1f6d55d0f1c59a"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-standard-publication-by-dataset-20260821",
+          "files": 5,
+          "bytes": 514786,
+          "hashed_files": 5,
+          "inventory_identity": "54faffff42e21edfcfe5ea9121c3d4bb6e087300443c5a55feaa3b19efc2e23f"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-standard-switch-rate-by-dataset-20260821",
+          "files": 5,
+          "bytes": 542754,
+          "hashed_files": 5,
+          "inventory_identity": "96a03bb22edf04ba6d40e79759cc2dfc7a6527645905091ae721441d836c5f81"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-standard-switch-rate-by-dataset-significance-20260821",
+          "files": 5,
+          "bytes": 612347,
+          "hashed_files": 5,
+          "inventory_identity": "56b240ba838354a7909d748dca0ce219869fe55463c7b0f19efd389d137e1578"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r005-standard-switch-rate-by-dataset-significance-key-20260821",
+          "files": 5,
+          "bytes": 628878,
+          "hashed_files": 5,
+          "inventory_identity": "467f8df907cd38da6ef0fc5ab4cae4692f22586dc1e387b2a4728d69028883c0"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-r5-relaunch-20260908",
+          "files": 2,
+          "bytes": 5097,
+          "hashed_files": 2,
+          "inventory_identity": "fa19a08560c2dcc6a67dbcec9941ffbb3c276b10171000c50ae38ea467869ca1"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-shared-qid-two-bias-20260813",
+          "files": 3,
+          "bytes": 7929206,
+          "hashed_files": 3,
+          "inventory_identity": "41c0577eda8361a97c005bb1a043a02d86fb6b448764022092a3315494a76208"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-luna-portable-20260821",
+          "files": 65,
+          "bytes": 25874784,
+          "hashed_files": 65,
+          "inventory_identity": "14e4fd2e217c85eb260f7b3d0a2ebc3daac8e9f37cabfba7fb6bf40841aba82c"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-luna-verbalisation-20260821",
+          "files": 81,
+          "bytes": 36773966,
+          "hashed_files": 81,
+          "inventory_identity": "51a101ad82c8bc5472b7de68ad1fa4f747b54e415cfaa7f57da72fe83deb8d46"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-step176-standard-bias-verbalisation-by-dataset-significance-key-20260821",
+          "files": 5,
+          "bytes": 711124,
+          "hashed_files": 5,
+          "inventory_identity": "eaea2ac4b875031123a373b4b4acbd03df335f721a95d8ff3f71a2f88abfef16"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-step176-standard-bias-verbalisation-by-dataset-significance-key-r002-20260821",
+          "files": 5,
+          "bytes": 711144,
+          "hashed_files": 5,
+          "inventory_identity": "db282f71f139269d13e26e32c440e3184ee079a20a0265bed30b1a35f17d7283"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-step176-standard-bias-verbalisation-by-dataset-significance-key-r003-20260821",
+          "files": 5,
+          "bytes": 773812,
+          "hashed_files": 5,
+          "inventory_identity": "a4416f89c51206a299b845e7c4a0dcf899aa06cb5e232dff69dd17515aa3a5ec"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-step176-standard-switch-rate-by-dataset-significance-key-20260821",
+          "files": 5,
+          "bytes": 741517,
+          "hashed_files": 5,
+          "inventory_identity": "10607d98e5ecdec5c86df338f85d8ac5fd350eaea6936484b8d7e7ff4175b77d"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-step176-standard-switch-rate-by-dataset-significance-key-r002-20260821",
+          "files": 5,
+          "bytes": 741537,
+          "hashed_files": 5,
+          "inventory_identity": "61238bb893f327451c289cad2ae9c9afc29afccc10f14556a7a46aeeb7d9b644"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/rmct-step16-step176-standard-switch-rate-by-dataset-significance-key-r003-20260821",
+          "files": 5,
+          "bytes": 813878,
+          "hashed_files": 5,
+          "inventory_identity": "17fb70d201df0957b74ad85cec7b563aef5cc3afa81341d9ecb1c292aa443e72"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/stage1-bct-recovery-20260801",
+          "files": 61,
+          "bytes": 1771284338,
+          "hashed_files": 61,
+          "inventory_identity": "2b66f2186214f060bb288bbd94a3a62c67e43991bb53ba28f33a6ec32c003d0b"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/stage1-iid-native-repaired-20260801",
+          "files": 59,
+          "bytes": 49284974,
+          "hashed_files": 59,
+          "inventory_identity": "d7fbc4c51a814ff94098b945361c5b141bb83c91b59b2cb5fcf0b982c8f2519a"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "artifacts/stage1-vllm-compat-20260801",
+          "files": 76,
+          "bytes": 67358707,
+          "hashed_files": 76,
+          "inventory_identity": "f4dc0eba661040d6b26e9029310a7cb7bcf0b77352ce9c41c7e631136d97e91e"
+        },
+        {
+          "root": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+          "prefix": "logs/stage1-iid-luna-20260801",
+          "files": 1,
+          "bytes": 0,
+          "hashed_files": 1,
+          "inventory_identity": "710c4e001f703ebd3f9178651c03e9b416db15761a5087c7e04c3e43eee94cb1"
+        }
+      ]
+    },
+    "remote": {
+      "inventory_uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/artifacts-remote-20260908.json",
+      "inventory_sha256": "02a770e63f4091dc43e1f29a4c91824fc6f41a339be307180d7a9e39bd91e400",
+      "captured_at_utc": "2026-09-08T13:37:03.953273+00:00",
+      "scope": [
+        "artifacts",
+        "logs",
+        "data",
+        "checkpoints",
+        "results"
+      ],
+      "retention": "Locations only, not a backup. Initial pass hashes metadata and small data/log files up to 4 MiB; other files explicitly unverified. Symlink targets not followed. No completion inferred.",
+      "groups": [
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/_archive",
+          "files": 48,
+          "bytes": 1049090348,
+          "hashed_files": 38,
+          "inventory_identity": "614eea1bdb98253bda46964116c1a6b788c5a85f7cc5d5ccce7a7b0596b219d8"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-rmct-boundary-amendment-20260825",
+          "files": 1,
+          "bytes": 2453,
+          "hashed_files": 1,
+          "inventory_identity": "e022ea16dfcadf211b5176c85e9bf972f437e225d3bd61ff6f1b545dcbd30bba"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-rmct-preflight-20260824",
+          "files": 8,
+          "bytes": 209770610,
+          "hashed_files": 7,
+          "inventory_identity": "4297b7ef402f37658b62e5c6beb4b00d6d7ed1088663937e3998eda9497774ae"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-rmct-segments-20260824",
+          "files": 12,
+          "bytes": 126013,
+          "hashed_files": 12,
+          "inventory_identity": "f02177387362a14f9e1930f0a24d740be49ac75a0bf35c37ead7998b7021dc53"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-runtime-20260824",
+          "files": 3,
+          "bytes": 9423,
+          "hashed_files": 3,
+          "inventory_identity": "e81f3308f587dcb14603f3c85caf5e9125a3a7993d25acb1dca09d38eef87c50"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-runtime-attempts-20260824",
+          "files": 1,
+          "bytes": 2603,
+          "hashed_files": 1,
+          "inventory_identity": "9962e4d293f4e80adb1612a1fb1f4acf410ff098acd9d9bf100d292d52cacefc"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/muse-glimmer-runtime-cu129-20260824",
+          "files": 3,
+          "bytes": 88192,
+          "hashed_files": 3,
+          "inventory_identity": "25995ef224b520ea0387a05288c195c92724774ecfc0d51ee1ff6c91b43a790c"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/profile-fixture",
+          "files": 2,
+          "bytes": 79544,
+          "hashed_files": 2,
+          "inventory_identity": "7a5800388310e4014146db820040ee2b7dd9cf308c0beee9998295a216d4bb1e"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/profile-fixture-v2",
+          "files": 2,
+          "bytes": 90584,
+          "hashed_files": 2,
+          "inventory_identity": "9b1e095038316421e9695f905dbdbfb21daff6f229d24731a5ff878f1cff20f2"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/profiles",
+          "files": 8,
+          "bytes": 48786,
+          "hashed_files": 5,
+          "inventory_identity": "629f0b908a33de8cb957ca5339e969ef21051f2aa6f0bba07bac33ec964cb180"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "artifacts/rmct-shared-qid-two-bias-20260813",
+          "files": 2,
+          "bytes": 7817517,
+          "hashed_files": 1,
+          "inventory_identity": "806bbdc377ea00ff346ad911f26539d8865f4c3320947f19c379b67ded1bb6a2"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "logs/muse-glimmer-rmct-replication",
+          "files": 344,
+          "bytes": 14092893793,
+          "hashed_files": 209,
+          "inventory_identity": "ec6e547d0431592c7732ef4fa8d3fd49bbf7656226e931f3191aa6f141f70c9f"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+          "prefix": "logs/profiling",
+          "files": 1,
+          "bytes": 648,
+          "hashed_files": 1,
+          "inventory_identity": "c6bf107583bd60f4541b3546776b6257a0c49d8650ff9d3cdf965ca0b5b62c18"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260825/repo",
+          "prefix": "logs/gemma4-12b-base-evaluations",
+          "files": 76,
+          "bytes": 2618273,
+          "hashed_files": 76,
+          "inventory_identity": "ea9730935a7414f6977f9d6ad86d809a8cf637a33beb4cbd44b66cefc5bad0ca"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260908/repo",
+          "prefix": "logs/eos-debug-0001",
+          "files": 1,
+          "bytes": 36206,
+          "hashed_files": 1,
+          "inventory_identity": "97b9347a7e66ce60fed58835e7a2b632ff79453154c62b1a8c678f26f82f6d3c"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-repaired-20260908/repo",
+          "prefix": "logs/gemma4-12b-base-evaluations",
+          "files": 2,
+          "bytes": 201683,
+          "hashed_files": 2,
+          "inventory_identity": "47bd4271e7e9adf58a4392260050613628a3aa7e9600a20f072106e8a53083cc"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-phase-shared-20260811/repo",
+          "prefix": "artifacts/qwen35-phase-shared-preflight",
+          "files": 132,
+          "bytes": 2253962896,
+          "hashed_files": 98,
+          "inventory_identity": "6ce85bead820cabf3ff56fa7b4f1e67e7cbb672ede8092e5d4183a41e1cc6a14"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-qwen35-recovery-20260803/repo",
+          "prefix": "artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801",
+          "files": 2,
+          "bytes": 19250369,
+          "hashed_files": 1,
+          "inventory_identity": "65c6814aa9fe7aca5206bed5b1f8339fc1b573f56b3faca1b705d78dec2cfab3"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-qwen35-recovery-20260803/repo",
+          "prefix": "logs/_archive",
+          "files": 26,
+          "bytes": 347723120,
+          "hashed_files": 20,
+          "inventory_identity": "b1ec7860b313d6898b9d8e891dbae114f6a71e7e6518007890ce2f63c6b4699e"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-qwen35-recovery-20260803/repo",
+          "prefix": "logs/rmct_paper_isambard_phase2_qwen3_5_9b_batching_repair_4gpu_20260803",
+          "files": 48,
+          "bytes": 693686509,
+          "hashed_files": 38,
+          "inventory_identity": "df9a0a089f45316d5da2a5dfc2daf777b388a70790a83eb2b8a9523dfe4e436b"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-qwen35-recovery-20260803/repo",
+          "prefix": "logs/rmct_paper_isambard_phase2_qwen3_5_9b_opct_recovery_4gpu_20260803",
+          "files": 24,
+          "bytes": 346843309,
+          "hashed_files": 19,
+          "inventory_identity": "8e3a7de815c3675779dd42e9b042e70418871717063a75bc564cb850ed196a89"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-20260724",
+          "prefix": "artifacts/rmct-hle-gpt-oss-20b-preview",
+          "files": 23,
+          "bytes": 11888904,
+          "hashed_files": 23,
+          "inventory_identity": "93bad7fcc53e3f36fa4374592c46c9ca4cc61d1d78b18142e644344f3c051457"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-20260724",
+          "prefix": "logs/experiments",
+          "files": 1,
+          "bytes": 25371,
+          "hashed_files": 1,
+          "inventory_identity": "1b8a3bbf34d6eb471dc55c85c30c7e732b01bfc627d8fa620d60d51428652763"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-aita-ntaflip-r005-20260821/repo",
+          "prefix": "logs/rmct-evaluations",
+          "files": 7,
+          "bytes": 5536144,
+          "hashed_files": 6,
+          "inventory_identity": "275a29e6a4ad32f2f2acfdc435bf2d464e99e81af971a4f239c8cb840172bb3a"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-aita-ntaflip-r006-20260821/repo",
+          "prefix": "logs/rmct-evaluations",
+          "files": 85,
+          "bytes": 135986432,
+          "hashed_files": 84,
+          "inventory_identity": "30bd201aa9a6f08aafaf4e161ba559f72c7cd9f10e73a8888ec2cec9a9455d0f"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-20260813/repo",
+          "prefix": "artifacts/rmct-convergence-production-ready.json",
+          "files": 1,
+          "bytes": 18348,
+          "hashed_files": 1,
+          "inventory_identity": "2365eb9c4d97cf9d7a7468135f6ee21c1a7f7553112b79b0e38bbca230efc295"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-20260813/repo",
+          "prefix": "artifacts/rmct-convergence-worker-parity-20260813",
+          "files": 24,
+          "bytes": 346587092,
+          "hashed_files": 19,
+          "inventory_identity": "10039ca4e404d0bc60f4e0510ef9d1e496a59b3c77c854c59f30c014a4fd03d5"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-20260813/repo",
+          "prefix": "artifacts/rmct-shared-qid-two-bias-20260813",
+          "files": 2,
+          "bytes": 7817517,
+          "hashed_files": 1,
+          "inventory_identity": "806bbdc377ea00ff346ad911f26539d8865f4c3320947f19c379b67ded1bb6a2"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-20260813/repo",
+          "prefix": "logs/rmct-convergence",
+          "files": 20,
+          "bytes": 173393516,
+          "hashed_files": 15,
+          "inventory_identity": "a6e52e8511bc60840f9bdb2723783d389be7c52aa7f2fed2e3e0eab9b2391dec"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-20260814",
+          "files": 2,
+          "bytes": 1859,
+          "hashed_files": 2,
+          "inventory_identity": "f945030e4bcf121ca12a7653712e506810e3fab7a7ad6d321ac2825d92850c61"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-mb40960-r4-20260818",
+          "files": 1,
+          "bytes": 3824,
+          "hashed_files": 1,
+          "inventory_identity": "35b493d3bd3a8b6962445959b82684ca1d0c125b858d90d2a7f40d18fb538bf2"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-mb40960-r4-production-ready.json",
+          "files": 1,
+          "bytes": 48021,
+          "hashed_files": 1,
+          "inventory_identity": "2468ca8d59d4eb8860c778f304e0366d58faee03ca7feb3fc4dae140f27e4bb0"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-mb40960-uncapped-patience-r5-20260825",
+          "files": 2,
+          "bytes": 25890,
+          "hashed_files": 2,
+          "inventory_identity": "e8cc5c00e4e759ab3a32373f48610adeb14b614c3a06e0985d928e0e6e5e87db"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-mb49152-r3-20260814",
+          "files": 6,
+          "bytes": 556998,
+          "hashed_files": 6,
+          "inventory_identity": "992676e914a4850a746153e206b32567454b5fc0653ce6bc32be909715640841"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-mb49152-r3-production-ready.json",
+          "files": 1,
+          "bytes": 39165,
+          "hashed_files": 1,
+          "inventory_identity": "45f74759ce590d119ad368b3e952db66c4c8ca45ce601608914aa659da917368"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-gcall-r2-production-ready.json",
+          "files": 1,
+          "bytes": 22651,
+          "hashed_files": 1,
+          "inventory_identity": "e6772369dd3b1594bdeaa567dccd72ce92e580d0df9f698d770e02a4a313fbd4"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-convergence-worker-parity-20260813",
+          "files": 24,
+          "bytes": 346587092,
+          "hashed_files": 19,
+          "inventory_identity": "10039ca4e404d0bc60f4e0510ef9d1e496a59b3c77c854c59f30c014a4fd03d5"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "artifacts/rmct-shared-qid-two-bias-20260813",
+          "files": 2,
+          "bytes": 7817517,
+          "hashed_files": 1,
+          "inventory_identity": "806bbdc377ea00ff346ad911f26539d8865f4c3320947f19c379b67ded1bb6a2"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+          "prefix": "logs/rmct-convergence",
+          "files": 1780,
+          "bytes": 35971339258,
+          "hashed_files": 1159,
+          "inventory_identity": "c95e4ed0498df750bcca86fdc0414d190f2b177befcf24234aa1036bfaffe221"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-full-20260725",
+          "prefix": "artifacts/rmct-hle-gpt-oss-20b",
+          "files": 4127,
+          "bytes": 335957215,
+          "hashed_files": 4121,
+          "inventory_identity": "4570e842929c9c89acd76726ed934233fe71316ad4c04b58d89506d70df5bf4a"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-full-20260725",
+          "prefix": "logs/experiments",
+          "files": 3,
+          "bytes": 101882,
+          "hashed_files": 3,
+          "inventory_identity": "05590373e4528f156d0bc5d9045d71a68484d1505d0a41683412dcfc3cd06c58"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-full-20260725",
+          "prefix": "logs/rmct_paper_vast_more_methods",
+          "files": 89,
+          "bytes": 2966572,
+          "hashed_files": 46,
+          "inventory_identity": "3f702c6776021e3fd4703cb9063a521c169737a7f5e18e45abd42a6361ee6c66"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-two-bias-eval-20260820/repo",
+          "prefix": "artifacts/elephant-aita-nta-flip-20260821-source",
+          "files": 2,
+          "bytes": 8166229,
+          "hashed_files": 1,
+          "inventory_identity": "438fdd2d451e46e54cf31e12e9ec5037949e39d4be723573d148579215eb85f1"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-two-bias-eval-20260820/repo",
+          "prefix": "artifacts/stage1-iid-diagnostic-none-20260801-source",
+          "files": 3,
+          "bytes": 2609759,
+          "hashed_files": 3,
+          "inventory_identity": "ed21a1199b4378f52660cc8335d4101c8b4e22abc0c5d02a472cda566f2fa504"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-two-bias-eval-20260820/repo",
+          "prefix": "artifacts/stage2-ood-hle-2x2-20260802-r1-source",
+          "files": 15,
+          "bytes": 10985571,
+          "hashed_files": 15,
+          "inventory_identity": "55af24b9ecd72da5c3bacb8d7649c96fff7a92679f054c7dbb2c14fca5a50c00"
+        },
+        {
+          "root": "/projects/a5v/sohaib.a5v/ctm-rmct-two-bias-eval-20260820/repo",
+          "prefix": "logs/rmct-evaluations",
+          "files": 18324,
+          "bytes": 5421141734,
+          "hashed_files": 4846,
+          "inventory_identity": "c9062cad0c5b7be6bd39d87839a7c64425181608d6269b7e08ebabb33139e90d"
+        }
+      ]
+    }
+  }
+}
