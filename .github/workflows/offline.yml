@@ -47,10 +47,10 @@ jobs:
         run: uv pip install --python .venv/bin/python --editable . --no-deps
 
       - name: Validate the experiment catalogue
-        run: .venv/bin/python scripts/experiment_catalog.py validate experiments/catalog.json
+        run: .venv/bin/python scripts/experiment_catalog.py validate experiments/catalog.json --repository .
 
       - name: Check the installed environment contract
         run: .venv/bin/python scripts/check_environment.py
 
       - name: Run the full default offline suite
-        run: .venv/bin/python -m pytest
+        run: .venv/bin/python -m pytest -ra

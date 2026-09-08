@@ -22,6 +22,8 @@ status, source snapshots, artifact locations and result caveats. The
 [consolidation ledger](docs/consolidation/PLAN.md) records ongoing integration
 work and the [recovery guide](docs/consolidation/README.md) explains how to
 restore preserved experimental source.
+The [research workflow](docs/research-workflow.md) explains how to prepare,
+record, validate and retain a new experiment.
 
 ## Architecture
 
@@ -42,10 +44,13 @@ The dependency boundary is deliberate:
 - `ctm/` contains generic training, backend, artifact, and evaluation code.
 - `ctm_data/adapters/` contains benchmark-specific training adapters and data
   builders.
-- `experiments/` contains reproducible YAML composition files.
-- `scripts/` contains generic command-line entry points.
+- `experiments/` contains protocol definitions, YAML composition, experiment
+  analysis and immutable recovery contracts.
+- `scripts/` contains command-line entry points and the existing shared MCQ
+  experiment compiler.
 
-The `ctm/` package must not import concrete adapters or benchmark packages.
+The `ctm/` package must not import concrete adapters, benchmark packages,
+experiment modules or scripts.
 
 ## Installation
 

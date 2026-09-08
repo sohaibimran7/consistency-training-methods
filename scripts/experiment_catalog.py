@@ -17,6 +17,7 @@ from ctm.experiments.catalog import (
     load_catalog,
     render_catalog_markdown,
     render_experiment_markdown,
+    verify_repository_references,
 )
 
 
@@ -31,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = commands.add_parser("validate", help="validate a catalogue JSON document")
     validate.add_argument("catalog", type=Path, help="catalogue JSON path")
+    validate.add_argument("--repository", type=Path, help="also verify available repository files and recorded hashes")
 
     list_command = commands.add_parser("list", help="list recorded experiment ids, statuses, and questions")
     list_command.add_argument("catalog", type=Path, help="catalogue JSON path")
@@ -52,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         catalog = load_catalog(args.catalog)
         if args.command == "validate":
+            if args.repository is not None:
+                count = verify_repository_references(catalog, args.repository)
+                print(f"Verified {count} repository file reference(s).")
             print(f"Valid catalogue: {len(catalog.experiments)} experiment(s).")
         elif args.command == "list":
             for experiment in list_experiments(catalog):

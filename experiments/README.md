@@ -15,14 +15,16 @@ records. Keep large raw results outside Git and record their hashes/locations.
 ```bash
 python scripts/experiment_catalog.py list experiments/catalog.json
 python scripts/experiment_catalog.py show experiments/catalog.json rmct-convergence-r5
-python scripts/experiment_catalog.py validate experiments/catalog.json
+python scripts/experiment_catalog.py validate experiments/catalog.json --repository .
 python scripts/experiment_catalog.py render experiments/catalog.json
 ```
 
 The `show` command prints every protocol, source, environment, artifact and
 current-task reference for one ID, plus its completion criteria and caveats.
 Validation checks shape, declared completion evidence, known lineage targets
-and cycles. It does not contact remote storage or infer success from a path.
+and cycles. With `--repository .`, it also verifies declared available local
+files and hashes; CI runs that check. It does not contact remote storage or
+infer scientific success from a path.
 
 [Source restoration and integration status](../docs/consolidation/README.md)
 explains the recovery packages, artifact inventory and outstanding work.
@@ -51,7 +53,7 @@ explains the recovery packages, artifact inventory and outstanding work.
 | `elephant-aita-r006` | complete | What are final-answer-only NTA/NTA rates for base and RMCT steps 16, 64 and 176 under the modified AITA protocol? |
 | `gemma-base-screen-20260825` | invalidated | Does the Gemma base model meet the registered susceptibility screen across both biases? |
 | `gemma-eos-diagnostic-20260908` | diagnostic_only | Does EOS-only decoding finish the two selected long HLE examples without truncation? |
-| `gemma-base-screen-repaired-20260908` | planned | Does the repaired Gemma two-bias screen meet the complete clean/biased pairing contract? |
+| `gemma-base-screen-repaired-20260908` | active | Does the repaired Gemma two-bias screen meet the complete clean/biased pairing contract? |
 | `muse-glimmer-rmct` | unconfirmed | Can the pinned Muse Glimmer RMCT replication pass its runtime and training gates? |
 | `switch-gate` | unconfirmed | Does the preregistered switch gate satisfy its fixed protocol and acceptance rule? |
 | `rmct-tbsr` | unconfirmed | How does the separately defined TBSR RMCT protocol behave? |

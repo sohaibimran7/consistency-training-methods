@@ -1,0 +1,31 @@
+{
+  "tree": "af902216fd277e686d0ddca1177d02abcd85b0d7",
+  "snapshot": "/tmp/ctm-merge-candidate-20260908-v2",
+  "note": "Exact staged merge tree. Later generic runtime/plotting/source-delta edits remain outside this candidate.",
+  "revision": "090152f7111a20798078cd3692721fcd9547c4cd",
+  "tests_passed": 2003,
+  "tests_skipped": 1,
+  "warnings": 45,
+  "elapsed_test_seconds": 300.61,
+  "platform": "macOS arm64 primary Python 3.11 environment",
+  "log_sha256": "a82ebd603ef5c518eb1f4d1a36d904010ad6858cbd8351080ffae482f34abdb6",
+  "gpu_validation": false,
+  "linux_ci": {
+    "url": "https://github.com/sohaibimran7/consistency-training-methods/actions/runs/34241165500",
+    "result": "success",
+    "completed_at_utc": "2026-09-08T14:57:18Z",
+    "platform": "Ubuntu 22.04 x86_64, CPython 3.11.12",
+    "environment": "environments/cpu.lock",
+    "verified_checks": [
+      "clean locked dependency installation",
+      "installed environment contract",
+      "catalogue validation",
+      "full default offline suite"
+    ],
+    "tests_passed": 2003,
+    "tests_skipped": 1,
+    "warnings": 45,
+    "elapsed_test_seconds": 208.03
+  },
+  "pull_request": "https://github.com/sohaibimran7/consistency-training-methods/pull/10"
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 
 import pytest
@@ -13,6 +14,7 @@ from ctm.experiments.catalog import (
     find_experiment,
     render_catalog_markdown,
     validate_catalog,
+    verify_repository_references,
 )
 from scripts.experiment_catalog import main
 
@@ -170,3 +172,24 @@ def test_locations_must_distinguish_repo_paths_from_explicit_external_uris():
     ]
     with pytest.raises(CatalogValidationError, match="explicit URI"):
         validate_catalog(_catalog(implicit_external_path))
+
+
+def test_repository_verification_detects_tamper_missing_and_symlink_paths(tmp_path):
+    item = _experiment("verified", status="active")
+    item["environment_refs"] = []
+    target = tmp_path / "protocol.json"
+    payload = b'{"seed": 42}\n'
+    target.write_bytes(payload)
+    item["protocol_refs"] = [_reference("protocol", _repo_location(target.name), sha256=hashlib.sha256(payload).hexdigest())]
+    catalog = validate_catalog(_catalog(item))
+    assert verify_repository_references(catalog, tmp_path) == 1
+    target.write_bytes(b'{"seed": 43}\n')
+    with pytest.raises(CatalogValidationError, match="SHA-256 differs"):
+        verify_repository_references(catalog, tmp_path)
+    archived = tmp_path / "archived.json"
+    target.rename(archived)
+    with pytest.raises(CatalogValidationError, match="available regular file"):
+        verify_repository_references(catalog, tmp_path)
+    target.symlink_to(archived)
+    with pytest.raises(CatalogValidationError, match="available regular file"):
+        verify_repository_references(catalog, tmp_path)

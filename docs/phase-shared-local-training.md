@@ -16,10 +16,12 @@ The implementation is opt-in and records this placement as execution-only
 provenance. It does not change the experiment's objective, data selection,
 rollout budgets, or optimizer hyperparameters.
 
-Only `scripts/train_rlct.py` exposes the phase-shared command-line mode in this
-change. OPCT, BCT, ACT, AttCT, MLPCT, and target-generation entrypoints reject
-the option at argument parsing because their training loops have not yet been
-integrated with and tested against the same phase-boundary scheduler.
+The original PR #9 exposed this mode only through `scripts/train_rlct.py`.
+The 8 September consolidation also reconciles the experimental OPCT lifecycle
+and its opt-in `scripts/train_opct.py` flags, covered by offline tests. The
+hardware evidence below does not validate OPCT. BCT, ACT, AttCT, MLPCT and
+target-generation entrypoints still reject this mode. Keep all source/runtime
+changes behind a fresh campaign-specific hardware validation gate.
 
 For Qwen3.5, the runtime also fails closed unless the rollout status directory
 contains a worker-parity attestation bound to the exact model path, ordered

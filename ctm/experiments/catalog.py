@@ -8,6 +8,7 @@ the generated JSON Schema. Cross-entry lineage remains a small semantic check.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Mapping
@@ -89,6 +90,32 @@ class CatalogError(ValueError):
 
 class CatalogValidationError(CatalogError):
     """A catalogue document does not satisfy the versioned contract."""
+
+
+def verify_repository_references(catalog: ExperimentCatalog, repository: str | Path) -> int:
+    """Check declared available repository files; never contact external storage."""
+
+    root = Path(repository).resolve(strict=True)
+    checked = 0
+    for experiment in catalog.experiments:
+        for group in ("protocol_refs", "source_snapshots", "environment_refs", "artifacts", "current_task_refs"):
+            for reference in getattr(experiment, group):
+                location = reference.location
+                if not isinstance(location, RepositoryLocation) or location.availability != "available":
+                    continue
+                target = root / location.path
+                label = f"{experiment.id}: {location.path}"
+                if target.is_symlink() or not target.is_file() or not target.resolve().is_relative_to(root):
+                    raise CatalogValidationError(f"{label}: expected an available regular file inside repository")
+                if reference.sha256 is not None:
+                    digest = hashlib.sha256()
+                    with target.open("rb") as stream:
+                        for block in iter(lambda: stream.read(1024 * 1024), b""):
+                            digest.update(block)
+                    if digest.hexdigest() != reference.sha256:
+                        raise CatalogValidationError(f"{label}: SHA-256 differs from catalogue")
+                checked += 1
+    return checked
 
 
 class ExperimentNotFoundError(CatalogError):

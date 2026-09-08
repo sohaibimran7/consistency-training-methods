@@ -233,6 +233,16 @@
             "availability": "available"
           },
           "sha256": "117574f2a24ecc04425ffa5b97e536cee08c5464ce14d9bd3b1c96ac0a4bf9f0"
+        },
+        {
+          "role": "maintained_implementation",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/rmct_paper_vast_dense_models/qwen3_5_9b.yaml",
+            "availability": "available"
+          },
+          "sha256": "bc6fe457d29c62a254ed88db336d018b7ac0740c166c1c186bc6d1fa00dfc52e",
+          "note": "Consolidated successor; the original protocol identity and source recovery package remain separate. Current bytes are not claimed as the historical run source."
         }
       ],
       "source_snapshots": [
@@ -303,11 +313,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/act_repair_gate/README.md",
+            "kind": "repo_path",
+            "path": "experiments/act_repair_gate/README.md",
             "availability": "available"
           },
-          "sha256": "d16858d4ff63c951e5649b1e7cdefe8317bd37525d410a102f1525d0a3ac7db1"
+          "sha256": "d16858d4ff63c951e5649b1e7cdefe8317bd37525d410a102f1525d0a3ac7db1",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -359,11 +370,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/act_expanded/README.md",
+            "kind": "repo_path",
+            "path": "experiments/act_expanded/README.md",
             "availability": "available"
           },
-          "sha256": "ad1289007d1476d5c3920e4f1445f058b923ce6b9d8971cfa57a04bb3bac9ebe"
+          "sha256": "ad1289007d1476d5c3920e4f1445f058b923ce6b9d8971cfa57a04bb3bac9ebe",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -415,11 +427,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/act_max/README.md",
+            "kind": "repo_path",
+            "path": "experiments/act_max/README.md",
             "availability": "available"
           },
-          "sha256": "8c8ab91eaab0996791b3f249e76b3a8063697afe9d63c75fa1d1a9b97deb6c38"
+          "sha256": "8c8ab91eaab0996791b3f249e76b3a8063697afe9d63c75fa1d1a9b97deb6c38",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -471,11 +484,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/stage1_iid_diagnostic/README.md",
+            "kind": "repo_path",
+            "path": "experiments/stage1_iid_diagnostic/README.md",
             "availability": "available"
           },
-          "sha256": "129e68082970baad31cf04ff89b2a4fcfa1957f9ce8019facdabb10a46933ab4"
+          "sha256": "129e68082970baad31cf04ff89b2a4fcfa1957f9ce8019facdabb10a46933ab4",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -538,11 +552,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/stage1_iid_diagnostic_none/README.md",
+            "kind": "repo_path",
+            "path": "experiments/stage1_iid_diagnostic_none/README.md",
             "availability": "available"
           },
-          "sha256": "61b8df198cc849b55decc30eb46f405bc2defbf7d320f461407edfaf14522c3a"
+          "sha256": "61b8df198cc849b55decc30eb46f405bc2defbf7d320f461407edfaf14522c3a",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -605,11 +620,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/stage2_ood_hle/README.md",
+            "kind": "repo_path",
+            "path": "experiments/stage2_ood_hle/README.md",
             "availability": "available"
           },
-          "sha256": "1ec39e5af65d51e0970108fd6304a1eabf48ed7ec761916337979f26d46efdde"
+          "sha256": "1ec39e5af65d51e0970108fd6304a1eabf48ed7ec761916337979f26d46efdde",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -695,6 +711,16 @@
             "availability": "available"
           },
           "sha256": "f66bd3947ca28a46512d4b6df040711b1d40c61aa8477d2c501f10e27addaa3d"
+        },
+        {
+          "role": "maintained_implementation",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/rmct_256/plan.py",
+            "availability": "available"
+          },
+          "sha256": "698a4460fdae953f50647751f19971e859fa27dd91d1dc4ab9010a2c0bd0a399",
+          "note": "Consolidated successor; the original protocol identity and source recovery package remain separate. Current bytes are not claimed as the historical run source."
         }
       ],
       "source_snapshots": [
@@ -752,6 +778,16 @@
             "availability": "available"
           },
           "sha256": "4198b452cddb2c8abb473011f67155d8d1250dfe63c0da50101d6c3b417f3581"
+        },
+        {
+          "role": "maintained_implementation",
+          "location": {
+            "kind": "repo_path",
+            "path": "experiments/rmct_512/plan.py",
+            "availability": "available"
+          },
+          "sha256": "b6890b6e5249a8de77e72a326f43fdf4b95390d5709d0aadcf9ca8dbec007f88",
+          "note": "Consolidated successor; the original protocol identity and source recovery package remain separate. Current bytes are not claimed as the historical run source."
         }
       ],
       "source_snapshots": [
@@ -804,11 +840,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_256_convergence/plan.py",
+            "kind": "repo_path",
+            "path": "experiments/rmct_256_convergence/plan.py",
             "availability": "available"
           },
-          "sha256": "b118065314d7cc369465d07529a582944efc0d4e25436c374553f8771b4f024e"
+          "sha256": "b118065314d7cc369465d07529a582944efc0d4e25436c374553f8771b4f024e",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -861,11 +898,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence/plan.py",
+            "kind": "repo_path",
+            "path": "experiments/rmct_convergence/plan.py",
             "availability": "available"
           },
-          "sha256": "f183fefcdeb35f3c77781cb2d1b1d66fad2650a18499730d5d68b3d7563b9763"
+          "sha256": "f183fefcdeb35f3c77781cb2d1b1d66fad2650a18499730d5d68b3d7563b9763",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -918,11 +956,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence_accelerated/plan.py",
+            "kind": "repo_path",
+            "path": "experiments/rmct_convergence_accelerated/plan.py",
             "availability": "available"
           },
-          "sha256": "50bd432f4ae31dcf48a55525379f1ac0101a429857f62a3f30be0c36c564fb28"
+          "sha256": "50bd432f4ae31dcf48a55525379f1ac0101a429857f62a3f30be0c36c564fb28",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -975,11 +1014,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence_r4_recovery/plan.py",
+            "kind": "repo_path",
+            "path": "experiments/rmct_convergence_r4_recovery/plan.py",
             "availability": "available"
           },
-          "sha256": "44a456bab2bb24738d6c492d5f45f72b481a6135f3389dcbd780abbe8134ef6b"
+          "sha256": "44a456bab2bb24738d6c492d5f45f72b481a6135f3389dcbd780abbe8134ef6b",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -1042,11 +1082,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_convergence_r5_patience/plan.py",
+            "kind": "repo_path",
+            "path": "experiments/rmct_convergence_r5_patience/plan.py",
             "availability": "available"
           },
-          "sha256": "a2451ba6f358d9856ecc1fc6f9f43572fd04b08d155e66b925e0d65598a23c88"
+          "sha256": "a2451ba6f358d9856ecc1fc6f9f43572fd04b08d155e66b925e0d65598a23c88",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -1103,6 +1144,15 @@
             "availability": "available"
           },
           "note": "Source copy preserved separately; current backend files match PR9 and later trainer/plan files match the development tree."
+        },
+        {
+          "role": "artifact_inventory_verification",
+          "location": {
+            "kind": "repo_path",
+            "path": "docs/consolidation/remote-artifact-verification.json",
+            "availability": "available"
+          },
+          "note": "Full content hashes and recovery-copy coverage for the initial remote inventory. Newly created outputs and external base caches are outside this pass."
         }
       ],
       "lineage": {
@@ -1138,11 +1188,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_two_bias_eval/contract.py",
+            "kind": "repo_path",
+            "path": "experiments/rmct_two_bias_eval/contract.py",
             "availability": "available"
           },
-          "sha256": "328d6cfc9ee2b2e026761743994a3e1edae406ccb2ded0ef73cade768042e132"
+          "sha256": "328d6cfc9ee2b2e026761743994a3e1edae406ccb2ded0ef73cade768042e132",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -1214,11 +1265,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/elephant_aita_ntaflip/tasks.py",
+            "kind": "repo_path",
+            "path": "experiments/elephant_aita_ntaflip/tasks.py",
             "availability": "available"
           },
-          "sha256": "9fe41b60fb50dbde21df967913a51f7d8b8b33eb79adba0819bb3519ec508bc7"
+          "sha256": "9fe41b60fb50dbde21df967913a51f7d8b8b33eb79adba0819bb3519ec508bc7",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -1309,6 +1361,16 @@
             "availability": "available"
           },
           "sha256": "f69cc44c544b661feb74b1dd4739ece92b6a22b9f2a3e89b4998eb0381813d9e"
+        },
+        {
+          "role": "maintained_implementation",
+          "location": {
+            "kind": "repo_path",
+            "path": "infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu.py",
+            "availability": "available"
+          },
+          "sha256": "4153756ee0ea53cfa020c4c765ebe16c4f4afed15ae7ea254b26217c120ee0f6",
+          "note": "Consolidated successor; the original protocol identity and source recovery package remain separate. Current bytes are not claimed as the historical run source."
         }
       ],
       "source_snapshots": [
@@ -1353,6 +1415,15 @@
             "availability": "available"
           },
           "note": "Owner verified 148 clean, two incomplete HLE and 16 biased outputs. Incomplete screen; never an accepted suitability result."
+        },
+        {
+          "role": "artifact_inventory_verification",
+          "location": {
+            "kind": "repo_path",
+            "path": "docs/consolidation/remote-artifact-verification.json",
+            "availability": "available"
+          },
+          "note": "Full content hashes and recovery-copy coverage for the initial remote inventory. Newly created outputs and external base caches are outside this pass."
         }
       ],
       "lineage": {
@@ -1386,11 +1457,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/infra/isambard/debug_gemma_eos.py",
+            "kind": "repo_path",
+            "path": "infra/isambard/debug_gemma_eos.py",
             "availability": "available"
           },
-          "sha256": "eb32d749d8bbe29baf0e97e16b181bfab4f7f145524840a360bf6369fe1e8d94"
+          "sha256": "eb32d749d8bbe29baf0e97e16b181bfab4f7f145524840a360bf6369fe1e8d94",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -1427,6 +1499,15 @@
             "availability": "available"
           },
           "note": "Job 6401027 was running at the owner update; completion.json exists only after both EOS events. This diagnostic is not scored."
+        },
+        {
+          "role": "artifact_inventory_verification",
+          "location": {
+            "kind": "repo_path",
+            "path": "docs/consolidation/remote-artifact-verification.json",
+            "availability": "available"
+          },
+          "note": "Full content hashes and recovery-copy coverage for the initial remote inventory. Newly created outputs and external base caches are outside this pass."
         }
       ],
       "lineage": {
@@ -1458,7 +1539,7 @@
     {
       "id": "gemma-base-screen-repaired-20260908",
       "question": "Does the repaired Gemma two-bias screen meet the complete clean/biased pairing contract?",
-      "status": "planned",
+      "status": "active",
       "protocol_refs": [
         {
           "role": "protocol",
@@ -1468,6 +1549,16 @@
             "availability": "available"
           },
           "sha256": "f69cc44c544b661feb74b1dd4739ece92b6a22b9f2a3e89b4998eb0381813d9e"
+        },
+        {
+          "role": "maintained_implementation",
+          "location": {
+            "kind": "repo_path",
+            "path": "infra/isambard/run_gemma4_12b_base_two_bias_evals_16gpu.py",
+            "availability": "available"
+          },
+          "sha256": "4153756ee0ea53cfa020c4c765ebe16c4f4afed15ae7ea254b26217c120ee0f6",
+          "note": "Consolidated successor; the original protocol identity and source recovery package remain separate. Current bytes are not claimed as the historical run source."
         }
       ],
       "source_snapshots": [
@@ -1514,6 +1605,15 @@
             "availability_note": "Location recorded from a manifest or task report; full content retrieval has not yet been verified by consolidation."
           },
           "note": "Exact model snapshot reported by owner; weight bytes not rehashed by consolidation."
+        },
+        {
+          "role": "artifact_inventory_verification",
+          "location": {
+            "kind": "repo_path",
+            "path": "docs/consolidation/remote-artifact-verification.json",
+            "availability": "available"
+          },
+          "note": "Full content hashes and recovery-copy coverage for the initial remote inventory. Newly created outputs and external base caches are outside this pass."
         }
       ],
       "lineage": {
@@ -1538,7 +1638,8 @@
       ],
       "evidence_notes": [
         "Catalogue evidence observed 8 September 2026. Availability is point-in-time; completion is never inferred from filenames or passing tests.",
-        "CPU paired scoring follows complete shard merge and retains conditional NaNs. No canonical Gemma suitability result or Gemma training exists yet."
+        "CPU paired scoring follows complete shard merge and retains conditional NaNs. No canonical Gemma suitability result or Gemma training exists yet.",
+        "On 8 September the owning task reported submission of full evaluation job6404189 from its separate frozen campaign checkout. Consolidation does not alter that checkout; submission is not completion or acceptance evidence."
       ]
     },
     {
@@ -1549,11 +1650,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/muse_glimmer_rmct_replication/muse_glimmer_rmct_replication.yaml",
+            "kind": "repo_path",
+            "path": "experiments/muse_glimmer_rmct_replication/muse_glimmer_rmct_replication.yaml",
             "availability": "available"
           },
-          "sha256": "5ab3225148540b5c7e790112201ab379807a4568a74d42fe5706ab3b5c4c7709"
+          "sha256": "5ab3225148540b5c7e790112201ab379807a4568a74d42fe5706ab3b5c4c7709",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -1613,11 +1715,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/switch_gate/protocol.yaml",
+            "kind": "repo_path",
+            "path": "experiments/switch_gate/protocol.yaml",
             "availability": "available"
           },
-          "sha256": "a705ddc7606b16dd46d3863366278d8466e36b99f6566664e01f5f2da205d60e"
+          "sha256": "a705ddc7606b16dd46d3863366278d8466e36b99f6566664e01f5f2da205d60e",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -1686,11 +1789,12 @@
         {
           "role": "protocol",
           "location": {
-            "kind": "external",
-            "uri": "file:///Users/work/.codex/worktrees/d6d6/consistency-training-methods/experiments/rmct_tbsr/README.md",
+            "kind": "repo_path",
+            "path": "experiments/rmct_tbsr/README.md",
             "availability": "available"
           },
-          "sha256": "04cb971c7f2b655c7245e4ad4b4b4c988f270941591c1d3dac03477ac21f7fa1"
+          "sha256": "04cb971c7f2b655c7245e4ad4b4b4c988f270941591c1d3dac03477ac21f7fa1",
+          "note": "Integrated bytes match the preserved original protocol."
         }
       ],
       "source_snapshots": [
@@ -2032,7 +2136,7 @@
             "path": "docs/phase-shared-local-training.md",
             "availability": "available"
           },
-          "sha256": "e4e5b94467d83583db8810ea2bf4cba81bcc6ec8cb56b57bc0d0fdd879908ebd"
+          "sha256": "fc45c5319ed2eb12ec1b8e500a9b7f13ebd3bbdd09788eda6fcedffe538c34f1"
         }
       ],
       "source_snapshots": [

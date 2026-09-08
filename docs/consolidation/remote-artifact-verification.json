@@ -1,0 +1,129 @@
+{
+  "schema": "ctm-remote-artifact-verification-v1",
+  "inventory_uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/artifacts-remote-full-hash-20260908.json",
+  "inventory_sha256": "67b070b0ba7a412e933c7b0daed2a4c2e5013acb84ab7ad3598cea59d384bd75",
+  "started_at_utc": "2026-09-08T15:14:22.766412+00:00",
+  "completed_at_utc": "2026-09-08T15:16:05.094190+00:00",
+  "counts": {
+    "bytes": 61813967440,
+    "changed_from_initial": 0,
+    "errors": 0,
+    "hashed": 25292,
+    "symlinks": 0
+  },
+  "roots": [
+    {
+      "root": "/projects/a5v/sohaib.a5v/consistency-training-methods-figure6",
+      "files": 0,
+      "bytes": 0,
+      "verified_in_laptop_artifact_recovery_archive_files": 0,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 0
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/consistency-training-methods",
+      "files": 435,
+      "bytes": 15360020514,
+      "verified_in_laptop_artifact_recovery_archive_files": 3,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 7820120
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260825/repo",
+      "files": 76,
+      "bytes": 2618273,
+      "verified_in_laptop_artifact_recovery_archive_files": 70,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 2414406
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-20260908/repo",
+      "files": 1,
+      "bytes": 36206,
+      "verified_in_laptop_artifact_recovery_archive_files": 0,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 0
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-gemma4-12b-base-eval-repaired-20260908/repo",
+      "files": 2,
+      "bytes": 201683,
+      "verified_in_laptop_artifact_recovery_archive_files": 1,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 148775
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-methods-aita-ntaflip-r001-20260824/repo",
+      "files": 0,
+      "bytes": 0,
+      "verified_in_laptop_artifact_recovery_archive_files": 0,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 0
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-phase-shared-20260811/repo",
+      "files": 132,
+      "bytes": 2253962896,
+      "verified_in_laptop_artifact_recovery_archive_files": 114,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 2167202899
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-qwen35-recovery-20260803/repo",
+      "files": 100,
+      "bytes": 1407503307,
+      "verified_in_laptop_artifact_recovery_archive_files": 82,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 1406301247
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-20260724",
+      "files": 24,
+      "bytes": 11914275,
+      "verified_in_laptop_artifact_recovery_archive_files": 2,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 1450348
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-aita-ntaflip-r005-20260821/repo",
+      "files": 7,
+      "bytes": 5536144,
+      "verified_in_laptop_artifact_recovery_archive_files": 0,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 0
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-aita-ntaflip-r006-20260821/repo",
+      "files": 85,
+      "bytes": 135986432,
+      "verified_in_laptop_artifact_recovery_archive_files": 5,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 6001120
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-20260813/repo",
+      "files": 47,
+      "bytes": 527816473,
+      "verified_in_laptop_artifact_recovery_archive_files": 10,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 354342379
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-convergence-gcall-r2-20260814/repo",
+      "files": 1820,
+      "bytes": 36326442275,
+      "verified_in_laptop_artifact_recovery_archive_files": 228,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 355977824
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-full-20260725",
+      "files": 4219,
+      "bytes": 339025669,
+      "verified_in_laptop_artifact_recovery_archive_files": 15,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 20715116
+    },
+    {
+      "root": "/projects/a5v/sohaib.a5v/ctm-rmct-two-bias-eval-20260820/repo",
+      "files": 18344,
+      "bytes": 5442903293,
+      "verified_in_laptop_artifact_recovery_archive_files": 198,
+      "verified_in_laptop_artifact_recovery_archive_bytes": 157937176
+    }
+  ],
+  "unique_contents_outside_laptop_artifact_recovery_archive": 9009,
+  "bytes_outside_laptop_artifact_recovery_archive": 47865942720,
+  "limitations": [
+    "All paths in the initial remote inventory were re-read; later-created outputs and paths outside its declared roots were not discovered.",
+    "Files were hashed with pre/post inode, size and timestamp checks. No scientific completion or historical execution identity is inferred.",
+    "The unmatched remote contents remain retrievable at their protected original locations. They do not yet have a verified independent recovery copy. No remote campaign directory was retired.",
+    "Base model cache snapshots and datasets outside the inventoried artifact/log/data/checkpoint/result roots require their own recorded revision and retention checks."
+  ]
+}

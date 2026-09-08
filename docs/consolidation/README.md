@@ -47,9 +47,14 @@ contract, protected-source attestation, environment and raw results too.
 Isambard artifact inventories by location. Each inventory has a content hash
 and contains the individual filenames, sizes and available SHA-256 hashes.
 The local pass hashed all regular files in the declared artifact/log/data/
-checkpoint/result roots. The initial remote pass hashed small metadata and
-log/data files; remaining large files and symlink targets are explicitly
-unverified. An inventory is not an artifact backup.
+checkpoint/result roots. The initial remote pass hashed only smaller files. A follow-up read verified
+all 25,292 inventoried files (61,813,967,440 bytes), including large checkpoints,
+without errors or changed earlier hashes. See
+[`remote-artifact-verification.json`](remote-artifact-verification.json) for
+coverage and recovery-copy overlap. About 47.9 GB of distinct remote content
+remains outside the laptop-artifact recovery archive, so its original locations
+remain protected. Base-model caches and later outputs are outside this pass.
+An inventory is not an artifact backup.
 
 The initial local regular artifacts now have a separately verified recovery
 archive on Isambard: see [`artifact-backup.json`](artifact-backup.json) for its
@@ -80,3 +85,29 @@ identities while sharing execution/validation/plotting mechanics. In
 particular, r5 still imports earlier convergence plans, incomplete Gemma
 screens are not completed susceptibility results, and Figure 6 diagnostics
 are not strict full-matrix results.
+
+
+## Retired worktrees
+
+Four fully merged legacy Claude worktrees were moved intact to the primary
+checkout's `_archive/worktrees-20260908/`. Their Git registration directories
+were separately retained under `.git/_archive/worktrees-20260908/`, so they
+no longer appear as active registered worktrees. See
+[`retired-worktrees.json`](retired-worktrees.json) for exact paths, original
+heads, metadata hashes and the restoration command. The check verified no
+process or primary Python environment reference before each archival pass.
+All ignored files and environments moved with their directories.
+
+The earlier four stale registrations for already-missing temporary Figure 6
+worktrees were archived separately. Existing experiment/diagnostic worktrees
+remain until their task ownership and remaining source variants are resolved.
+
+The reviewed branch is [draft PR #10](https://github.com/sohaibimran7/consistency-training-methods/pull/10).
+[`experiment-merge-validation.json`](experiment-merge-validation.json) records
+local and clean Linux evidence for the initial reconciled experiment merge.
+
+The inactive `a3ce` worktree was also archived intact after its 260 selected
+source files matched preservation and its unique chart recipes received an
+explicit historical disposition. Its task was already archived.
+[`retired-a3ce-worktree.json`](retired-a3ce-worktree.json) records restoration.
+There are now 15 registered worktrees; active and unrelated task paths remain.
