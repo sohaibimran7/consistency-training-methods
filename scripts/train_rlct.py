@@ -29,6 +29,7 @@ from ctm.backends.cli import (
     resolve_phase_shared_args,
     resolve_rollout_parallel_args,
 )
+from ctm.backends.run_metadata import phase_shared_run_metadata as _phase_shared_run_metadata
 from ctm.cli_safety import parse_json_object, reject_inline_secrets
 from ctm.core.config import AdamConfig, CheckpointConfig, resolve_lora_config
 from ctm.settings.runtime import prepare_setting, setting_run_metadata
@@ -85,76 +86,6 @@ def _adam_config_from_args(args: argparse.Namespace) -> AdamConfig:
         weight_decay=args.weight_decay,
         grad_clip_norm=args.grad_clip_norm,
     )
-
-
-def _phase_shared_run_metadata(phase_shared: PhaseSharedCLIConfig | None) -> dict[str, object]:
-    """Return reproducible runtime provenance for an opt-in shared-GPU run.
-
-    The placement is deliberately recorded separately from scientific settings:
-    phase sharing changes how the configured update is executed, rather than
-    which data, objective, rollout budgets, or optimizer hyperparameters the
-    experiment uses.
-    """
-
-    if phase_shared is None:
-        return {}
-    topology = phase_shared.topology
-    return {
-        "phase_shared": {
-            "schema_version": "local_phase_shared_v1",
-            "execution_only": True,
-            "execution_semantics": (
-                "runtime topology only; configured objective, data selection, rollout budgets, "
-                "and optimizer hyperparameters are unchanged"
-            ),
-            "visible_devices": list(topology.visible_devices),
-            "training_world_size": topology.world_size,
-            "training_ranks": [
-                {
-                    "rank": rank.rank,
-                    "logical_index": rank.gpu.logical_index,
-                    "device_token": rank.gpu.device_token,
-                    "publisher": rank.is_publisher,
-                }
-                for rank in topology.training_ranks
-            ],
-            "rollout_workers": [
-                {
-                    "worker_id": worker_id,
-                    "logical_index": gpu.logical_index,
-                    "device_token": gpu.device_token,
-                }
-                for worker_id, gpu in enumerate(topology.rollout_gpus)
-            ],
-            "overlap": [
-                {"logical_index": gpu.logical_index, "device_token": gpu.device_token} for gpu in topology.overlap
-            ],
-            "coordinator": {
-                "rank": 0,
-                "logical_index": topology.coordinator.logical_index,
-                "device_token": topology.coordinator.device_token,
-                "device": phase_shared.coordinator_device,
-                "canonical_adapter_publisher": True,
-            },
-            "vllm_sleep_lifecycle": {
-                "enabled": True,
-                "sleep_level": 1,
-                "rollout_phase": "workers awake; sampling and scoring permitted",
-                "training_phase": "workers sleep before replicated trainer work; sampling and scoring prohibited",
-                "publication": "rank 0 verifies replica state, publishes the adapter, then all workers acknowledge before rollout resumes",
-                "transition_failure_policy": "fail_closed",
-            },
-            "rollout_worker_timeouts_seconds": {
-                "startup": phase_shared.rollout.start_timeout_seconds,
-                "request": phase_shared.rollout.request_timeout_seconds,
-            },
-            "replica_timeouts_seconds": {
-                "startup": phase_shared.replica_start_timeout_seconds,
-                "command": phase_shared.replica_command_timeout_seconds,
-                "shutdown": phase_shared.replica_shutdown_timeout_seconds,
-            },
-        }
-    }
 
 
 def _print_phase_shared_runtime(phase_shared: PhaseSharedCLIConfig | None) -> None:
@@ -241,7 +172,9 @@ def _validate_numeric_args(args: argparse.Namespace) -> None:
     consistency_active = args.anchor_weight < 1 and n_consistency > 0
     anchor_active = args.anchor_weight > 0 and n_anchor > 0
     if not consistency_active and not anchor_active:
-        raise ValueError("rollout/weight configuration has no active gradient term; increase the rollout count for a non-zero-weight consistency or anchor term")
+        raise ValueError(
+            "rollout/weight configuration has no active gradient term; increase the rollout count for a non-zero-weight consistency or anchor term"
+        )
 
 
 def main(argv: list[str] | None = None):
@@ -278,7 +211,9 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--wandb-project", help="Explicitly enable W&B logging to this project")
 
     # === Optimiser ===
-    parser.add_argument("--lr", type=float, default=None, help="Learning rate (default: auto from Tinker's get_recommended_lr)")
+    parser.add_argument(
+        "--lr", type=float, default=None, help="Learning rate (default: auto from Tinker's get_recommended_lr)"
+    )
     parser.add_argument(
         "--lr-schedule",
         default="linear",
@@ -405,10 +340,7 @@ def main(argv: list[str] | None = None):
         "--no-shuffle-datapoints",
         action="store_false",
         dest="shuffle_datapoints",
-        help=(
-            "Consume loaded datapoints in their supplied order on every epoch; "
-            "the default shuffles each epoch"
-        ),
+        help=("Consume loaded datapoints in their supplied order on every epoch; " "the default shuffles each epoch"),
     )
 
     # === Checkpointing ===
@@ -574,11 +506,7 @@ def main(argv: list[str] | None = None):
             ),
             "setting_factory": args.setting_factory,
             "backend": args.backend,
-            **(
-                {"local_backend": {"ppo_clip_epsilon": args.local_ppo_clip_epsilon}}
-                if args.backend == "local"
-                else {}
-            ),
+            **({"local_backend": {"ppo_clip_epsilon": args.local_ppo_clip_epsilon}} if args.backend == "local" else {}),
             **_phase_shared_run_metadata(phase_shared),
             **(
                 {"onpolicy_target_attestation": onpolicy_target_provenance}
@@ -655,7 +583,9 @@ def main(argv: list[str] | None = None):
     if config.lora.target_modules is not None:
         print(f"  LoRA targets:       {config.lora.target_modules}")
     else:
-        print(f"  LoRA components:    mlp={config.lora.train_mlp}, attn={config.lora.train_attn}, unembed={config.lora.train_unembed}")
+        print(
+            f"  LoRA components:    mlp={config.lora.train_mlp}, attn={config.lora.train_attn}, unembed={config.lora.train_unembed}"
+        )
     if args.seed is not None:
         print(f"  Seed:               {args.seed}")
     print(f"  Batch size:         {args.batch_size}")
@@ -673,9 +603,13 @@ def main(argv: list[str] | None = None):
     # n_train_rollouts, so fixed-K prompt families can multiply cost quickly.
     n_train_perts = len(train_indices)
     eff_rollouts = args.n_ref_rollouts + n_train_perts * args.n_train_rollouts
-    print(f"  Rollouts/datapoint: {eff_rollouts} (= {args.n_ref_rollouts} ref + {n_train_perts}×{args.n_train_rollouts} cued)")
+    print(
+        f"  Rollouts/datapoint: {eff_rollouts} (= {args.n_ref_rollouts} ref + {n_train_perts}×{args.n_train_rollouts} cued)"
+    )
     if n_train_perts > 1 and args.n_train_rollouts > 8:
-        print(f"  ⚠️  WARNING: {n_train_perts} variants × {args.n_train_rollouts} rollouts/variant is a large per-datapoint sampling cost (×{eff_rollouts // (args.n_ref_rollouts + args.n_train_rollouts)} vs single-variant). matched_pair targets ~1-2 rollouts/variant — consider --n-train-rollouts 2.")
+        print(
+            f"  ⚠️  WARNING: {n_train_perts} variants × {args.n_train_rollouts} rollouts/variant is a large per-datapoint sampling cost (×{eff_rollouts // (args.n_ref_rollouts + args.n_train_rollouts)} vs single-variant). matched_pair targets ~1-2 rollouts/variant — consider --n-train-rollouts 2."
+        )
     print(f"  KL:                 coef={args.kl_coef}, discount_factor={args.kl_discount_factor}")
     if args.backend == "local":
         print(f"  Local PPO clip:     {args.local_ppo_clip_epsilon}")
@@ -689,7 +623,9 @@ def main(argv: list[str] | None = None):
         _adv_desc = args.advantage_estimator
     print(f"  Advantage est.:     {_adv_desc}")
     if n_train_perts > 1 and args.advantage_estimator != "matched_pair":
-        print("  NOTE: this setting has multiple variants but the estimator is not matched_pair; the family will be handled by your chosen estimator instead.")
+        print(
+            "  NOTE: this setting has multiple variants but the estimator is not matched_pair; the family will be handled by your chosen estimator instead."
+        )
     if args.advantage_estimator == "matched_pair" and n_train_perts == 1:
         print("  NOTE: matched_pair over one variant is equivalent to a single gap vs the reference.")
     print(f"  Loss fn:            {args.loss_fn}")
