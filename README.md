@@ -238,6 +238,27 @@ run. Set the policy to `raise` for a fail-fast diagnostic run. If all usable
 advantages in a batch are zero or missing, CTM records the batch and skips the
 optimizer update.
 
+### Experimental phase-shared local execution
+
+The RMCT/RLCT entrypoint also has an opt-in phase-shared local execution path.
+It keeps persistent vLLM rollout workers and HF/PEFT replicated
+trainers on the same explicitly allocated GPUs, using vLLM level-1 sleep while
+the trainers run. This is an execution placement only: it does not change the
+configured objective, data selection, rollout budget, or optimizer settings.
+
+The replicated update is deliberately **not** PyTorch `DistributedDataParallel`:
+independent LoRA replicas deterministically shard the batch and NCCL-**SUM**
+their globally normalized gradients before AdamW. The path is implemented and
+has passed a four-GPU GH200 non-production preflight, but it has not yet passed
+a representative three-lane-versus-four-lane production benchmark. Do not use
+it for a production experiment until that benchmark is complete.
+
+See [the phase-shared status and evidence guide](docs/phase-shared-local-training.md)
+for the exact implemented optimisations, what the hardware preflight proves,
+and the next benchmark required before a production launch. Isambard setup and
+the non-production wrapper are documented in
+[infra/isambard/README.md](infra/isambard/README.md).
+
 ## BCT, OPCT, and representation consistency
 
 `scripts/train_bct.py` is file-driven:
