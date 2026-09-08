@@ -17,6 +17,12 @@ data and training grader separately from the evaluation dataset, task, scorer,
 and judge. CTM does not infer an evaluation split or replace a benchmark's
 official evaluation method.
 
+Start with the [experiment catalogue](experiments/README.md) to find protocol
+status, source snapshots, artifact locations and result caveats. The
+[consolidation ledger](docs/consolidation/PLAN.md) records ongoing integration
+work and the [recovery guide](docs/consolidation/README.md) explains how to
+restore preserved experimental source.
+
 ## Architecture
 
 ```mermaid
@@ -42,6 +48,11 @@ The dependency boundary is deliberate:
 The `ctm/` package must not import concrete adapters or benchmark packages.
 
 ## Installation
+
+For reproducible Linux CPU validation, use the committed
+[environment lock and clean-install instructions](environments/README.md).
+The GPU training and Figure 6 serving environments have distinct
+[Isambard profiles](infra/isambard/README.md#gpu-environment-profiles).
 
 Install the complete experiment environment:
 
