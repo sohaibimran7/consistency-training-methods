@@ -33,11 +33,12 @@ Training data format (JSONL):
 import asyncio
 import json
 import math
+import os
 import random
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from tqdm import tqdm
 
 from tinker_cookbook.supervised.common import datum_from_model_input_weights
@@ -49,7 +50,10 @@ from ctm.backends.renderers import get_renderer_and_tokenizer
 from ctm.backends.tinker import TinkerBackend
 from ctm.core.config import AdamConfig, CheckpointConfig, LoRAConfig
 from ctm.training.checkpoints import finalize_checkpoint, save_intermediate_checkpoint
-from ctm.training.consistency_data import build_consistency_datums
+from ctm.training.consistency_data import (
+    build_consistency_datums_with_audit,
+    require_full_reference_suffix_alignment,
+)
 from ctm.training.manifest import write_run_manifest
 from ctm.training.run_utils import build_log_dir, get_git_state, get_recommended_lr, warn_if_dirty
 
@@ -76,6 +80,25 @@ class SFTConfig(BaseModel):
     n_epochs: int = 1
     batch_size: int = 128
     gradient_accumulation_steps: int = 1
+    # Sealed matched-exposure runs can preserve their source order exactly.
+    # Historical runs retain the seeded per-epoch shuffle by default.
+    shuffle_samples: bool = True
+    # Opt-in fail-closed guard for runs whose intended optimisation budget is
+    # meaningful.  This is checked after paired rows are tokenized/aligned, so
+    # it protects against both an overly-large accumulation factor and rows
+    # dropped as unalignable.
+    minimum_optimizer_steps: Optional[int] = None
+    # Recovery runs can require the stricter shared-suffix contract: every
+    # paired prompt must align, the variant must end in the *complete* clean
+    # user message, and the common token suffix must cover that full content
+    # window. This blocks question-only alignment from silently excluding a
+    # bias cue that occurs elsewhere in the user message.
+    require_full_reference_suffix_alignment: bool = False
+    # Opt-in, Qwen3.5-9B-specific fail-closed first-backward attestation for
+    # fresh ACT/AttCT/MLPCT trajectories. It is deliberately not a generic SFT
+    # validation toggle: it requires the hybrid Qwen3.5 topology and the
+    # method-specific LoRA contract implemented by LocalBackend.
+    qwen35_consistency_preflight: bool = False
     checkpoint: CheckpointConfig = CheckpointConfig()
     log_base_dir: str = "logs"
     reference_messages_field: str = "reference_messages"
@@ -85,6 +108,13 @@ class SFTConfig(BaseModel):
     # Free-form provenance (setting name, data files, ...) set by the CLI;
     # flows into the run manifest via the config dump — the registry generator reads it.
     run_metadata: dict = {}
+
+    @field_validator("minimum_optimizer_steps", mode="before")
+    @classmethod
+    def _positive_minimum_optimizer_steps(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+            raise ValueError("minimum_optimizer_steps must be a positive integer")
+        return value
 
 
 def load_samples(file_path: Path) -> list[dict]:
@@ -118,6 +148,24 @@ def _mean_nll(logprobs_list, weights_list) -> float:
     return -total_weighted_logprobs / total_weights
 
 
+def _write_immutable_consistency_preflight(log_dir: Path, report: dict) -> Path:
+    """Create the one preflight evidence file for a run without overwriting it."""
+
+    path = log_dir / "consistency-preflight.json"
+    serialized = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    try:
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except FileExistsError as exc:
+        raise RuntimeError(
+            f"Refusing to overwrite immutable consistency preflight evidence: {path}. "
+            "Use a fresh run_name after inspecting or archiving the prior run."
+        ) from exc
+    return path
+
+
 async def train_sft(
     file_path: Path,
     config: Optional[SFTConfig] = None,
@@ -146,6 +194,8 @@ async def train_sft(
     """
     cfg = config or SFTConfig()
     loss_fn = METHOD_LOSS_FNS[cfg.method]
+    if cfg.qwen35_consistency_preflight and cfg.method not in {"act", "attct", "mlpct"}:
+        raise ValueError("qwen35_consistency_preflight is supported only for method='act', 'attct', or 'mlpct'")
     if cfg.method != "bct" and (backend is None or isinstance(backend, TinkerBackend)):
         raise ValueError(
             f"method={cfg.method!r} trains on internal activations (paired forward passes with "
@@ -155,6 +205,15 @@ async def train_sft(
 
     # Build log directory: logs/{experiment_name}/{run_name}/
     log_dir = Path(build_log_dir(cfg.log_base_dir, cfg.experiment_name, cfg.run_name))
+    # This run's preflight evidence is intentionally create-once. Reject the
+    # entire namespace before setup_logging or write_run_manifest can mutate a
+    # prior run's provenance (including the pathological case where an earlier
+    # process crashed before it could create the evidence file).
+    if cfg.qwen35_consistency_preflight and log_dir.exists():
+        raise RuntimeError(
+            f"Refusing to reuse Qwen3.5 consistency-preflight run namespace: {log_dir}. "
+            "Use a fresh run_name after inspecting or archiving the prior run."
+        )
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup logging (writes to files + WandB with experiment_name as project, run_name as name)
@@ -181,20 +240,31 @@ async def train_sft(
     # once up front (dropping unalignable rows) and shuffle datums per epoch.
     # BCT keeps building datums per batch from messages.
     train_items: list = samples
+    consistency_alignment: dict | None = None
     if cfg.method != "bct":
-        train_items, _ = build_consistency_datums(
+        train_items, consistency_alignment = build_consistency_datums_with_audit(
             tokenizer,
             samples,
             reference_field=cfg.reference_messages_field,
             variant_field=cfg.variant_messages_field,
             alignment_text_field=cfg.alignment_text_field,
         )
+        if cfg.require_full_reference_suffix_alignment:
+            require_full_reference_suffix_alignment(consistency_alignment)
         if not train_items:
             raise ValueError(
                 f"No usable consistency pairs in {file_path} — rows need "
                 f"{cfg.reference_messages_field}/{cfg.variant_messages_field} with the reference user "
                 "content contained verbatim in the variant prompt."
             )
+        print(
+            "Consistency pairing: "
+            f"{consistency_alignment['aligned_rows']}/{consistency_alignment['attempted_rows']} aligned; "
+            "complete-reference-suffix="
+            f"{consistency_alignment['checks']['all_variants_end_with_complete_reference_user_message']}; "
+            "matching-suffix-covers-content="
+            f"{consistency_alignment['checks']['all_matching_suffixes_cover_content_window']}"
+        )
 
     n_samples = len(train_items)
     # Ceiling division: the batch loop below is range(0, n_samples, batch_size), which
@@ -206,15 +276,22 @@ async def train_sft(
         raise ValueError("batch_size must be >= 1")
     if cfg.gradient_accumulation_steps < 1:
         raise ValueError("gradient_accumulation_steps must be >= 1")
+    if cfg.n_epochs < 1:
+        raise ValueError("n_epochs must be >= 1")
     microbatches_per_epoch = (n_samples + cfg.batch_size - 1) // cfg.batch_size
-    steps_per_epoch = (
-        microbatches_per_epoch + cfg.gradient_accumulation_steps - 1
-    ) // cfg.gradient_accumulation_steps
+    steps_per_epoch = (microbatches_per_epoch + cfg.gradient_accumulation_steps - 1) // cfg.gradient_accumulation_steps
     total_steps = steps_per_epoch * cfg.n_epochs
     if total_steps == 0:
         raise ValueError(
             f"No training steps: {n_samples} samples, batch_size={cfg.batch_size}, "
             f"n_epochs={cfg.n_epochs}. Add data or lower batch_size."
+        )
+    if cfg.minimum_optimizer_steps is not None and total_steps < cfg.minimum_optimizer_steps:
+        raise ValueError(
+            "Refusing to train: the actual plan has "
+            f"{total_steps} optimizer step(s), below minimum_optimizer_steps="
+            f"{cfg.minimum_optimizer_steps}. Increase n_epochs, reduce "
+            "gradient_accumulation_steps, or use more training rows."
         )
 
     # Reproducibility: seed the per-epoch shuffle below. LoRA init is seeded separately by
@@ -230,9 +307,23 @@ async def train_sft(
     print(
         f"SFT Training ({cfg.method}): {n_samples} samples, microbatch={cfg.batch_size}, "
         f"grad_accum={cfg.gradient_accumulation_steps}, "
-        f"{total_steps} steps, lr={base_lr:.2e}"
+        f"{microbatches_per_epoch} microbatches/epoch, "
+        f"{steps_per_epoch} optimizer steps/epoch, {total_steps} total optimizer steps, "
+        f"lr={base_lr:.2e}"
     )
-    logger.log_hparams({"n_samples": n_samples, "total_steps": total_steps, "file": str(file_path), "base_lr": base_lr})
+    logger.log_hparams(
+        {
+            "n_samples": n_samples,
+            "microbatches_per_epoch": microbatches_per_epoch,
+            "optimizer_steps_per_epoch": steps_per_epoch,
+            "total_steps": total_steps,
+            "nominal_effective_batch_size": cfg.batch_size * cfg.gradient_accumulation_steps,
+            "minimum_optimizer_steps": cfg.minimum_optimizer_steps,
+            "consistency_alignment": consistency_alignment,
+            "file": str(file_path),
+            "base_lr": base_lr,
+        }
+    )
 
     write_run_manifest(
         log_dir,
@@ -240,7 +331,16 @@ async def train_sft(
         model=cfg.model,
         backend=backend,
         config_dump=cfg.model_dump(),
-        extra={"data_file": str(file_path), "n_samples": n_samples},
+        extra={
+            "data_file": str(file_path),
+            "n_samples": n_samples,
+            "microbatches_per_epoch": microbatches_per_epoch,
+            "optimizer_steps_per_epoch": steps_per_epoch,
+            "total_optimizer_steps": total_steps,
+            "nominal_effective_batch_size": cfg.batch_size * cfg.gradient_accumulation_steps,
+            "minimum_optimizer_steps": cfg.minimum_optimizer_steps,
+            "consistency_alignment": consistency_alignment,
+        },
     )
 
     # Initialize the backend (resume handling: explicit resume_with_optimizer wins;
@@ -262,6 +362,64 @@ async def train_sft(
     if resume_from:
         logger.log_hparams({"resume_from": resume_from, "resume_with_optimizer": with_opt})
 
+    if cfg.qwen35_consistency_preflight:
+        # ACT's residual-stream path and AttCT's attention path are both
+        # exercised on exactly one paired microbatch. MLPCT instead probes the
+        # complete first accumulation group: with the recovery plan's
+        # b=1/accum=8 this is eight sequential paired backwards, exactly
+        # matching the gradient averaging topology of the first optimizer
+        # update. Predict that group with a cloned Python RNG state; the real
+        # epoch shuffle below receives the untouched global state and therefore
+        # selects the identical rows/order.
+        expected_group_size = 1 if cfg.method in {"act", "attct"} else cfg.batch_size * cfg.gradient_accumulation_steps
+        preflight_epoch_samples = list(train_items)
+        if cfg.shuffle_samples:
+            preflight_rng = random.Random()
+            preflight_rng.setstate(random.getstate())
+            preflight_rng.shuffle(preflight_epoch_samples)
+        preflight_datums = preflight_epoch_samples[:expected_group_size]
+        run_preflight = getattr(backend, "run_qwen35_consistency_preflight", None)
+        if not callable(run_preflight):
+            report = {
+                "schema_version": 1,
+                "kind": "qwen35-consistency-preflight",
+                "method": cfg.method,
+                "model": cfg.model,
+                "passed": False,
+                "probe": {"datums_used": 0, "expected_group_size": expected_group_size},
+                "errors": [
+                    "qwen35_consistency_preflight requires LocalBackend.run_qwen35_consistency_preflight"
+                ],
+            }
+        else:
+            print(
+                "Running fail-closed Qwen3.5 consistency preflight: "
+                f"method={cfg.method}, deterministic_group={len(preflight_datums)}/{expected_group_size}",
+                flush=True,
+            )
+            report = run_preflight(
+                preflight_datums,
+                method=cfg.method,
+                expected_group_size=expected_group_size,
+            )
+        preflight_path = _write_immutable_consistency_preflight(log_dir, report)
+        logger.log_hparams(
+            {
+                "qwen35_consistency_preflight": {
+                    "passed": bool(report.get("passed")),
+                    "path": str(preflight_path),
+                    "expected_group_size": expected_group_size,
+                }
+            }
+        )
+        if not report.get("passed"):
+            errors = report.get("errors")
+            summary = "; ".join(str(error) for error in errors[:3]) if isinstance(errors, list) else "unknown failure"
+            raise RuntimeError(
+                "Qwen3.5 consistency preflight failed before any optimizer step. "
+                f"Inspect {preflight_path}: {summary}"
+            )
+
     checkpoint_paths: list[str] = []
     global_step = 0
     global_microbatch = 0
@@ -271,7 +429,8 @@ async def train_sft(
     for epoch in range(cfg.n_epochs):
         # Shuffle samples each epoch
         epoch_samples = list(train_items)
-        random.shuffle(epoch_samples)
+        if cfg.shuffle_samples:
+            random.shuffle(epoch_samples)
         epoch_loss = 0.0
         n_examples = 0
 
@@ -302,9 +461,8 @@ async def train_sft(
             )
             current_lr = base_lr * lr_mult
 
-            should_step = (
-                (microbatch_index + 1) % cfg.gradient_accumulation_steps == 0
-                or microbatch_index + 1 == len(batch_starts)
+            should_step = (microbatch_index + 1) % cfg.gradient_accumulation_steps == 0 or microbatch_index + 1 == len(
+                batch_starts
             )
 
             # The backend accumulates gradients across forward/backward calls.
@@ -373,6 +531,12 @@ async def train_sft(
             print(f"Epoch {epoch+1} avg {metric_key}: {avg_loss:.4f}")
             logger.log_metrics({f"train/epoch_{metric_key}": avg_loss, "train/epoch": epoch + 1}, step=global_step)
 
+    # Record completion before ``finalize_checkpoint`` closes the logger.  The
+    # latter publishes the final checkpoint and owns the logger lifecycle;
+    # attempting another W&B-backed hparam write afterwards makes an otherwise
+    # complete training run exit non-zero.
+    logger.log_hparams({"completed_optimizer_steps": global_step})
+
     # Final checkpoint (no step suffix)
     final_path = await finalize_checkpoint(
         backend,
@@ -385,7 +549,6 @@ async def train_sft(
         checkpoint_paths=checkpoint_paths,
         logger=logger,
     )
-
     return final_path
 
 

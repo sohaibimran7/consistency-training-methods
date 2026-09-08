@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from ctm.core.types import RolloutRecord
 from ctm.evals.analysis.rollouts import iter_rollouts, load_index
 from ctm.training.rollout_log import INDEX_NAME, RolloutLogger
@@ -64,6 +66,15 @@ class TestRolloutLogRoundTrip:
     def test_empty_step_writes_nothing(self, tmp_path):
         logger = RolloutLogger(tmp_path)
         assert logger.log_step([]) is None
+        assert load_index(tmp_path) == []
+
+    def test_skipped_record_requires_explicit_reason(self, tmp_path):
+        logger = RolloutLogger(tmp_path)
+        skipped = make_record().model_copy(update={"skipped_from_training": True})
+
+        with pytest.raises(ValueError, match="non-empty skip_reason"):
+            logger.log_step([skipped])
+
         assert load_index(tmp_path) == []
 
     def test_resume_overwrites_step_entry(self, tmp_path):

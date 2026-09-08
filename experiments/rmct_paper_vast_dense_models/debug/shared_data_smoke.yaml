@@ -1,0 +1,54 @@
+name: rmct_paper_vast_dense_shared_data_smoke
+
+# Tiny integration-only counterpart of ../shared_data.yaml. Run once before
+# both smoke model plans; these counts are not scientifically interpretable.
+# The two legacy inputs are the same frozen stores used by the full plan.
+data_generation:
+  - name: hle-source
+    command: ["${python}", -m, ctm_data.sources.hle]
+    args:
+      output: artifacts/rmct-hle-dense-models-shared-smoke/data/hle-text-mc.jsonl
+      manifest_output: artifacts/rmct-hle-dense-models-shared-smoke/data/hle-text-mc.manifest.json
+      expected_count: 513
+      "yes": true
+
+  - name: distractor-argument-pairs
+    command: ["${python}", -m, ctm_data.adapters.mcq_bias.import_legacy_pairs]
+    args:
+      inputs:
+        - artifacts/rmct-hle-dense-models-legacy-sources/logiqa_distractor_argument_g4.jsonl
+        - artifacts/rmct-hle-dense-models-legacy-sources/hellaswag_distractor_argument_g4.jsonl
+      per_source_limit: 8
+      prompt_style: encourage_cot
+      output: artifacts/rmct-hle-dense-models-shared-smoke/data/distractor-argument-pairs.jsonl
+      manifest_output: artifacts/rmct-hle-dense-models-shared-smoke/data/distractor-argument-pairs.manifest.json
+
+  - name: cleaned-alpaca-prompts
+    command: ["${python}", -m, ctm_data.sources.cleaned_alpaca]
+    args:
+      output: artifacts/rmct-hle-dense-models-shared-smoke/data/cleaned-alpaca-prompts.jsonl
+      manifest_output: artifacts/rmct-hle-dense-models-shared-smoke/data/cleaned-alpaca-prompts.manifest.json
+      count: 16
+      seed: "42"
+      "yes": true
+
+data_preparation:
+  - name: evaluation-suite
+    resource: cpu
+    command: ["${python}", -m, ctm_data.adapters.mcq_bias.materialize_eval]
+    args:
+      bias_types:
+        - suggested_answer
+        - distractor_fact
+        - wrong_argument
+        - post_hoc
+        - spurious_few_shot_squares
+        - wrong_few_shot
+      datasets: [artifacts/rmct-hle-dense-models-shared-smoke/data/hle-text-mc.jsonl]
+      prompt_style: none
+      n_questions: 2
+      seed: "42"
+      argument_model: openrouter/google/gemma-4-31b-it
+      generate_missing_arguments: true
+      dataset_dir: artifacts/rmct-hle-dense-models-shared-smoke/mcq-bias-evaluation
+      "yes": true

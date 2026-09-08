@@ -152,3 +152,109 @@ def test_renderer_accepts_theme_facet_and_bar_style_callbacks(tmp_path: Path):
     assert calls["facet"] == 1
     assert calls["bar"] > len(_rows())
     assert "Custom facet" in output.read_text()
+
+
+def test_renderer_uses_exact_asymmetric_intervals_for_extents_and_markers(tmp_path: Path, monkeypatch):
+    rows = [
+        {
+            **_rows()[0],
+            "mean": 0.55,
+            "stderr": 0.40,  # Must be ignored when explicit bounds are present.
+            "ci_lower": 0.40,
+            "ci_upper": 0.70,
+            "significance": "*",
+        }
+    ]
+    captured_errors = []
+    captured_limits = []
+    marker_positions = []
+    from matplotlib.axes import Axes
+
+    original_errorbar = Axes.errorbar
+    original_set_ylim = Axes.set_ylim
+    original_text = Axes.text
+
+    def errorbar(axis, *args, **kwargs):
+        captured_errors.append(kwargs.get("yerr"))
+        return original_errorbar(axis, *args, **kwargs)
+
+    def set_ylim(axis, *args, **kwargs):
+        captured_limits.append(args)
+        return original_set_ylim(axis, *args, **kwargs)
+
+    def text(axis, x, y, text, *args, **kwargs):
+        if text == "*":
+            marker_positions.append((x, y))
+        return original_text(axis, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "errorbar", errorbar)
+    monkeypatch.setattr(Axes, "set_ylim", set_ylim)
+    monkeypatch.setattr(Axes, "text", text)
+    output = tmp_path / "asymmetric.svg"
+    render_publication_plot(rows, {"show_significance": True}, output)
+
+    assert captured_errors == [[[0.15000000000000002], [0.1499999999999999]]]
+    # The asymmetric upper bound (0.70), rather than 0.55 + 2 * 0.40,
+    # determines the automatic extent.
+    explicit_limits = [args for args in captured_limits if len(args) == 2]
+    assert explicit_limits[-1][1] < 1.2
+    assert marker_positions[0][1] > 0.70
+
+
+@pytest.mark.parametrize(
+    "updates, message",
+    [
+        ({"ci_lower": 0.1}, "ci_lower and ci_upper together"),
+        ({"ci_lower": 0.7, "ci_upper": 0.2}, "ci_lower <= mean <= ci_upper"),
+    ],
+)
+def test_renderer_rejects_malformed_asymmetric_intervals(tmp_path: Path, updates, message):
+    output = tmp_path / "invalid.svg"
+    rows = [{**_rows()[0], **updates}]
+
+    with pytest.raises(ValueError, match=message):
+        render_publication_plot(rows, {}, output)
+
+
+def test_renderer_uses_custom_significance_note_instead_of_default_test_claim(tmp_path: Path):
+    output = tmp_path / "paired-note.svg"
+    note = "Stars: paired whole-question label-swap vs Base; Holm-adjusted."
+
+    render_publication_plot(_rows(), {"significance_note": note}, output)
+
+    content = output.read_text()
+    assert note in content
+
+
+def test_renderer_can_center_only_conditions_present_in_each_facet(tmp_path: Path, monkeypatch):
+    import ctm_data.adapters.mcq_bias.plot as plot_module
+
+    rows = []
+    for model, available in (
+        ("qwen", {"untrained", "rmct"}),
+        ("llama", {"untrained", "rmct-control"}),
+    ):
+        for row in _rows():
+            if row["condition"] in available:
+                rows.append({**row, "model": model})
+
+    calls = []
+    original = plot_module._condition_offsets
+
+    def condition_offsets(panel_rows, conditions):
+        calls.append(tuple(conditions))
+        return original(panel_rows, conditions)
+
+    monkeypatch.setattr(plot_module, "_condition_offsets", condition_offsets)
+    output = tmp_path / "panel-local.svg"
+    render_publication_plot(
+        rows,
+        {
+            "facet": "model",
+            "panel_local_conditions": True,
+            "condition_order": ["untrained", "rmct", "rmct-control"],
+        },
+        output,
+    )
+
+    assert calls == [("untrained", "rmct"), ("untrained", "rmct-control")]

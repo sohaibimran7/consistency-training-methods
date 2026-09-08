@@ -46,6 +46,9 @@ display_name = "BCT"
 [training_types.bias-augmented-consistency-control]
 display_name = "BCT Control"
 
+[training_types.opct]
+display_name = "OPCT"
+
 [training_types.act]
 display_name = "ACT"
 
@@ -73,6 +76,9 @@ color = "#7aa7d9"
 [methods.rate_matching]
 color = "#8cc39a"
 
+[methods.opct]
+color = "#d8b04c"
+
 [methods.act]
 color = "#d99a6c"
 
@@ -86,6 +92,7 @@ color = "#d58aaa"
 training_types = [
   "untrained",
   "bias-augmented-consistency", "bias-augmented-consistency-control",
+  "opct",
   "rate-matching", "rate-matching-control",
   "act", "act-control",
   "attct", "attct-control",

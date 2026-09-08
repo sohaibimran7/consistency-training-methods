@@ -1,0 +1,66 @@
+"""Provenance-bound evaluation of the converged two-bias RMCT checkpoint.
+
+The training run used ``wrong_argument`` and ``suggested_answer``.  This
+package reuses the immutable Stage 2 21-task substrate, but deliberately does
+not reuse its old one-training-bias scientific labels.
+"""
+
+from .contract import (
+    ALL_BIASES,
+    BASE_MODEL,
+    HELD_OUT_BIASES,
+    R4_FINAL_OPTIMIZER_STEP,
+    R4_FINAL_SEGMENT_INDEX,
+    SEEN_BIASES,
+    TASK_FACTORY,
+    VLLM_GDN_PREFILL_BACKEND,
+    VLLM_GENERATION_CONFIG,
+    VLLM_MODEL_ARGS,
+    VLLM_PARITY_LOGPROBS_MODE,
+    VLLM_PARITY_MAX_LOGPROBS,
+    VLLM_PARITY_SAMPLING,
+    VLLM_PARITY_SCORE_TRANSPORT,
+    VLLM_PARITY_TOP_TOKEN_COUNT,
+    VLLM_SAMPLER_ENVIRONMENT,
+    VLLM_SAMPLER_RUNTIME,
+    VLLM_VERSION,
+    build_evaluation_receipt,
+    checkpoint_identity,
+    validate_evaluation_receipt,
+    validate_r003_parallel_parity_report,
+    validate_r004_parallel_parity_report,
+    validate_r005_parallel_parity_report,
+    validate_stage2_substrate,
+    verify_evaluation_receipt,
+    vllm_compatibility_identity,
+)
+
+__all__ = [
+    "ALL_BIASES",
+    "BASE_MODEL",
+    "HELD_OUT_BIASES",
+    "R4_FINAL_OPTIMIZER_STEP",
+    "R4_FINAL_SEGMENT_INDEX",
+    "SEEN_BIASES",
+    "TASK_FACTORY",
+    "VLLM_GDN_PREFILL_BACKEND",
+    "VLLM_GENERATION_CONFIG",
+    "VLLM_MODEL_ARGS",
+    "VLLM_PARITY_LOGPROBS_MODE",
+    "VLLM_PARITY_MAX_LOGPROBS",
+    "VLLM_PARITY_SAMPLING",
+    "VLLM_PARITY_SCORE_TRANSPORT",
+    "VLLM_PARITY_TOP_TOKEN_COUNT",
+    "VLLM_SAMPLER_ENVIRONMENT",
+    "VLLM_SAMPLER_RUNTIME",
+    "VLLM_VERSION",
+    "build_evaluation_receipt",
+    "checkpoint_identity",
+    "validate_evaluation_receipt",
+    "validate_r003_parallel_parity_report",
+    "validate_r004_parallel_parity_report",
+    "validate_r005_parallel_parity_report",
+    "validate_stage2_substrate",
+    "verify_evaluation_receipt",
+    "vllm_compatibility_identity",
+]

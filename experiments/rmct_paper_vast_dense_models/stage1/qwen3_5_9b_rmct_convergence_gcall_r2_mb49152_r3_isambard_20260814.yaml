@@ -1,0 +1,147 @@
+name: rmct-convergence
+experiment_factory: experiments.rmct_convergence_accelerated.plan:compile_experiment
+
+# Immutable continuation from the sealed gcall-r2 segment-0 checkpoint.  It
+# starts only at logical segment 1; r2 s001 is never replayed or mutated.  The
+# preflight-validated 49,152 padded-token cap is the sole execution change.
+spec:
+  topology_profiles:
+    phase-shared-four-lane:
+      gpu_count: 4
+      training_gpus: all
+      rollout_gpus: all
+      phase_shared: true
+      deadline_execution_choice: true
+      comparative_optimality_validated: false
+      gradient_checkpointing_layers: all
+
+  model: Qwen/Qwen3.5-9B
+  base_snapshot:
+    repo_id: Qwen/Qwen3.5-9B
+    revision: c202236235762e1c871ad0ccb60c8ee5ba337b9a
+    offline_only: true
+
+  setting:
+    factory: ctm_data.adapters.mcq_bias.shared_qid_two_bias:create_shared_qid_two_bias_setting
+    setting_config:
+      data_path: artifacts/rmct-shared-qid-two-bias-20260813/shared-qid-two-bias-n1000-cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075.jsonl
+      manifest_path: artifacts/rmct-shared-qid-two-bias-20260813/shared-qid-two-bias-n1000-cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075.manifest-eac0682fe0286126cc5928253e2e2ef4968eee50775a65feb21d061eec6853cc.json
+      expected_manifest_sha256: eac0682fe0286126cc5928253e2e2ef4968eee50775a65feb21d061eec6853cc
+    data_content_sha256: cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075
+    prompt_style: none
+    perturbations: [clean, wrong_argument, suggested_answer]
+    training_indices: [1, 2]
+    segment_datapoints: 32
+    segment_count: 32
+    batch_composition: one_logiqa_plus_one_hellaswag_per_B2_optimizer_update
+    ordering: setting_interleaved_logiqa_hellaswag_and_trainer_no_shuffle
+
+  local:
+    backend: local
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.34
+    rollout_gpu_memory_utilization: 0.34
+    vllm_language_model_only: true
+    vllm_max_num_seqs: 256
+    vllm_max_num_batched_tokens: 8192
+    vllm_max_model_len: 32768
+    vllm_gdn_prefill_backend: triton
+    forward_microbatch_max_datums: 8
+    forward_microbatch_max_tokens: 49152
+    target_logprob_chunk_size: 2048
+    gradient_checkpointing: true
+    gradient_checkpointing_layers: all
+    phase_shared: true
+    worker_parity_attestation: artifacts/rmct-convergence-worker-parity-20260813/qwen35-rollout-worker-parity-attestation.json
+
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+
+  optimizer:
+    learning_rate: 0.0001
+    learning_rate_schedule: constant
+    beta1: 0.9
+    beta2: 0.95
+    eps: 1.0e-8
+    weight_decay: 0.0
+    grad_clip_norm: 1.0
+
+  method:
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: pooled
+    kl_coefficient: 0.05
+    kl_discount_factor: 0.0
+    ppo_clip_epsilon: 0.2
+    anchor_weight: 0.0
+    anchor_model: base
+
+  sampling:
+    reference_rollouts: 96
+    training_rollouts: 96
+    consistency_rollouts: 96
+    anchor_rollouts: 96
+    temperature: 1.0
+    max_new_tokens: 20480
+    unparsed_handling: discard
+    max_resample_attempts: 4
+    snr_mode: soft
+    snr_z: 2.0
+    snr_normalizer: trait_std
+
+  loop:
+    batch_size: 2
+    gradient_accumulation_steps: 1
+    epochs: 1
+    refresh_every: 1
+    shuffle_datapoints: false
+    checkpoint_every_optimizer_steps: 16
+    save_state: true
+
+  convergence:
+    controller_schema: rmct-convergence-checkpoint-window-decision-v1
+    source_metrics_schema: rmct-convergence-source-metrics-v1
+    updates_per_segment: 16
+    hard_cap_segments: 32
+    hard_cap_optimizer_steps: 512
+    cap_label: capped_not_converged
+    minimum_coverage: 0.85
+    maximum_weighted_abs_gap: 0.10
+    maximum_abs_change: 0.01
+    first_eligible_segment_index: 1
+    first_eligible_optimizer_step: 32
+
+  continuation:
+    schema: rmct-convergence-accelerated-continuation-v1
+    logical_start_segment_index: 1
+    continuation_of:
+      condition: rmct-convergence
+      parent_run_prefix: rmct-convergence-gcall-r2
+      parent_run_name: rmct-convergence-gcall-r2-s001
+      parent_segment_index: 0
+      parent_optimizer_step: 16
+      parent_checkpoint_relative_path: logs/rmct-convergence/rmct-convergence-gcall-r2-s001/checkpoints/rmct-convergence_rmct-convergence-gcall-r2-s001
+      parent_checkpoint_kind: both
+      parent_checkpoint_final: true
+      parent_continue_decision_required: true
+    execution_delta:
+      local_forward_microbatch_max_tokens: {from: 20480, to: 49152}
+      local_forward_microbatch_max_datums: 8
+      local_target_logprob_chunk_size: 2048
+      gradient_checkpointing_layers: all
+    scientific_contract_unchanged: true
+    same_hardware_all_gradient_checkpointing_preflight_evidence:
+      hardware_scope: same-GH200
+      highest_validated_local_forward_microbatch_max_tokens: 49152
+      all_gradient_checkpointing_layers: all
+      result:
+        path: artifacts/rmct-convergence-gcall-r2-mb49152-r3-20260814/same-gh200-all-gc-preflight-result.json
+        sha256: da5783f1aca63cd7f7df500cd85e3460f204ddf2398417c8f44a5c9fadcdd0e9
+      contract:
+        path: artifacts/rmct-convergence-gcall-r2-mb49152-r3-20260814/same-gh200-all-gc-preflight-contract.json
+        sha256: a71c0d74cb65b3b3aba56eb61f03e5ab25fe5cf28e909448b60fe62e051c6394
+      result_sha256: da5783f1aca63cd7f7df500cd85e3460f204ddf2398417c8f44a5c9fadcdd0e9
+      contract_sha256: a71c0d74cb65b3b3aba56eb61f03e5ab25fe5cf28e909448b60fe62e051c6394
+    continuation_parent_artifact:
+      path: artifacts/rmct-convergence-gcall-r2-mb49152-r3-20260814/continuation-parent.json
+      sha256: b4ad494f7b20fc20af4610489a2ccff315d651a0e2636957a353a89065a1f906

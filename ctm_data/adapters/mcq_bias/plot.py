@@ -295,8 +295,29 @@ def _validate_rows(rows: Any) -> list[dict[str, Any]]:
             if not math.isfinite(value):
                 raise ValueError(f"row {index} has non-finite {numeric_field}")
             row[numeric_field] = value
+        has_ci_lower = "ci_lower" in row
+        has_ci_upper = "ci_upper" in row
+        if has_ci_lower != has_ci_upper:
+            raise ValueError(f"row {index} must provide ci_lower and ci_upper together")
+        if has_ci_lower:
+            lower, upper = float(row["ci_lower"]), float(row["ci_upper"])
+            if not math.isfinite(lower) or not math.isfinite(upper):
+                raise ValueError(f"row {index} has non-finite asymmetric confidence interval bounds")
+            if lower > row["mean"] or row["mean"] > upper:
+                raise ValueError(f"row {index} confidence interval must satisfy ci_lower <= mean <= ci_upper")
+            row["ci_lower"] = lower
+            row["ci_upper"] = upper
         output.append(row)
     return output
+
+
+def _interval(row: Mapping[str, Any], *, ci_multiplier: float) -> tuple[float, float]:
+    """Return exact asymmetric bounds when supplied, else the legacy symmetric interval."""
+
+    if "ci_lower" in row:
+        return float(row["ci_lower"]), float(row["ci_upper"])
+    error = ci_multiplier * float(row["stderr"])
+    return float(row["mean"]) - error, float(row["mean"]) + error
 
 
 def _legend_handles_row_major(handles: Sequence[Patch], columns: int) -> list[Patch]:
@@ -405,6 +426,9 @@ def render_publication_plot(
     ci_multiplier = float(spec.get("ci_multiplier", 2.0))
     if not math.isfinite(ci_multiplier) or ci_multiplier < 0:
         raise ValueError("ci_multiplier must be a finite non-negative number")
+    significance_note = spec.get("significance_note")
+    if significance_note is not None and (not isinstance(significance_note, str) or not significance_note.strip()):
+        raise ValueError("significance_note must be a non-empty string when provided")
     held_out_label = str(spec.get("held_out_label", "held_out_mean"))
     sample_labels = spec.get("sample_labels", False)
     if sample_labels is True:
@@ -457,12 +481,18 @@ def render_publication_plot(
         squeeze=False,
     )
     centers = list(range(len(biases)))
-    offsets, bar_width = _condition_offsets(data, conditions)
+    panel_local_conditions = bool(spec.get("panel_local_conditions", False))
+    if panel_local_conditions:
+        offsets: dict[str, float] = {}
+        bar_width = 0.0
+    else:
+        offsets, bar_width = _condition_offsets(data, conditions)
 
     ylim_value = spec.get("ylim")
     if ylim_value is None:
-        upper = max(row["mean"] + ci_multiplier * row["stderr"] for row in data)
-        lower = min(row["mean"] - ci_multiplier * row["stderr"] for row in data)
+        intervals = [_interval(row, ci_multiplier=ci_multiplier) for row in data]
+        upper = max(interval[1] for interval in intervals)
+        lower = min(interval[0] for interval in intervals)
         is_percent_change = any(row.get("transform") == "percent_change" for row in data)
         if is_percent_change:
             lower, upper = min(0.0, lower), max(0.0, upper)
@@ -488,6 +518,16 @@ def render_publication_plot(
                 axis.set_visible(False)
                 continue
             panel_data = list(facet.rows)
+            panel_conditions = (
+                _ordered([str(row["condition"]) for row in panel_data], conditions)
+                if panel_local_conditions
+                else conditions
+            )
+            panel_offsets, panel_bar_width = (
+                _condition_offsets(panel_data, panel_conditions)
+                if panel_local_conditions
+                else (offsets, bar_width)
+            )
             lookup = {(str(row["condition"]), str(row["bias_type"])): row for row in panel_data}
             if len(lookup) != len(panel_data):
                 raise ValueError(
@@ -523,7 +563,7 @@ def render_publication_plot(
                         zorder=1,
                     )
 
-            for condition in conditions:
+            for condition in panel_conditions:
                 example = next((row for row in panel_data if str(row["condition"]) == condition), None)
                 if example is None:
                     continue
@@ -543,7 +583,7 @@ def render_publication_plot(
                     row = lookup.get((condition, bias))
                     if row is None:
                         continue
-                    x = bias_index + offsets[condition]
+                    x = bias_index + panel_offsets[condition]
                     style: Mapping[str, Any] = {
                         "facecolor": "white" if is_control else color,
                         "edgecolor": color,
@@ -554,16 +594,18 @@ def render_publication_plot(
                         style = bar_style_callback(row, style)
                         if not isinstance(style, Mapping):
                             raise ValueError("bar_style_callback must return a mapping")
-                    bars = axis.bar(x, row["mean"], bar_width, zorder=2, **style)
+                    bars = axis.bar(x, row["mean"], panel_bar_width, zorder=2, **style)
                     if float(style.get("linewidth", 0.0)):
                         for bar in bars:
                             bar.set_clip_path(bar)
-                    error = ci_multiplier * row["stderr"]
-                    if error > 0:
+                    lower, upper = _interval(row, ci_multiplier=ci_multiplier)
+                    lower_error = max(0.0, row["mean"] - lower)
+                    upper_error = max(0.0, upper - row["mean"])
+                    if lower_error > 0 or upper_error > 0:
                         axis.errorbar(
                             x,
                             row["mean"],
-                            yerr=error,
+                            yerr=[[lower_error], [upper_error]],
                             fmt="none",
                             ecolor=theme.foreground,
                             capsize=theme.error_capsize,
@@ -572,7 +614,7 @@ def render_publication_plot(
                             zorder=3,
                         )
                     direction = 1 if row["mean"] >= 0 else -1
-                    outside = row["mean"] + direction * error
+                    outside = upper if direction > 0 else lower
                     vertical_alignment = "bottom" if direction > 0 else "top"
                     marker = str(row.get("significance", ""))
                     marker_visible = bool(marker and spec.get("show_significance", True))
@@ -666,7 +708,17 @@ def render_publication_plot(
                 **style,
             )
         )
-    figure.tight_layout(pad=0.25, h_pad=1.25, w_pad=0.8)
+    custom_significance_footer = (
+        significance_note if bool(spec.get("show_significance", True)) and significance_note is not None else None
+    )
+    # The standard legend occupies the upper right. Reserve a separate lower
+    # strip for a custom inferential note so it cannot overlap a dense legend.
+    figure.tight_layout(
+        pad=0.25,
+        h_pad=1.25,
+        w_pad=0.8,
+        rect=(0.0, 0.075, 1.0, 1.0) if custom_significance_footer is not None else None,
+    )
     legend_columns = min(
         len(legend_handles),
         int(spec.get("legend_columns", min(6, len(legend_handles)))),
@@ -683,7 +735,17 @@ def render_publication_plot(
             handlelength=1.1,
             columnspacing=0.9,
         )
-    if bool(spec.get("show_significance", True)) and any(row.get("significance") for row in data):
+    if custom_significance_footer is not None:
+        figure.text(
+            0.01,
+            0.012,
+            custom_significance_footer,
+            ha="left",
+            va="bottom",
+            fontsize=5.8,
+        )
+    elif bool(spec.get("show_significance", True)) and any(row.get("significance") for row in data):
+        # Preserve the long-standing generic marker footer for existing plots.
         figure.text(1.0, 1.0, "* p<0.05   ** p<0.01   *** p<0.001", ha="right", va="top", fontsize=6.2)
 
     output.parent.mkdir(parents=True, exist_ok=True)

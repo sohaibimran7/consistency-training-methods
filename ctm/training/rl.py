@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Literal, Optional, Sequence, Callable, Any
 
 from tinker import types
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from tqdm import tqdm
 
 from tinker_cookbook.utils.ml_log import setup_logging
@@ -52,6 +52,12 @@ from ctm.core.rewards import ConsistencyReward
 from ctm.core.types import BatchItem, Rollout, RolloutRecord, RolloutResult
 from ctm.training.checkpoints import finalize_checkpoint, save_intermediate_checkpoint
 from ctm.training.manifest import write_run_manifest
+from ctm.training.resume_state import (
+    RLResumeState,
+    RL_LOOP_STATE_SCHEMA,
+    capture_runtime_rng_state,
+    restore_runtime_rng_state,
+)
 from ctm.training.rollout_log import RolloutLogger
 from ctm.training.run_utils import (
     SafeFileWrapper as _SafeFileWrapper,
@@ -101,6 +107,43 @@ _resolve_indices = adv_math.resolve_indices
 _select_rollouts = adv_math.select_rollouts
 
 
+def _per_item_consistency_gap_aggregates(
+    batch_items: Sequence[BatchItem],
+    training_indices: Sequence[int],
+) -> dict[int, dict[str, float | int]]:
+    """Summarize signed and absolute rate gaps before batch-level cancellation.
+
+    ``train/consistency_gap_<index>`` is intentionally retained as the
+    historical signed batch aggregate.  It can be close to zero when equally
+    large positive and negative question-level gaps cancel.  The monitor-facing
+    aggregates here are computed one question at a time, so a controller can
+    form an exact multi-update mean with ``absolute_sum / count`` rather than
+    taking an unweighted mean of already-averaged update metrics.
+
+    A question contributes only when both its reference rate and the requested
+    training-perturbation rate were successfully estimated.  Missing rates are
+    represented by a zero count, never by a zero gap.
+    """
+
+    indices = sorted(set(training_indices))
+    aggregates: dict[int, dict[str, float | int]] = {
+        index: {"signed_sum": 0.0, "absolute_sum": 0.0, "count": 0} for index in indices
+    }
+    for item in batch_items:
+        if item.p_ref is None:
+            continue
+        for index in indices:
+            rate = item.p_hat.get(index)
+            if rate is None:
+                continue
+            gap = rate - item.p_ref
+            aggregate = aggregates[index]
+            aggregate["signed_sum"] = float(aggregate["signed_sum"]) + gap
+            aggregate["absolute_sum"] = float(aggregate["absolute_sum"]) + abs(gap)
+            aggregate["count"] = int(aggregate["count"]) + 1
+    return aggregates
+
+
 # =============================================================================
 # Configuration Classes
 # =============================================================================
@@ -128,17 +171,42 @@ class TrainingLoopConfig(BaseModel):
 
     batch_size: int = 1
     gradient_accumulation_steps: int = 1
-    refresh_policy_every_n_steps: int = 1  # 1 = fully on-policy (cookbook contract); all configs set this explicitly
+    # Count real optimizer updates, not sampled microbatches.  With accumulation
+    # K and refresh=1, exactly K gradient-bearing microbatches share one policy
+    # snapshot before the updated adapter is published.
+    refresh_policy_every_n_steps: int = 1
     n_epochs: int = 1
     # Normalize each reward population within a datapoint by default. ``pooled``
     # instead standardizes that population across every datapoint in the batch.
     normalize: Literal["pooled", "per_item"] = "per_item"
+    # Keep the historical random per-epoch order by default.  Sealed segment
+    # datasets can opt out to consume their supplied (for example interleaved)
+    # row order deterministically on every epoch.
+    shuffle_datapoints: bool = True
+
+
+def _epoch_datapoint_batches(
+    n_datapoints: int,
+    batch_size: int,
+    *,
+    shuffle_datapoints: bool,
+) -> list[list[int]]:
+    """Build one epoch's index batches, optionally preserving source order."""
+
+    datapoint_order = list(range(n_datapoints))
+    if shuffle_datapoints:
+        random.shuffle(datapoint_order)
+    return [datapoint_order[i : i + batch_size] for i in range(0, n_datapoints, batch_size)]
 
 
 class GenerationConfig(BaseModel):
     """Generation config."""
 
-    max_new_tokens: int = 16384
+    # ``None`` is an explicit EOS-only policy. Backends must preserve it as
+    # ``max_tokens=None`` rather than resolving a library default.  Existing
+    # experiments retain their historical integer default; protected no-cap
+    # plans opt in explicitly and attest the resulting runtime request.
+    max_new_tokens: int | None = 16384
     temperature: float = 0.7
 
 
@@ -216,6 +284,18 @@ class RLConfig(BaseModel):
     # flows into the run manifest via the config dump — the registry generator reads it.
     run_metadata: dict = {}
 
+    @field_validator("kl_discount_factor", mode="before")
+    @classmethod
+    def _valid_kl_discount_factor(cls, value: float) -> float:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or not 0 <= value <= 1
+        ):
+            raise ValueError("kl_discount_factor must be a finite number in [0, 1]")
+        return float(value)
+
 
 # =============================================================================
 # RL Trainer
@@ -232,11 +312,13 @@ class RLTrainer:
         reward_function: Optional[ConsistencyReward] = None,
         resume_from: Optional[str] = None,
         resume_with_optimizer: bool = False,
+        resume_state: RLResumeState | None = None,
     ):
         self.config = config
         self.reward_function = reward_function or ConsistencyReward()
         self.resume_from = resume_from
         self.resume_with_optimizer = resume_with_optimizer
+        self.resume_state = resume_state
         self.backend = backend
         self.setup_done: bool = False
         self.sampling_client: SamplerHandle | None = None
@@ -252,10 +334,16 @@ class RLTrainer:
         """Initialize the backend, samplers, and renderer."""
         # Reproducibility: seed the epoch shuffle (_train_loop_inner) and gradient-rollout
         # subsampling (_select_rollouts). LoRA init is seeded separately by the SDK via
-        # lora.seed. NOTE: stochastic sampling (temperature) is deliberately NOT seeded —
-        # threading a fixed SamplingParams seed would force identical rollouts every step.
+        # lora.seed. Local parallel stochastic sampling uses distinct engine-level seeds;
+        # it deliberately does not reset a fixed SamplingParams seed on every request.
         if self.config.lora.seed is not None:
             random.seed(self.config.lora.seed)
+
+        if self.resume_state is not None:
+            if self.resume_from is None or not self.resume_with_optimizer:
+                raise ValueError(
+                    "a strict RL resume state requires --resume-from together with optimizer-state restoration"
+                )
 
         self.backend.setup(
             model=self.config.model,
@@ -264,21 +352,79 @@ class RLTrainer:
             resume_with_optimizer=self.resume_with_optimizer,
         )
 
-        self.renderer, self.tokenizer = get_renderer_and_tokenizer(
-            self.config.model,
-            source=self.backend.renderer_source,
-        )
-        self.sampling_client = self.backend.policy_sampler(
-            name=f"{self.config.experiment_name}_{self.config.run_name}_sampler"
-        )
-        self.base_sampling_client = self.backend.base_sampler()
-        # Anchor client: used for computing p_ref_init (the anchor target rate).
-        # "base" = frozen base model; "initial_policy" = policy at init (base + any resumed ckpt).
-        if self.config.anchor_model == "initial_policy":
-            self.anchor_sampling_client = self.sampling_client
-        else:
-            self.anchor_sampling_client = self.base_sampling_client
-        self.setup_done = True
+        if self.resume_state is not None:
+            # The adapter/optimizer have now been reconstructed, so restore
+            # coordinator randomness before the next data shuffle or sampler
+            # construction.  This intentionally does not pretend to restore
+            # vLLM worker-private sampling streams (see resume_state.py).
+            restore_runtime_rng_state(self.resume_state.runtime_rng, require_torch=True)
+
+        try:
+            self.renderer, self.tokenizer = get_renderer_and_tokenizer(
+                self.config.model,
+                source=self.backend.renderer_source,
+            )
+            self.sampling_client = self.backend.policy_sampler(
+                name=f"{self.config.experiment_name}_{self.config.run_name}_sampler"
+            )
+            self.base_sampling_client = self.backend.base_sampler()
+            # Anchor client: used for computing p_ref_init (the anchor target rate).
+            # "base" = frozen base model; "initial_policy" = policy at init (base + any resumed ckpt).
+            if self.config.anchor_model == "initial_policy":
+                self.anchor_sampling_client = self.sampling_client
+            else:
+                self.anchor_sampling_client = self.base_sampling_client
+            self.setup_done = True
+        except BaseException:
+            # Rollout-parallel setup may already own several worker processes by
+            # this point.  A renderer/sampler construction failure must not leak
+            # them merely because ``train()`` has not entered its finally block.
+            shutdown = getattr(self.backend, "shutdown", None)
+            if callable(shutdown):
+                shutdown()
+            raise
+
+    def _requires_serialized_sampling_and_training(self) -> bool:
+        """Whether rollout requests must not overlap coordinator computation.
+
+        Historical Tinker and disjoint-GPU local backends deliberately pipeline
+        the next rollout batch with KL/forward-backward work.  A phase-shared
+        backend instead reclaims its rollout GPUs for training, and advertises
+        that constraint through ``sampling_training_overlap_supported``.  The
+        default preserves the historical behavior for every existing backend
+        which predates that optional lifecycle capability.
+        """
+
+        supported = getattr(self.backend, "sampling_training_overlap_supported", True)
+        if callable(supported):
+            supported = supported()
+        return not bool(supported)
+
+    async def _enter_rollout_phase_if_needed(self) -> None:
+        """Wake a phase-shared sampler before issuing any rollout request."""
+
+        if not self._requires_serialized_sampling_and_training():
+            return
+        enter = getattr(self.backend, "enter_rollout_phase", None)
+        if not callable(enter):
+            raise RuntimeError(
+                "backend disables sampling/training overlap but does not expose "
+                "an async enter_rollout_phase() lifecycle method"
+            )
+        await enter()
+
+    async def _enter_training_phase_if_needed(self) -> None:
+        """Release phase-shared rollout resources before coordinator work."""
+
+        if not self._requires_serialized_sampling_and_training():
+            return
+        enter = getattr(self.backend, "enter_training_phase", None)
+        if not callable(enter):
+            raise RuntimeError(
+                "backend disables sampling/training overlap but does not expose "
+                "an async enter_training_phase() lifecycle method"
+            )
+        await enter()
 
     async def _sample_from_client(
         self, client: SamplerHandle, prompt: types.ModelInput, n_samples: int
@@ -288,6 +434,10 @@ class RLTrainer:
         full_text includes thinking/reasoning (for Rollout.text and logging).
         answer_text is text-only without thinking (for answer parsing and trait classification).
         """
+        # This is deliberately at the lowest shared sampling helper: initial
+        # reference-rate, anchor, and helpfulness samples must honour the same
+        # phase barrier as normal policy rollouts.
+        await self._enter_rollout_phase_if_needed()
         sequences = await client.sample(
             prompt,
             max_tokens=self.config.generation.max_new_tokens,
@@ -1027,7 +1177,14 @@ class RLTrainer:
 
         batch_size = self.config.loop.batch_size
         n_steps_per_epoch = (n_datapoints + batch_size - 1) // batch_size
-        total_steps = n_steps_per_epoch * self.config.loop.n_epochs
+        segment_steps = n_steps_per_epoch * self.config.loop.n_epochs
+        prior_global_step = self.resume_state.global_step if self.resume_state is not None else 0
+        prior_optimizer_step = self.resume_state.optimizer_step if self.resume_state is not None else 0
+        prior_completed_epochs = self.resume_state.completed_epochs if self.resume_state is not None else 0
+        # Keep schedule accounting in absolute update coordinates.  A constant
+        # schedule (the RMCT contract) is unchanged, while a future schedule
+        # cannot silently restart at zero after a data-scaling continuation.
+        total_steps = prior_global_step + segment_steps
 
         base_lr: float = (
             self.config.optimizer.learning_rate
@@ -1036,12 +1193,17 @@ class RLTrainer:
         )
 
         print(
-            f"RL Training: {n_datapoints} datapoints, {n_steps_per_epoch} steps/epoch, {total_steps} total steps, lr={base_lr:.2e}"
+            f"RL Training: {n_datapoints} datapoints, {n_steps_per_epoch} steps/epoch, "
+            f"{segment_steps} segment steps ({prior_global_step}\u2192{total_steps} global), lr={base_lr:.2e}"
         )
         logger.log_hparams(
             {
                 "n_datapoints": n_datapoints,
                 "total_steps": total_steps,
+                "segment_steps": segment_steps,
+                "resume_global_step": prior_global_step,
+                "resume_optimizer_step": prior_optimizer_step,
+                "resume_completed_epochs": prior_completed_epochs,
                 "n_perturbations": n_perts,
                 "base_lr": base_lr,
             }
@@ -1070,7 +1232,8 @@ class RLTrainer:
             )
             return base_lr * lr_mult
 
-        global_step = 0
+        global_step = prior_global_step
+        optimizer_step = prior_optimizer_step
         accumulated_grads = 0
 
         def _missing_initial_indices(dp_idx: int) -> list[int]:
@@ -1122,9 +1285,11 @@ class RLTrainer:
                         pending_initial_rollouts[dp_idx].extend(result.sampled_rollouts)
 
         for epoch in range(self.config.loop.n_epochs):
-            shuffled = list(range(n_datapoints))
-            random.shuffle(shuffled)
-            batches = [shuffled[i : i + batch_size] for i in range(0, n_datapoints, batch_size)]
+            batches = _epoch_datapoint_batches(
+                n_datapoints,
+                batch_size,
+                shuffle_datapoints=self.config.loop.shuffle_datapoints,
+            )
 
             # ── Sampling helpers ──────────────────────────────────────────
 
@@ -1194,39 +1359,55 @@ class RLTrainer:
                 return await asyncio.gather(*[collect_for_datapoint(idx) for idx in batch_indices])
 
             # ── Prefetch queue ────────────────────────────────────────────
-            # Pipeline: prefetch next step's sampling while current step's
-            # fwd_bwd runs on the server (~5-7s overlap).
-            max_prefetch = self.config.loop.refresh_policy_every_n_steps or len(batches)
+            # Pipeline only as far as the next possible optimizer boundary.  A
+            # zero-signal microbatch is replaced in the window, while a
+            # gradient-bearing one consumes a slot.  Therefore no rollout from
+            # the next accumulation group can be sampled with stale weights.
             prefetch_queue: deque[asyncio.Task] = deque()
+            phase_serialized = self._requires_serialized_sampling_and_training()
 
-            def _fill_prefetch_queue(from_batch: int) -> int:
-                while len(prefetch_queue) < max_prefetch and from_batch < len(batches):
+            async def _fill_prefetch_queue(from_batch: int) -> int:
+                remaining_before_update = self.config.loop.gradient_accumulation_steps - accumulated_grads
+                # A phase-shared backend sleeps/wakes the same GPUs between
+                # rollout and training.  Keep one batch at most, and complete
+                # the rollout barrier before scheduling it.  The ordinary
+                # backend path retains its existing accumulation-window
+                # prefetch depth and fwd/bwd overlap.
+                queue_limit = min(1, remaining_before_update) if phase_serialized else remaining_before_update
+                if phase_serialized and len(prefetch_queue) < queue_limit and from_batch < len(batches):
+                    await self._enter_rollout_phase_if_needed()
+                while len(prefetch_queue) < queue_limit and from_batch < len(batches):
                     prefetch_queue.append(asyncio.create_task(sample_batch(batches[from_batch])))
                     from_batch += 1
                 return from_batch
 
-            async def _maybe_refresh_and_refill(i_batch: int, next_to_prefetch: int) -> int:
-                """Refresh the sampling client on schedule, flushing+awaiting stale prefetch.
+            async def _after_batch_refill(
+                i_batch: int,
+                next_to_prefetch: int,
+                *,
+                did_optimizer_step: bool,
+            ) -> int:
+                """Publish due weights only after a completed optimizer update."""
 
-                Called on BOTH the normal and the empty-batch-skip path so a refresh that
-                falls on a skipped step is not dropped (which would extend off-policy
-                staleness). Reads the current global_step from the enclosing scope.
-                """
                 refresh_every = self.config.loop.refresh_policy_every_n_steps
-                if not (refresh_every and global_step % refresh_every == 0):
-                    return next_to_prefetch
-                self.sampling_client = await self.backend.refresh_policy_sampler(
-                    name=f"{self.config.experiment_name}_{self.config.run_name}_sampler_{global_step}"
-                )
-                # Cancel stale prefetch (sampled from the old policy) AND await them so the
-                # in-flight sampling is released — avoids "Task was destroyed but pending".
-                for task in prefetch_queue:
-                    task.cancel()
-                await asyncio.gather(*prefetch_queue, return_exceptions=True)
-                prefetch_queue.clear()
-                return _fill_prefetch_queue(i_batch + 1)
+                refresh_due = bool(did_optimizer_step and refresh_every and optimizer_step % refresh_every == 0)
+                if refresh_due:
+                    # The bounded window should already be empty at an optimizer
+                    # boundary.  Drain defensively before publishing so an old-
+                    # policy generation can never overlap the adapter barrier.
+                    for task in prefetch_queue:
+                        task.cancel()
+                    await asyncio.gather(*prefetch_queue, return_exceptions=True)
+                    prefetch_queue.clear()
+                    self.sampling_client = await self.backend.refresh_policy_sampler(
+                        name=(
+                            f"{self.config.experiment_name}_{self.config.run_name}_" f"sampler_optim_{optimizer_step}"
+                        )
+                    )
+                    next_to_prefetch = i_batch + 1
+                return await _fill_prefetch_queue(next_to_prefetch)
 
-            next_to_prefetch = _fill_prefetch_queue(0)
+            next_to_prefetch = await _fill_prefetch_queue(0)
 
             pbar = tqdm(batches, desc=f"Epoch {epoch + 1}")
             for i_batch, batch_indices in enumerate(pbar):
@@ -1365,15 +1546,28 @@ class RLTrainer:
                         training_idx,
                         need_p_ref_init,
                         pbar,
+                        optimizer_step=optimizer_step,
                         skipped_empty_batch=True,
                     )
                     self._log_rollouts(global_step, epoch)
                     await self._maybe_save_checkpoint(
-                        global_step, total_steps, epoch, log_dir, checkpoint_paths, logger
+                        global_step=global_step,
+                        total_steps=total_steps,
+                        completed_epochs=prior_completed_epochs + epoch,
+                        optimizer_step=optimizer_step,
+                        accumulated_grads=accumulated_grads,
+                        log_dir=log_dir,
+                        checkpoint_paths=checkpoint_paths,
+                        logger=logger,
                     )
-                    # Still honor the refresh schedule on a skipped step, then top up.
-                    next_to_prefetch = await _maybe_refresh_and_refill(i_batch, next_to_prefetch)
-                    next_to_prefetch = _fill_prefetch_queue(next_to_prefetch)
+                    # No gradients means no optimizer mutation and therefore no
+                    # adapter refresh. Replace the empty slot in this unchanged-
+                    # policy accumulation window.
+                    next_to_prefetch = await _after_batch_refill(
+                        i_batch,
+                        next_to_prefetch,
+                        did_optimizer_step=False,
+                    )
                     continue
 
                 # ── Benign-helpfulness GRPO term (anti refuse-all) ────────────
@@ -1384,6 +1578,11 @@ class RLTrainer:
                     help_datums, help_mean = await self._collect_helpfulness_datums(hdps)
                     grad_datums = grad_datums + help_datums
                     logger.log_metrics({"train/helpfulness_mean": help_mean}, step=global_step + 1)
+
+                # In phase-shared topologies this is the point at which every
+                # rollout (including optional anchor/helpfulness samples) has
+                # completed.  Do not let sampling race KL or fwd/bwd.
+                await self._enter_training_phase_if_needed()
 
                 # KL penalty
                 kl_penalty_metrics = {}
@@ -1406,18 +1605,20 @@ class RLTrainer:
                     )
                     accumulated_grads = 0
 
-                # Refill prefetch while fwd_bwd runs — but skip it when the upcoming step
-                # will refresh the policy (those rollouts would be sampled from the old
-                # weights and immediately discarded), saving wasted sampling.
-                refresh_every = self.config.loop.refresh_policy_every_n_steps
-                refresh_imminent = bool(refresh_every) and ((global_step + 1) % refresh_every == 0)
-                if not refresh_imminent:
-                    next_to_prefetch = _fill_prefetch_queue(next_to_prefetch)
+                # Overlap sampling with fwd/bwd within an accumulation group.
+                # At an optimizer boundary the bounded window is empty; wait for
+                # the update (and possible adapter publish) before starting the
+                # next group.  Phase-shared backends instead refill only after
+                # this fwd/bwd (and any optimizer step) has fully completed.
+                if pending_optim is None and not phase_serialized:
+                    next_to_prefetch = await _fill_prefetch_queue(next_to_prefetch)
 
                 # Await training results
                 fwd_bwd_output = await pending_fwd_bwd.result()
+                did_optimizer_step = pending_optim is not None
                 if pending_optim is not None:
                     await pending_optim.result()
+                    optimizer_step += 1
 
                 training_logprobs = fwd_bwd_output.logprobs
 
@@ -1448,22 +1649,69 @@ class RLTrainer:
                     training_idx,
                     need_p_ref_init,
                     pbar,
+                    optimizer_step=optimizer_step,
                 )
                 self._log_rollouts(global_step, epoch)
 
-                # Refresh policy (also flushes+awaits stale prefetch). Shared with the
-                # empty-batch-skip path so a due refresh is never dropped.
-                next_to_prefetch = await _maybe_refresh_and_refill(i_batch, next_to_prefetch)
+                if phase_serialized:
+                    # The rollout workers are still asleep here.  Replica
+                    # hashing and adapter/optimizer serialization are trainer
+                    # work, so finish them before a new rollout task is allowed
+                    # to wake vLLM on the same devices.
+                    await self._maybe_save_checkpoint(
+                        global_step=global_step,
+                        total_steps=total_steps,
+                        completed_epochs=prior_completed_epochs + epoch,
+                        optimizer_step=optimizer_step,
+                        accumulated_grads=accumulated_grads,
+                        log_dir=log_dir,
+                        checkpoint_paths=checkpoint_paths,
+                        logger=logger,
+                    )
 
-                # Intermediate checkpoint
-                await self._maybe_save_checkpoint(global_step, total_steps, epoch, log_dir, checkpoint_paths, logger)
+                next_to_prefetch = await _after_batch_refill(
+                    i_batch,
+                    next_to_prefetch,
+                    did_optimizer_step=did_optimizer_step,
+                )
+
+                if not phase_serialized:
+                    # Preserve the historical disjoint-GPU overlap: the next
+                    # rollout may proceed while a coordinator checkpoint is
+                    # materialized.
+                    await self._maybe_save_checkpoint(
+                        global_step=global_step,
+                        total_steps=total_steps,
+                        completed_epochs=prior_completed_epochs + epoch,
+                        optimizer_step=optimizer_step,
+                        accumulated_grads=accumulated_grads,
+                        log_dir=log_dir,
+                        checkpoint_paths=checkpoint_paths,
+                        logger=logger,
+                    )
 
         # Final optimizer step for remaining gradients
         if accumulated_grads > 0:
+            # A trailing zero-signal batch may have reopened rollout workers
+            # after the final accumulated fwd/bwd. Re-establish the barrier
+            # before applying its delayed optimizer update.
+            await self._enter_training_phase_if_needed()
             pending_optim = await self.backend.submit_optim_step(
                 learning_rate=_lr_for_step(max(0, global_step - 1)), adam=self.config.optimizer
             )
             await pending_optim.result()
+            optimizer_step += 1
+            accumulated_grads = 0
+            refresh_every = self.config.loop.refresh_policy_every_n_steps
+            if refresh_every and optimizer_step % refresh_every == 0:
+                self.sampling_client = await self.backend.refresh_policy_sampler(
+                    name=(f"{self.config.experiment_name}_{self.config.run_name}_" f"sampler_optim_{optimizer_step}")
+                )
+
+        # ``global_step`` counts rollout batches, including zero-signal batches;
+        # publish the distinct optimizer count so an accumulated/empty run
+        # cannot later be mistaken for a different number of parameter updates.
+        logger.log_hparams({"completed_optimizer_steps": optimizer_step})
 
         # Final checkpoint
         final_path = await finalize_checkpoint(
@@ -1476,10 +1724,61 @@ class RLTrainer:
             log_dir=log_dir,
             checkpoint_paths=checkpoint_paths,
             logger=logger,
+            loop_state=self._checkpoint_loop_state(
+                global_step=global_step,
+                optimizer_step=optimizer_step,
+                completed_epochs=prior_completed_epochs + self.config.loop.n_epochs,
+                accumulated_grads=accumulated_grads,
+                final=True,
+            ),
         )
         return final_path
 
-    async def _maybe_save_checkpoint(self, global_step, total_steps, epoch, log_dir, checkpoint_paths, logger):
+    def _checkpoint_loop_state(
+        self,
+        *,
+        global_step: int,
+        optimizer_step: int,
+        completed_epochs: int,
+        accumulated_grads: int,
+        final: bool,
+    ) -> dict[str, Any]:
+        """Build the local-RL continuation boundary persisted in a checkpoint.
+
+        The state is intentionally captured only after the batch's optimizer
+        work and adapter publication.  ``accumulated_grads`` is recorded so a
+        future strict continuation can refuse an unsafe partial update.
+        """
+
+        segment_start = self.resume_state.global_step if self.resume_state is not None else 0
+        return {
+            "schema": RL_LOOP_STATE_SCHEMA,
+            # Retain the historical two fields for old readers, but make the
+            # unambiguous counters explicit for strict continuation.
+            "epoch": completed_epochs,
+            "step": global_step,
+            "global_step": global_step,
+            "optimizer_step": optimizer_step,
+            "completed_epochs": completed_epochs,
+            "segment_start_global_step": segment_start,
+            "segment_step": global_step - segment_start,
+            "accumulated_grads": accumulated_grads,
+            "final": final,
+            "runtime_rng": capture_runtime_rng_state(),
+        }
+
+    async def _maybe_save_checkpoint(
+        self,
+        *,
+        global_step: int,
+        total_steps: int,
+        completed_epochs: int,
+        optimizer_step: int,
+        accumulated_grads: int,
+        log_dir: Path,
+        checkpoint_paths: list[str],
+        logger: Any,
+    ) -> None:
         """Save intermediate checkpoint if the schedule says so (delegates to ctm.training.checkpoints)."""
         await save_intermediate_checkpoint(
             self.backend,
@@ -1488,10 +1787,17 @@ class RLTrainer:
             checkpoint_cfg=self.config.checkpoint,
             global_step=global_step,
             total_steps=total_steps,
-            epoch=epoch,
+            epoch=completed_epochs,
             log_dir=log_dir,
             checkpoint_paths=checkpoint_paths,
             logger=logger,
+            loop_state=self._checkpoint_loop_state(
+                global_step=global_step,
+                optimizer_step=optimizer_step,
+                completed_epochs=completed_epochs,
+                accumulated_grads=accumulated_grads,
+                final=False,
+            ),
         )
 
     def _log_step_metrics(
@@ -1517,6 +1823,7 @@ class RLTrainer:
         training_idx,
         need_p_ref_init,
         pbar,
+        optimizer_step,
         skipped_empty_batch=False,
     ):
         """Compute and log all metrics for a training step, including zero-signal skips."""
@@ -1524,9 +1831,14 @@ class RLTrainer:
             compute_kl_sample_train(grad_datums, training_logprobs) if grad_datums and training_logprobs else {}
         )
 
+        # A missing reference rate is normally filtered before this method is
+        # called.  Keep metric logging robust for empty/parse-failed batches as
+        # well: an unavailable rate must not be treated as a numerical zero.
+        resolved_items = [item for item in batch_items if item.p_ref is not None]
+
         # Rate variance (consistency measure)
         all_rates = []
-        for item in batch_items:
+        for item in resolved_items:
             all_rates.extend(item.p_hat.values())
             all_rates.append(item.p_ref)
         rate_var = 0.0
@@ -1534,16 +1846,18 @@ class RLTrainer:
             mean_rate = sum(all_rates) / len(all_rates)
             rate_var = sum((r - mean_rate) ** 2 for r in all_rates) / len(all_rates)
 
-        avg_p_ref = sum(item.p_ref for item in batch_items) / len(batch_items) if batch_items else 0.0
+        avg_p_ref = sum(item.p_ref for item in resolved_items) / len(resolved_items) if resolved_items else 0.0
         # p_ref_init can be None for an item even when need_p_ref_init (anchor on) — e.g.
         # the anchor model failed to parse all ref rollouts for that datapoint. Average only
         # the resolved ones; None if none resolved. (The reward path already handles None.)
         _p_ref_inits = [item.p_ref_init for item in batch_items if item.p_ref_init is not None]
         avg_p_ref_init = (sum(_p_ref_inits) / len(_p_ref_inits) if _p_ref_inits else None) if need_p_ref_init else None
         avg_p_hat = {}
-        for item in batch_items:
+        for item in resolved_items:
             for pert_idx, rate in item.p_hat.items():
-                avg_p_hat[pert_idx] = avg_p_hat.get(pert_idx, 0.0) + rate / len(batch_items)
+                avg_p_hat[pert_idx] = avg_p_hat.get(pert_idx, 0.0) + rate / len(resolved_items)
+
+        per_item_gaps = _per_item_consistency_gap_aggregates(resolved_items, training_idx)
 
         cons_reward_mean = sum(consistency_rewards) / len(consistency_rewards) if consistency_rewards else 0.0
         anchor_reward_mean = sum(anchor_rewards) / len(anchor_rewards) if anchor_rewards else 0.0
@@ -1565,6 +1879,7 @@ class RLTrainer:
             "rollout/grader_failure_rate": grader_failure_rate,
             "rollout/grader_sample_count": grader_sample_count,
             "train/skipped_empty_batch": int(skipped_empty_batch),
+            "train/optimizer_step": optimizer_step,
             "train/n_consistency_rollouts": len(consistency_rewards),
             "train/n_anchor_rollouts": len(anchor_rewards),
             "train/avg_response_length": avg_response_len,
@@ -1594,6 +1909,20 @@ class RLTrainer:
         for pert_idx, rate in avg_p_hat.items():
             step_metrics[f"train/p_hat_{pert_idx}"] = rate
             step_metrics[f"train/consistency_gap_{pert_idx}"] = rate - avg_p_ref
+
+        # These sums/counts are deliberately logged alongside the update mean.
+        # A controller evaluating a 16-update block should sum the absolute
+        # values and counts, then divide, so parse-rate variation cannot give
+        # every update equal weight regardless of how many questions it covers.
+        for pert_idx, aggregate in per_item_gaps.items():
+            signed_sum = float(aggregate["signed_sum"])
+            absolute_sum = float(aggregate["absolute_sum"])
+            count = int(aggregate["count"])
+            step_metrics[f"train/consistency_gap_item_signed_sum_{pert_idx}"] = signed_sum
+            step_metrics[f"train/consistency_gap_abs_sum_{pert_idx}"] = absolute_sum
+            step_metrics[f"train/consistency_gap_abs_count_{pert_idx}"] = count
+            if count:
+                step_metrics[f"train/consistency_gap_abs_mean_{pert_idx}"] = absolute_sum / count
 
         for (pert_idx, trait_val), rewards in reward_by_pert_trait.items():
             trait_key = f"{trait_val:.0f}" if trait_val == int(trait_val) else f"{trait_val:.2f}"

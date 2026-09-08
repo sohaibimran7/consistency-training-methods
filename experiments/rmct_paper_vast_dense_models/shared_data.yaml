@@ -1,0 +1,58 @@
+name: rmct_paper_vast_dense_shared_data
+
+# Run exactly once before either full model plan. These writers freeze the
+# cross-model HLE suite, prompt selection, and imported distractor-argument
+# pairs. The two legacy inputs are frozen cot-transparency benchmark stores;
+# copy them to the declared artifact directory before running this plan.
+data_generation:
+  - name: hle-source
+    command: ["${python}", -m, ctm_data.sources.hle]
+    args:
+      output: artifacts/rmct-hle-dense-models-shared/data/hle-text-mc.jsonl
+      manifest_output: artifacts/rmct-hle-dense-models-shared/data/hle-text-mc.manifest.json
+      expected_count: 513
+      "yes": true
+
+  - name: distractor-argument-pairs
+    command: ["${python}", -m, ctm_data.adapters.mcq_bias.import_legacy_pairs]
+    args:
+      inputs:
+        - artifacts/rmct-hle-dense-models-legacy-sources/logiqa_distractor_argument_g4.jsonl
+        - artifacts/rmct-hle-dense-models-legacy-sources/hellaswag_distractor_argument_g4.jsonl
+      per_source_limit: 1500
+      prompt_style: encourage_cot
+      output: artifacts/rmct-hle-dense-models-shared/data/distractor-argument-pairs.jsonl
+      manifest_output: artifacts/rmct-hle-dense-models-shared/data/distractor-argument-pairs.manifest.json
+
+  - name: cleaned-alpaca-prompts
+    command: ["${python}", -m, ctm_data.sources.cleaned_alpaca]
+    args:
+      output: artifacts/rmct-hle-dense-models-shared/data/cleaned-alpaca-prompts.jsonl
+      manifest_output: artifacts/rmct-hle-dense-models-shared/data/cleaned-alpaca-prompts.manifest.json
+      count: 2048
+      seed: "42"
+      "yes": true
+
+data_preparation:
+  - name: evaluation-suite
+    resource: cpu
+    command: ["${python}", -m, ctm_data.adapters.mcq_bias.materialize_eval]
+    args:
+      bias_types:
+        - suggested_answer
+        - distractor_fact
+        - wrong_argument
+        - post_hoc
+        - spurious_few_shot_squares
+        - wrong_few_shot
+      datasets: [artifacts/rmct-hle-dense-models-shared/data/hle-text-mc.jsonl]
+      prompt_style: none
+      n_questions: 100
+      # Only wrong_argument can under-fill; its canonical OpenRouter store has
+      # 92 accepted rows. The deterministic biases still materialize 100.
+      min_n_questions: 92
+      seed: "42"
+      argument_model: openrouter/google/gemma-4-31b-it
+      generate_missing_arguments: true
+      dataset_dir: artifacts/rmct-hle-dense-models-shared/mcq-bias-evaluation
+      "yes": true

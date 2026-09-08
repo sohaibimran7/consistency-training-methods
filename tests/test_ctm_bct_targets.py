@@ -7,6 +7,7 @@ import pytest
 from ctm.backends.base import SampledSequence
 from ctm.training.bct_targets import (
     BCTProgressStore,
+    build_bct_progress_identity,
     generate_bct_rows,
     prepare_paired_prompts,
     write_bct_target_artifacts,
@@ -89,6 +90,28 @@ def test_generate_bct_rows_samples_reference_once_and_shares_completion():
     assert [row["source_id"] for row in main] == ["q-0", "q-1", "q-2"]
 
 
+def test_generate_bct_rows_preserves_explicit_eos_only_generation():
+    prompts = prepare_paired_prompts(
+        _rows(1),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+    sampler = _Sampler()
+
+    asyncio.run(
+        generate_bct_rows(
+            prompts,
+            sampler=sampler,
+            renderer=_Renderer(),
+            tokenizer=_Tokenizer(),
+            max_tokens=None,
+        )
+    )
+
+    assert sampler.calls == [(0, None, 0.0, [0], 1)]
+
+
 def test_generate_bct_rows_resumes_completed_rows_in_source_order(tmp_path):
     prompts = prepare_paired_prompts(
         _rows(),
@@ -128,6 +151,36 @@ def test_bct_progress_rejects_a_different_generation_identity(tmp_path):
     BCTProgressStore(directory, {"model": "first"})
     with pytest.raises(ValueError, match="identity differs"):
         BCTProgressStore(directory, {"model": "second"})
+
+
+def test_bct_progress_identity_tracks_base_only_worker_topology_without_changing_prompt_order(tmp_path):
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+    prompts = prepare_paired_prompts(
+        _rows(),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+
+    identity = build_bct_progress_identity(
+        prompts,
+        source_files=[source],
+        model="unit/model",
+        backend="local frozen-base vllm (logical_workers=0,1, gpu_memory_utilization=0.9)",
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+        generation_config={"max_tokens": 99, "temperature": 0.0, "max_concurrency": 2},
+    )
+    changed_topology = {**identity, "backend": identity["backend"].replace("0,1", "0")}
+
+    assert identity["prompt_count"] == 3
+    assert identity["prompts_sha256"]
+    directory = tmp_path / "progress"
+    BCTProgressStore(directory, identity)
+    with pytest.raises(ValueError, match="identity differs"):
+        BCTProgressStore(directory, changed_topology)
 
 
 def test_generate_bct_rows_checkpoints_successes_before_a_later_failure(tmp_path):

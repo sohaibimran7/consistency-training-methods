@@ -6,17 +6,20 @@ Layout (under the run's log dir by default, ``experiments/<name>/rollouts/`` lat
       index.json            # {"steps": [{"step", "file", "n_records", "p_ref_mean", ...}]}
       step_000001.jsonl.zst # one RolloutRecord per line (zstd-compressed JSONL)
 
-Modes (``RLConfig.rollout_log``):
+Modes (the shared ``rollout_log`` training-config field):
     "none" — off.
     "all"  — every sampled response, including rate-only, unusable, anchor-model,
              and zero-signal rollouts.
+
+Any record excluded from training must carry a non-empty ``skip_reason``; the
+writer rejects incomplete provenance before creating a step file.
 
 Read side: ``ctm.evals.analysis.rollouts.iter_rollouts`` / ``load_index``.
 """
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 import zstandard
 
@@ -47,10 +50,20 @@ class RolloutLogger:
             except (json.JSONDecodeError, OSError):
                 self._index = []
 
-    def log_step(self, records: Iterable[RolloutRecord]) -> Optional[Path]:
+    def log_step(self, records: Iterable[RolloutRecord]) -> Path | None:
         records = list(records)
         if not records:
             return None
+        missing_skip_reasons = [
+            index
+            for index, record in enumerate(records)
+            if record.skipped_from_training and not (record.skip_reason or "").strip()
+        ]
+        if missing_skip_reasons:
+            raise ValueError(
+                "skipped rollout records require a non-empty skip_reason; "
+                f"missing at record indices {missing_skip_reasons}"
+            )
         step = records[0].step
         path = self.directory / step_filename(step)
         payload = "".join(r.model_dump_json() + "\n" for r in records)

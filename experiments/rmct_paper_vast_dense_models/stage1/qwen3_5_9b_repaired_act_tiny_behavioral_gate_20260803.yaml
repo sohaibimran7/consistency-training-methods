@@ -1,0 +1,65 @@
+name: rmct_paper_vast_dense_qwen3_5_9b_repaired_act_tiny_behavioral_gate_20260803
+
+# Checkpoint-only gate for the fresh supervised calibration ACT trajectory.
+# Invoke this with the raw LocalBackend `file://...` checkpoint before any
+# long generated-answer evaluation. It does not train, sample free-form
+# answers, or mutate a checkpoint.
+variables:
+  model: Qwen/Qwen3.5-9B
+  recovered_none_pairs: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801/data/distractor-argument-pairs.jsonl
+  recovered_none_manifest: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801/data/distractor-argument-pairs.manifest.json
+  frozen_instruction_targets: artifacts/stage1-vast-staging-20260731/shared_training_targets/artifacts/rmct-hle-qwen3.5-9b-dense-stage1/data
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-stage1-supervised-recovery-none-calibration-20260803
+
+# Reuse the canonicalization verifier so a manually staged host cannot point
+# the behavioral report at stale, legacy-CoT, or mismatched repaired-ACT rows.
+data_preparation:
+  - name: verify_fresh_repaired_act_gate_inputs
+    target: repaired-act-gate
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+# The first command is a 16-question (4 per dataset per split) deterministic
+# native Transformers/PEFT score.  The CPU attester intentionally lives in the
+# later `analysis` stage, rather than beside the report in `evaluation`: a
+# caller may use `--parallel` for the former, but stage barriers guarantee the
+# attester cannot observe a still-being-written report. `require_pass`
+# deliberately stops the target before a caller can continue to its long vLLM
+# or native-HF generated-answer eval.
+evaluation:
+  - name: repaired_act_tiny_hf_behavior_report
+    target: repaired-act-gate
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", -m, experiments.act_repair_gate.direct_answer]
+    args:
+      model: "${model}"
+      adapter: "${checkpoint}"
+      train_data: "${artifact_root}/data/canonical-repaired-act-train-n200.jsonl"
+      heldout_data: "${artifact_root}/data/canonical-repaired-act-heldout-n200.jsonl"
+      output_dir: "${artifact_root}/repaired-act-tiny-hf-behavioral-gate/direct-answer"
+      condition_name: repaired-act
+      limit_per_dataset: 4
+
+analysis:
+  - name: attest_repaired_act_tiny_hf_behavior
+    target: repaired-act-gate
+    resource: cpu
+    command: ["${python}", -m, experiments.act_repair_gate.behavioral_gate]
+    args:
+      report: "${artifact_root}/repaired-act-tiny-hf-behavioral-gate/direct-answer/report.json"
+      adapter: "${checkpoint}"
+      train_data: "${artifact_root}/data/canonical-repaired-act-train-n200.jsonl"
+      heldout_data: "${artifact_root}/data/canonical-repaired-act-heldout-n200.jsonl"
+      output: "${artifact_root}/repaired-act-tiny-hf-behavioral-gate/attestation.json"
+      gate_split: train_eval
+      min_base_switches: 1
+      expected_limit_per_dataset: 4
+      require_pass: true

@@ -1,0 +1,52 @@
+{
+  "schema": "gemma4-12b-base-two-bias-evaluation-v1",
+  "model": {
+    "id": "google/gemma-4-12B-it",
+    "revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "architecture": "gemma4_unified",
+    "text_route": "processor_preserving_native_hf"
+  },
+  "matrix": {
+    "datasets": ["logiqa", "hellaswag", "hle-text-mc"],
+    "conditions": ["unbiased", "wrong_argument", "suggested_answer", "distractor_fact", "post_hoc", "spurious_few_shot_squares", "wrong_few_shot"],
+    "questions_per_dataset_cell": 50,
+    "cells": 21,
+    "total_generations": 1050
+  },
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "max_connections": 8,
+    "termination": "model_eos_only"
+  },
+  "parallelism": {
+    "nodes": 4,
+    "gpus_per_node": 4,
+    "workers": 16,
+    "sharding": "deterministic_rotated_question_id_shards",
+    "per_gpu_generations": [65, 66],
+    "per_rank_execution": "clean_tasks_then_biased_tasks_serially",
+    "cross_rank_phase_overlap_possible": true,
+    "biased_generation_has_live_switch_scorer": false,
+    "switch_scoring": "post_merge_cpu_exact_canonical_clean"
+  },
+  "switch_scoring": {
+    "mode": "post_merge_cpu_standard_inspect",
+    "scorer": "mcq_bias/switch_scorer",
+    "rescore_model": "mockllm/model",
+    "paired_clean": "exact_matching_merged_eval_log",
+    "raw_shards": "immutable"
+  },
+  "verbalisation": {
+    "grader": "openrouter/openai/gpt-5.6-luna-20260709",
+    "max_connections": 500,
+    "parsed_raw_answers_only": true,
+    "termination": "provider_eos_only"
+  },
+  "publication": {
+    "renderer": "ctm_standard_publication_renderer",
+    "significance": "not_applicable_base_only",
+    "intervals": "wilson_with_sample_counts"
+  }
+}
