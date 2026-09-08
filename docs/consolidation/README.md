@@ -102,7 +102,7 @@ The earlier four stale registrations for already-missing temporary Figure 6
 worktrees were archived separately. Existing experiment/diagnostic worktrees
 remain until their task ownership and remaining source variants are resolved.
 
-The reviewed branch is [draft PR #10](https://github.com/sohaibimran7/consistency-training-methods/pull/10).
+The reviewed branch is [PR #10, ready for review](https://github.com/sohaibimran7/consistency-training-methods/pull/10).
 [`experiment-merge-validation.json`](experiment-merge-validation.json) records
 local and clean Linux evidence for the initial reconciled experiment merge.
 
@@ -110,4 +110,13 @@ The inactive `a3ce` worktree was also archived intact after its 260 selected
 source files matched preservation and its unique chart recipes received an
 explicit historical disposition. Its task was already archived.
 [`retired-a3ce-worktree.json`](retired-a3ce-worktree.json) records restoration.
-There are now 15 registered worktrees; active and unrelated task paths remain.
+The dedicated PR9 checkout was subsequently archived after the superseded PR
+closed; see [its restore record](retired-phase-shared-worktree.json). There are
+now 14 registered worktrees. [Remaining workspace dispositions](retained-worktrees.json)
+explain the active and unrelated task paths.
+
+The final code passed 2,114 offline tests with one gated-HLE skip locally and in
+clean Linux CI. See [the final verification](final-verification.json).
+The 15.9 MB additional recovery package is verified locally; automatic approval
+review stopped its Isambard upload pending explicit authorization. Its exact
+hash, intended destination and current state are in [the backup record](artifact-backup.json).

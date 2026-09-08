@@ -1,63 +1,69 @@
 # Experiment consolidation
 
-Approved following the 8 September 2026 codebase audit. The full objective is to preserve the experiment implementations, make their results findable and repeatable, integrate the useful work on current main, consolidate repeated infrastructure, and archive superseded material safely.
+Approved following the 8 September 2026 codebase audit. The implementation is
+on `codex/experiment-consolidation` in ready-for-review PR #10, based on GitHub main
+`9d574e8`. Existing campaign checkouts have not been deployed from this branch.
 
 ## Completion requirements
 
-- [ ] Exact source states preserved for meaningful local worktrees and remote campaign copies, with independently verified restoration and references from the catalogue.
-- [ ] Required experiment data, checkpoints and result artifacts indexed with retrievable locations and content identities; retention/backup limitations explicit.
-- [ ] Validated experiment catalogue and readable index covering active, completed, diagnostic, invalidated and superseded protocols; no inferred completion from tests or file presence.
-- [ ] PR #6, PR #9, Figure 6 branch, experimental development worktrees, plotting refactor and authentication changes reconciled against current main in reviewable changes.
-- [ ] Shared run record captures source snapshot, exact parameters/argv, environment, inputs, lifecycle and output lineage; immutable attempt records survive retries.
-- [ ] Repeated provenance, execution, validation and plotting mechanics consolidated without changing historical hashes or scientific protocol semantics.
-- [ ] Reproducible supported environment definitions and automated offline integration/replay gates; numerical/distributed changes get appropriate GPU evidence.
-- [ ] Superseded worktrees and probes archived only after unique content is preserved and ongoing tasks/jobs no longer depend on their paths.
-- [ ] Final requirement-by-requirement verification proves the above against current local and external state.
+- [x] Preserve meaningful local and remote source states, independently verify
+  restoration, and reference recovery packages from the catalogue.
+- [x] Index required experiment artifact locations and content identities;
+  distinguish verified retrieval from recovery copies and state retention gaps.
+- [x] Maintain a validated catalogue with active, completed, diagnostic,
+  invalidated and superseded protocols. Never infer scientific completion from
+  tests, filenames or a successful job.
+- [x] Reconcile PR #6, PR #9, Figure 6, experimental worktree variants, plotting
+  and stable authentication/controller changes into reviewable commits.
+- [x] Capture source, exact YAML/plan/argv, parent environment, input/output
+  lineage and subprocess lifecycle in immutable attempt records that survive
+  retries. Keep bespoke historical launch contracts intact.
+- [x] Share provenance, execution records, topology metadata, EOS decoding and
+  plotting mechanics while retaining scientific protocol and historical byte
+  contracts.
+- [x] Provide a clean Linux CPU lock and automated environment, catalogue and
+  offline gates. Retain the historical GPU evidence with its precise scope;
+  keep fresh numerical/runtime validation as a gate before campaign deployment.
+- [x] Archive superseded inactive worktrees only after preserving unique content
+  and checking process, task and environment dependencies. Retain explicit
+  dispositions for the remaining workspaces.
+- [x] Verify final frozen-source tests and clean Linux CI: 2,114 passed, one
+  gated-HLE skip on both platforms.
+- [x] Mark PR #10 ready for review and close superseded PRs #6/#9, retaining
+  branches/history. GitHub main remains unchanged.
+- [ ] Resolve the additional recovery-package upload decision. The 15.9 MB
+  package is locally verified; its upload was blocked by automatic approval
+  review and awaits explicit user authorization. Earlier off-laptop recovery
+  copies are verified and remain available.
 
-## Work ownership
+## Delivered evidence
 
-The consolidation branch is `codex/experiment-consolidation` in the `ad75` worktree. Existing experiment worktrees and deployed runtime directories are protected while their tasks continue. Changes are integrated here first.
+| Area | Evidence | Practical limit |
+| --- | --- | --- |
+| Original source | [Source preservation](source-preservation.json): 20 local and 15 remote snapshots, 89 initial Git refs, verified source package on the laptop and Isambard. Restored d6d6 and remote RMCT snapshots independently. | Observed source is not retroactive proof of the bytes executed by every historical attempt. |
+| Integrated source | d6d6 snapshot commit `c78cafa`, reconciled merge `090152f`, then focused topology/EOS/plot/controller/recorder commits. [Integration decisions](integration.md). | Active Gemma/RMCT runtimes and new unfinished work are separate. |
+| Artifacts | [Recovery archive](artifact-backup.json): 8,619 distinct verified contents, 18,967,069,872 bytes; actual selected AITA restoration succeeded. [Remote verification](remote-artifact-verification.json): all 25,292 initial paths, 61,813,967,440 bytes, zero errors. | One old changed scheduling receipt is unavailable; its newer bytes are retained. About 47.9 GB of distinct remote content lacks a verified independent recovery copy. Base caches and new outputs are outside the inventory. |
+| Catalogue | 31 entries; 44 available repository references verified by path/hash. CI checks schema, lineage, declared completion and local references. | Historical acceptance remains unconfirmed unless supported by evidence. |
+| AITA r006 | [Completion evidence](aita-completion-evidence.json): 116 referenced files verified; paired replay reproduced all four recorded counts from 1,591 pairs. | Completion is only for the documented modified final-answer-only protocol. |
+| Validation | [Baseline](baseline-validation.json): 1,059 clean Linux passes. [Reconciled experiment merge](experiment-merge-validation.json): 2,003 passes/one skip locally and on clean Linux. [Final source](final-verification.json): 2,114 passes/one skip locally and in clean Linux CI. | CPU integration is not GPU numerical equivalence or production throughput. |
+| Plotting | [Plot validation](plot-validation.json): 85 focused checks; real 9e79 smoke log rendering; unchanged recipe bytes; registry files verified in an isolated wheel. | Smoke rendering is not an accepted scientific result. |
+| Controller | [Stable extension receipt](controller-extensions.json): 11 copied files matched owner hashes, 96 focused tests passed here; owner supplied 122 test/install checks. | Consolidation did not install helpers, change shared state or submit jobs. |
+| Retirement | Four already-missing registrations, four legacy Claude worktrees, inactive a3ce and the clean PR9 checkout moved into recoverable archives. [Claude recovery](retired-worktrees.json), [a3ce recovery](retired-a3ce-worktree.json), [PR9 recovery](retired-phase-shared-worktree.json). | 14 registered worktrees remain; [their dispositions](retained-worktrees.json) distinguish active and unrelated task paths from canonical source. |
 
-Parent task owns preservation, catalogue population, integration, environment/CI work and documentation. Subagents are resolving disjoint backend, trainer and adapter conflicts and implementing generic source/runtime manifest capture. The existing “Check adaptor duplication” task owns its adapter investigation; coordinate before changing adapters.
+## Protected campaigns and scope cutoff
 
-## Current progress
+Gemma job 6404189 was reported submitted by its owning task from a separately
+frozen checkout. Its GPU runtime remains untouched. New isolated CPU Luna
+runtime preparation is still owner work and is outside this source cut.
+The validated controller extension is included; no grading job was submitted
+by consolidation.
 
-- Consolidation branch created from current GitHub main `9d574e8e448d4c8bf32373600bb5050cbfb1368f`.
-- Initial Git bundle created and verified, preserving 89 refs and complete referenced history.
-- Source snapshots captured from all 20 existing local worktrees. Shared blob storage holds 1,080 distinct contents (19,219,078 bytes). Snapshot identities include new/modified source and executable modes; omitted non-source paths are listed.
-- Captured source snapshots from 15 remote campaign copies; independently verified all blob/tree hashes. Source-only capture has 1,038 distinct contents (16,426,291 bytes). An initial capture that also included an archived environment was retained under the preservation `_archive/`, then narrowed explicitly.
-- Independently restored all 616 selected `d6d6` files to a new temporary directory and verified their hashes and modes. Local source snapshots from all 20 worktrees passed identity verification.
-- Integrated PR #9, PR #6's Tinker/SFT changes, the Figure 6 branch, and stable authentication/job-controller source. GitHub main and the open PRs remain unchanged.
-- Baseline commit `af9a6a4` passed 1,056 offline tests. The remaining three CPU distributed tests passed separately with loopback socket access; no GPU experiment was run. Clean Linux CI also passed all 1,059 tests from the committed dependency lock (run `34237627335`).
-- Added a single-schema catalogue and CLI with 31 experiment entries. Historical states without sufficient acceptance evidence remain unconfirmed. The catalogue and retention guide are linked from the main README.
-- Produced a hashed Linux CPU dependency lock and offline CI workflow, plus separate training and Figure 6 GPU profiles. GPU profile installation and numerical validation are separate gates.
-- Verified all 116 referenced AITA r006 files (912,210,600 bytes) and replayed the preserved paired analysis: 1,591 pairs produced exactly the four recorded counts. This establishes completion only for its documented modified protocol.
-- Preserved the d6d6 source as commit `c78cafa7ad848498c589e522a2d3742ad17bbae1` with tag `archive/d6d6-source-20260908-initial`. Its merge into the baseline is in progress; backend, trainer and MCQ adapter conflicts have separate owners.
-- Local artifact inventory covers 20 roots, with 8,620 distinct contents totalling 17.664 GiB. The deduplicated Isambard recovery archive has verified 8,619 blobs (18,967,069,872 bytes). One older active RMCT scheduling receipt changed after inventory and is explicitly unavailable; a delta retains its newer state. Remote artifact locations and partial hashing limitations are indexed separately.
-- Four Git registrations for already-missing temporary Figure 6 worktrees were moved into `.git/_archive/worktree-registrations-20260908/` and verified. No existing worktree was moved.
-- Shared manifest provenance is under review; generic command/input/output lifecycle records and retry coverage remain outstanding.
-- Coordination requests sent to active Gemma, RMCT and Figure 6 tasks. No experiment code/jobs changed by consolidation.
+RMCT's deployed convergence/recovery repository and scheduling receipts remain
+protected. Figure 6's primary checkout, the shared primary Python environment,
+and the installed authentication/controller service also remain in place.
+No in-place rebasing, reset, runtime upgrade or campaign-source replacement was
+performed by consolidation.
 
-## Preservation location
-
-Initial local recovery material is outside Git at:
-
-`/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/20260908-initial/`
-
-It contains `repository.bundle`, `index.json`, `snapshots/`, `blobs/` and the remote source archive. The source package has a verified second copy at
-`a5v.aip2.isambard:/projects/a5v/sohaib.a5v/_archive/ctm-consolidation-preservation-20260908-initial/ctm-source-preservation-20260908-initial.tar.gz`.
-Both copies have SHA-256 `8da62113a0925182e504f4bc7ae18fc89ffb1892f04939868783b2ee8e9c7c43` (26,948,474 bytes). This source backup excludes model/result payloads; source preservation alone does not justify retiring their locations.
-
-## Protected active experiments
-
-- Gemma: diagnostic runtime `ctm-gemma4-12b-base-eval-20260908/repo`; prepared full campaign `ctm-gemma4-12b-base-eval-repaired-20260908/repo`; historical failed attempt under `ctm-gemma4-12b-base-eval-20260825/repo`. All under `/projects/a5v/sohaib.a5v`. No completed suitability result yet. Keep the shared `.venv-muse-cu129` runtime untouched.
-- RMCT: `ctm-rmct-convergence-gcall-r2-20260814/repo` uses a mixed source state with PR #9 backends and later r5 continuation code. Await current owner's exact source/attempt status before integration or retirement decisions.
-- Figure 6: primary local checkout on `codex/evalaware-figure6-isambard` remains owned by its active task. No in-place rebasing or source changes.
-
-## Audit evidence
-
-The detailed audit and point-in-time evidence are stored at:
-
-`/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/codebase-audit/audit.md`
-
-The initial audit passed 100 focused offline tests. That evidence applies to the audited source states, not to future consolidated changes.
+The [research workflow](../research-workflow.md) is the maintained entrypoint for
+new work. Original audit evidence remains outside Git at
+`/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/codebase-audit/audit.md`.

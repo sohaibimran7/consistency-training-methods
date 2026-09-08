@@ -42,5 +42,15 @@
     "restored_artifact": "artifacts/elephant-aita-ntaflip-r006-results-20260821/completion.json",
     "destination": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-artifact-preservation-20260908/restore-check-aita",
     "result": "Verified all blobs and restored selected file; no selected identity missing."
+  },
+  "followup_recovery_package": {
+    "archive": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/ctm-consolidation-followup-recovery-20260908.tar.gz",
+    "sha256": "dbf1c5ddead4a824a5a2bb0a6adff1df45482b81a7e320142bd5b90b164da171",
+    "bytes": 15876810,
+    "members": 66,
+    "source_revision": "8e4794803e0f44d478e6d5dca761c02d912f61e8",
+    "state": "verified_local_upload_awaiting_explicit_approval",
+    "proposed_destination": "ssh://a5v.aip2.isambard/projects/a5v/sohaib.a5v/_archive/ctm-artifact-preservation-20260908/ctm-consolidation-followup-recovery-20260908.tar.gz",
+    "note": "Automatic approval review rejected this specific upload for lack of explicit payload/destination authorization. No upload was executed; earlier recovery copies remain available."
   }
 }
