@@ -17,6 +17,26 @@ data and training grader separately from the evaluation dataset, task, scorer,
 and judge. CTM does not infer an evaluation split or replace a benchmark's
 official evaluation method.
 
+## Finding and reproducing experiments
+
+Experiments can remain on their own branches. The preserved
+[8 September 2026 experiment index](https://github.com/sohaibimran7/consistency-training-methods/blob/ee54327ea25e387a4165449a75b5d2bf6aa1de26/experiments/README.md)
+lists 31 protocols, their scientific questions and recorded status. Its
+[detailed records](https://github.com/sohaibimran7/consistency-training-methods/blob/ee54327ea25e387a4165449a75b5d2bf6aa1de26/experiments/catalog.json)
+link source snapshots, environments, artifacts and completion evidence; the
+[recovery guide](https://github.com/sohaibimran7/consistency-training-methods/blob/ee54327ea25e387a4165449a75b5d2bf6aa1de26/docs/consolidation/README.md)
+explains restoration and known gaps. This is a dated inventory, not live status.
+
+For each result, retain its exact source commit and any uncommitted source,
+configuration and command, input/model/judge revisions, environment and output
+locations. Preserve separate attempt records for retries. A branch name alone
+can move; source observed after a run does not establish what that run executed.
+
+Promote code to main when it supports a concrete useful capability and its
+dependencies are justified. Reuse existing implementations and share mechanics
+where actual callers need them. Experiment-specific protocols and historical
+recovery code can remain on their branches with retained source references.
+
 ## Architecture
 
 ```mermaid
