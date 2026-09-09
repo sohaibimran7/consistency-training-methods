@@ -2,9 +2,10 @@
 
 Start with the [experiment catalogue](../../experiments/README.md). Each ID
 links a scientific question to its protocol, source snapshot, environment,
-outputs, owner and acceptance evidence. The [completion ledger](PLAN.md)
-records remaining integration and validation work; this directory is not a
-claim that consolidation is finished.
+outputs, owner and acceptance evidence. The [scope and historical ledger](PLAN.md)
+records the 9 September correction: PR #10 is an integration reference for
+selective review, not a proposal to merge every experiment into main. Experiment
+branches and recoverable snapshots remain valid homes for scientific history.
 
 ## Restore preserved source
 
@@ -102,7 +103,8 @@ The earlier four stale registrations for already-missing temporary Figure 6
 worktrees were archived separately. Existing experiment/diagnostic worktrees
 remain until their task ownership and remaining source variants are resolved.
 
-The reviewed branch is [PR #10, ready for review](https://github.com/sohaibimran7/consistency-training-methods/pull/10).
+The integration reference is [PR #10](https://github.com/sohaibimran7/consistency-training-methods/pull/10);
+the recommendation to merge it wholesale has been withdrawn.
 [`experiment-merge-validation.json`](experiment-merge-validation.json) records
 local and clean Linux evidence for the initial reconciled experiment merge.
 

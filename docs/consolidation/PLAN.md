@@ -1,10 +1,40 @@
-# Experiment consolidation
+# Experiment preservation and selective promotion
 
-Approved following the 8 September 2026 codebase audit. The implementation is
-on `codex/experiment-consolidation` in ready-for-review PR #10, based on GitHub main
-`9d574e8`. Existing campaign checkouts have not been deployed from this branch.
+The 8 September consolidation is retained on `codex/experiment-consolidation`,
+based on GitHub main `9d574e8`. On 9 September the user clarified that main should
+inherit only DRY code supporting useful functionality. The recommendation to
+merge PR #10 wholesale is withdrawn; this branch is an integration reference
+for selective review. Existing campaign checkouts remain separate.
 
-## Completion requirements
+## Current scope
+
+Experiments and historical implementations can remain on their own branches.
+The catalogue should identify their exact commits or recoverable snapshots,
+environments and artifacts; indexing a result does not require merging its
+implementation into main. Preserve uncommitted source before retiring its
+worktree, and retain stable references for historical results.
+
+Each proposed change to main must identify the useful capability or concrete
+defect it addresses, its actual callers, and its required dependencies. Prefer
+existing shared code; extract common mechanics only where real use warrants
+the abstraction. Keep scientific choices and campaign-specific recovery code
+with their experiments. A useful capability can have one current caller;
+speculative reuse is not a reason to create a framework.
+
+Review the smallest sufficient change and verify its behavior. This applies
+equally to provenance, catalogue tooling, plotting and runtime helpers: none
+is automatically approved for main because it is labelled infrastructure.
+Passing the integration suite or preserving a historical implementation does
+not establish that it belongs in the maintained codebase.
+
+PRs #6 and #9 were closed under the earlier consolidation plan. Their code and
+branches remain available for independent assessment; that closure is not
+evidence that their changes have reached main.
+
+## Historical consolidation checklist (8 September)
+
+The completed items below record work performed under the earlier scope.
+They are not current merge acceptance criteria.
 
 - [x] Preserve meaningful local and remote source states, independently verify
   restoration, and reference recovery packages from the catalogue.

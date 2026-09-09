@@ -5,6 +5,14 @@ follow its protocol and source references. The catalogue separates scientific
 status from job state and file availability. A successful job or rendered
 figure alone does not make an experiment complete.
 
+Experiments may live on separate branches. Record an exact retained commit or
+recoverable source snapshot alongside the environment and artifacts; a moving
+branch name alone is insufficient. Main should inherit only changes that
+support a concrete useful capability, reuse existing code where appropriate,
+and justify their dependencies. Preserve campaign-specific implementations on
+their branches. The catalogue and provenance infrastructure are subject to the
+same review as other code; see the [current scope](consolidation/PLAN.md).
+
 ## Before a run
 
 1. Define the question, comparison, inputs, split, seeds, generation and grading
