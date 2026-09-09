@@ -1,4 +1,14 @@
-# vLLM 0.10.2 otherwise upgrades these beyond the ranges supported by the
-# repository's Inspect, datasets, s3fs, and Tinker dependencies.
+# Keep the GPU vLLM environment compatible with the repository's Inspect,
+# datasets, s3fs, and Tinker dependencies. Qwen3.5 needs vLLM >=0.21 here;
+# the exact vLLM wheel is selected by setup_gpu_env.sh.
 fsspec==2025.9.0
 transformers==5.5.4
+# Streamlit in the complete repository environment currently requires <17.
+# vLLM itself does not require the newer major release.
+websockets<17
+# The base research environment includes Streamlit, whose supported Starlette
+# range ends before 1.4.  Keep vLLM's FastAPI stack inside that compatible
+# range so setup_gpu_env.sh can retain a fully consistent environment and
+# leave its dependency gate strict (apart from the separately binary-verified
+# cuSPARSELt metadata false positive).
+starlette>=0.46,<1.4

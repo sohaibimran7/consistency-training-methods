@@ -8,6 +8,8 @@ belong in ``--setting-config`` and ``--load-config``; the usual entry point is
 
 import argparse
 import asyncio
+import math
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -19,22 +21,102 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+from ctm.backends.cli import (
+    PhaseSharedCLIConfig,
+    add_backend_args,
+    build_backend,
+    describe_backend,
+    resolve_phase_shared_args,
+    resolve_rollout_parallel_args,
+)
+from ctm.backends.run_metadata import phase_shared_run_metadata as _phase_shared_run_metadata
+from ctm.cli_safety import parse_json_object, reject_inline_secrets
+from ctm.core.config import AdamConfig, CheckpointConfig, resolve_lora_config
+from ctm.settings.runtime import prepare_setting, setting_run_metadata
+from ctm.training.resume_state import RLResumeState, load_strict_local_rl_resume_state
 from ctm.training.rl import (
+    GenerationConfig,
+    RateEstimationConfig,
     RLConfig,
     RLTrainer,
-    RateEstimationConfig,
-    TrainingSamplingConfig,
     TrainingLoopConfig,
-    GenerationConfig,
+    TrainingSamplingConfig,
 )
-from ctm.core.config import CheckpointConfig, AdamConfig, resolve_lora_config
-from ctm.backends.cli import add_backend_args, build_backend, describe_backend
-from ctm.cli_safety import parse_json_object, reject_inline_secrets
-from ctm.settings.runtime import prepare_setting, setting_run_metadata
 
 
 def _exact_command(argv: list[str]) -> str:
     return "python scripts/train_rlct.py " + " ".join(shlex.quote(value) for value in argv)
+
+
+def _add_adam_optimizer_args(parser: argparse.ArgumentParser) -> None:
+    """Add portable AdamW parameters with the established RL defaults."""
+
+    parser.add_argument("--beta1", type=float, default=0.9, help="AdamW beta1")
+    parser.add_argument("--beta2", type=float, default=0.95, help="AdamW beta2")
+    parser.add_argument("--eps", type=float, default=1e-8, help="AdamW numerical-stability epsilon")
+    parser.add_argument("--weight-decay", type=float, default=0.0, help="AdamW weight decay")
+    parser.add_argument(
+        "--grad-clip-norm",
+        type=float,
+        default=1.0,
+        help="Global gradient-norm clip (0 disables clipping)",
+    )
+
+
+def _add_kl_discount_factor_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the explicit token-future weighting for the KL penalty."""
+
+    parser.add_argument(
+        "--kl-discount-factor",
+        type=float,
+        default=0.0,
+        help="Future-token discount gamma for the KL penalty (0 applies token-local KL)",
+    )
+
+
+def _adam_config_from_args(args: argparse.Namespace) -> AdamConfig:
+    """Construct the explicit optimizer configuration recorded for an RL run."""
+
+    return AdamConfig(
+        learning_rate=args.lr,
+        lr_schedule=args.lr_schedule,
+        beta1=args.beta1,
+        beta2=args.beta2,
+        eps=args.eps,
+        weight_decay=args.weight_decay,
+        grad_clip_norm=args.grad_clip_norm,
+    )
+
+
+def _print_phase_shared_runtime(phase_shared: PhaseSharedCLIConfig | None) -> None:
+    """Print a compact, topology-independent execution provenance summary."""
+
+    if phase_shared is None:
+        return
+    topology = phase_shared.topology
+    ranks = ", ".join(
+        f"rank {rank.rank} -> logical {rank.gpu.logical_index} ({rank.gpu.device_token})"
+        for rank in topology.training_ranks
+    )
+    rollouts = ", ".join(
+        f"worker {worker_id} -> logical {gpu.logical_index} ({gpu.device_token})"
+        for worker_id, gpu in enumerate(topology.rollout_gpus)
+    )
+    overlap = ", ".join(str(gpu.logical_index) for gpu in topology.overlap) or "none"
+    print("  Phase-shared:      execution-only; configured objective/data/budgets/hyperparameters unchanged")
+    print(
+        f"  Phase topology:    world={topology.world_size}; rank 0/coordinator="
+        f"{phase_shared.coordinator_device}; overlap logical GPUs=[{overlap}]"
+    )
+    print(f"  Training ranks:    {ranks}")
+    print(f"  Rollout workers:   {rollouts}")
+    print("  vLLM lifecycle:    awake for rollout; level-1 sleep for training; rank-0 publish + worker ACK")
+    print(
+        "  Replica timeouts:  "
+        f"start={phase_shared.replica_start_timeout_seconds:g}s, "
+        f"command={phase_shared.replica_command_timeout_seconds:g}s, "
+        f"shutdown={phase_shared.replica_shutdown_timeout_seconds:g}s"
+    )
 
 
 def _validate_numeric_args(args: argparse.Namespace) -> None:
@@ -61,14 +143,26 @@ def _validate_numeric_args(args: argparse.Namespace) -> None:
             raise ValueError(f"{flag} must be non-negative")
     if args.n_consistency_rollouts is not None and args.n_consistency_rollouts > args.n_train_rollouts:
         raise ValueError("--n-consistency-rollouts cannot exceed --n-train-rollouts")
-    if args.n_anchor_rollouts is not None and args.n_anchor_rollouts > args.n_ref_rollouts:
+    if args.anchor_weight > 0 and args.n_anchor_rollouts is not None and args.n_anchor_rollouts > args.n_ref_rollouts:
         raise ValueError("--n-anchor-rollouts cannot exceed --n-ref-rollouts")
     if args.lr is not None and args.lr <= 0:
         raise ValueError("--lr must be positive")
+    if not math.isfinite(args.beta1) or not 0 <= args.beta1 < 1:
+        raise ValueError("--beta1 must be finite and in [0, 1)")
+    if not math.isfinite(args.beta2) or not 0 <= args.beta2 < 1:
+        raise ValueError("--beta2 must be finite and in [0, 1)")
+    if not math.isfinite(args.eps) or args.eps <= 0:
+        raise ValueError("--eps must be finite and positive")
+    if not math.isfinite(args.weight_decay) or args.weight_decay < 0:
+        raise ValueError("--weight-decay must be finite and non-negative")
+    if not math.isfinite(args.grad_clip_norm) or args.grad_clip_norm < 0:
+        raise ValueError("--grad-clip-norm must be finite and non-negative")
     if args.temperature < 0:
         raise ValueError("--temperature must be non-negative")
     if args.kl_coef < 0:
         raise ValueError("--kl-coef must be non-negative")
+    if not math.isfinite(args.kl_discount_factor) or not 0 <= args.kl_discount_factor <= 1:
+        raise ValueError("--kl-discount-factor must be finite and in [0, 1]")
     if not 0 <= args.anchor_weight <= 1:
         raise ValueError("--anchor-weight must be within [0, 1]")
     if args.snr_z < 0:
@@ -79,8 +173,7 @@ def _validate_numeric_args(args: argparse.Namespace) -> None:
     anchor_active = args.anchor_weight > 0 and n_anchor > 0
     if not consistency_active and not anchor_active:
         raise ValueError(
-            "rollout/weight configuration has no active gradient term; increase the rollout count for a "
-            "non-zero-weight consistency or anchor term"
+            "rollout/weight configuration has no active gradient term; increase the rollout count for a non-zero-weight consistency or anchor term"
         )
 
 
@@ -103,8 +196,7 @@ def main(argv: list[str] | None = None):
     )
     parser.add_argument(
         "--load-config",
-        help="Inline JSON object or JSON-file path passed to setting.load_datapoints; "
-        "--n-datapoints is added unless this object already sets it",
+        help="Inline JSON object or JSON-file path passed to setting.load_datapoints; --n-datapoints is added unless this object already sets it",
     )
     parser.add_argument(
         "--n-datapoints",
@@ -128,6 +220,7 @@ def main(argv: list[str] | None = None):
         choices=["constant", "linear", "cosine"],
         help="LR schedule (shared SFT+RL default: linear). RL now honors this per optim step.",
     )
+    _add_adam_optimizer_args(parser)
     parser.add_argument(
         "--lora-config",
         help="JSON object or JSON file with rank, alpha, dropout, target_modules, portable component flags, and seed",
@@ -137,10 +230,13 @@ def main(argv: list[str] | None = None):
         "--seed",
         type=int,
         default=None,
-        help="Seed for LoRA init, epoch shuffle, and gradient-rollout "
-        "subsampling (stochastic temperature sampling is NOT seeded)",
+        help=(
+            "Seed for LoRA init, epoch shuffle, and gradient-rollout subsampling. "
+            "Use --local-rollout-seed-base to seed independent vLLM worker streams"
+        ),
     )
     parser.add_argument("--kl-coef", type=float, default=0.05)
+    _add_kl_discount_factor_arg(parser)
     parser.add_argument(
         "--anchor-weight",
         type=float,
@@ -186,9 +282,7 @@ def main(argv: list[str] | None = None):
         "--unparsed-handling",
         default="discard",
         choices=["discard", "resample"],
-        help="Unparsed/hedged rollouts: 'discard' (drop from rate denominator + gradient, "
-        "default) or 'resample' (re-sample until a usable answer, up to "
-        "--max-resample-attempts; logs resample amplification + give-up so hedging stays visible)",
+        help="Unparsed/hedged rollouts: 'discard' (drop from rate denominator + gradient, default) or 'resample' (re-sample until a usable answer, up to --max-resample-attempts; logs resample amplification + give-up so hedging stays visible)",
     )
     parser.add_argument(
         "--max-resample-attempts",
@@ -213,42 +307,121 @@ def main(argv: list[str] | None = None):
         help="Anchor gradient rollouts (default: all parsed ref rollouts)",
     )
     parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--max-new-tokens", type=int, default=16384)
+    generation_limit = parser.add_mutually_exclusive_group()
+    generation_limit.add_argument("--max-new-tokens", type=int, default=16384)
+    generation_limit.add_argument(
+        "--no-max-new-tokens",
+        action="store_const",
+        const=None,
+        dest="max_new_tokens",
+        help=(
+            "Use EOS-only generation with no output-token limit. The selected backend "
+            "must preserve max_tokens=None and fail on non-EOS termination."
+        ),
+    )
 
     # === Training loop ===
     parser.add_argument("--n-epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=1, help="Datapoints per gradient step")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
-    parser.add_argument("--refresh-every", type=int, default=1, help="Refresh policy every N steps")
+    parser.add_argument(
+        "--refresh-every",
+        type=int,
+        default=1,
+        help="Refresh the rollout policy every N completed optimizer updates",
+    )
     parser.add_argument(
         "--normalization",
         default="per_item",
         choices=["pooled", "per_item"],
         help="Advantage normalization scope: within each datapoint (default) or across the whole batch",
     )
+    parser.add_argument(
+        "--no-shuffle-datapoints",
+        action="store_false",
+        dest="shuffle_datapoints",
+        help=("Consume loaded datapoints in their supplied order on every epoch; " "the default shuffles each epoch"),
+    )
 
     # === Checkpointing ===
     parser.add_argument("--checkpoint-every", type=int, default=50, help="Save checkpoint every N steps")
-    parser.add_argument("--save-state", action="store_true", help="Save full optimizer state (for resuming)")
+    parser.add_argument(
+        "--save-state",
+        action="store_true",
+        help=(
+            "Save optimizer state alongside checkpoints. This is necessary for an optimizer restore, "
+            "but does not by itself make an on-policy continuation exact."
+        ),
+    )
 
     # === Backend ===
-    add_backend_args(parser)
+    # This loop implements the serialized rollout/training lifecycle required
+    # by the opt-in phase-shared backend. Other training entrypoints leave the
+    # phase-shared CLI disabled until they implement equivalent boundaries.
+    add_backend_args(parser, enable_phase_shared=True)
+    parser.add_argument(
+        "--onpolicy-target-attestation",
+        type=Path,
+        help="Immutable target contract injected only by the protected Qwen3.5 on-policy launcher",
+    )
+    parser.add_argument(
+        "--require-onpolicy-target-attestation",
+        action="store_true",
+        help="Fail closed unless --onpolicy-target-attestation is supplied (used by protected experiment plans)",
+    )
 
     # === Run modes ===
-    parser.add_argument("--resume-from", default=None, help="Tinker checkpoint path to resume from")
+    parser.add_argument("--resume-from", default=None, help="Checkpoint URI/path to resume from")
     parser.add_argument(
         "--resume-with-optimizer",
         action="store_true",
-        help="Also restore optimizer state when resuming (for exact continuation)",
+        help=(
+            "Also restore optimizer state when resuming. Exact on-policy continuation additionally "
+            "requires compatible rollout/RNG state."
+        ),
+    )
+    parser.add_argument(
+        "--resume-state-required",
+        action="store_true",
+        help=(
+            "Require the local checkpoint's strict RL loop/coordinator-RNG state and continue its absolute "
+            "global/optimizer counters. This does not claim to restore a vLLM worker's private sampling RNG."
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Load data and print config, don't train")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     args = parser.parse_args(argv)
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
+    onpolicy_target_provenance: dict | None = None
+    strict_resume_state: RLResumeState | None = None
 
     try:
+        if args.require_onpolicy_target_attestation and args.onpolicy_target_attestation is None:
+            raise ValueError("--require-onpolicy-target-attestation requires --onpolicy-target-attestation")
+        if args.onpolicy_target_attestation is not None:
+            # This is the child-side proof boundary. It runs before setting
+            # construction loads data and before any backend/model setup.
+            from experiments.rmct_paper_vast_dense_models.stage1.onpolicy_recovery_preflight import (
+                validate_onpolicy_target_attestation_for_child,
+            )
+
+            onpolicy_target_provenance = validate_onpolicy_target_attestation_for_child(
+                attestation=args.onpolicy_target_attestation,
+                expected_training_script="scripts/train_rlct.py",
+                child_argv=["scripts/train_rlct.py", *effective_argv],
+                interpreter=sys.executable,
+                training_script_path=Path(__file__),
+                cuda_visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES"),
+            )
         if args.n_datapoints <= 0:
             raise ValueError("--n-datapoints must be positive")
+        if args.resume_state_required:
+            if args.backend != "local":
+                raise ValueError("--resume-state-required requires --backend local")
+            if not args.resume_from or not args.resume_with_optimizer:
+                raise ValueError("--resume-state-required requires --resume-from together with --resume-with-optimizer")
+            strict_resume_state = load_strict_local_rl_resume_state(args.resume_from)
         _validate_numeric_args(args)
         setting_config = parse_json_object(args.setting_config, label="--setting-config")
         load_config = parse_json_object(args.load_config, label="--load-config")
@@ -257,6 +430,8 @@ def main(argv: list[str] | None = None):
         reject_inline_secrets(load_config, path="load_config")
         reject_inline_secrets(raw_lora_config, path="lora_config")
         lora_config = resolve_lora_config(raw_lora_config, rank=args.lora_rank, seed=args.seed)
+        phase_shared = resolve_phase_shared_args(args)
+        rollout_parallel = phase_shared.rollout if phase_shared is not None else resolve_rollout_parallel_args(args)
         load_config.setdefault("n_datapoints", args.n_datapoints)
         prepared = prepare_setting(
             args.setting_factory,
@@ -284,10 +459,7 @@ def main(argv: list[str] | None = None):
         wandb_project=args.wandb_project,
         model=args.model,
         lora=lora_config,
-        optimizer=AdamConfig(
-            learning_rate=args.lr,
-            lr_schedule=args.lr_schedule,
-        ),
+        optimizer=_adam_config_from_args(args),
         reference_rate=RateEstimationConfig(
             perturbation_indices=[0],
             n_rollouts=args.n_ref_rollouts,
@@ -304,6 +476,7 @@ def main(argv: list[str] | None = None):
             refresh_policy_every_n_steps=args.refresh_every,
             n_epochs=args.n_epochs,
             normalize=args.normalization,
+            shuffle_datapoints=args.shuffle_datapoints,
         ),
         generation=GenerationConfig(
             max_new_tokens=args.max_new_tokens,
@@ -314,6 +487,7 @@ def main(argv: list[str] | None = None):
             save_state=args.save_state,
         ),
         kl_coef=args.kl_coef,
+        kl_discount_factor=args.kl_discount_factor,
         loss_fn=args.loss_fn,
         anchor_weight=args.anchor_weight,
         anchor_model=args.anchor_model,
@@ -332,34 +506,90 @@ def main(argv: list[str] | None = None):
             ),
             "setting_factory": args.setting_factory,
             "backend": args.backend,
+            **({"local_backend": {"ppo_clip_epsilon": args.local_ppo_clip_epsilon}} if args.backend == "local" else {}),
+            **_phase_shared_run_metadata(phase_shared),
+            **(
+                {"onpolicy_target_attestation": onpolicy_target_provenance}
+                if onpolicy_target_provenance is not None
+                else {}
+            ),
+            **(
+                {
+                    "continuation": {
+                        "mode": "optimizer_data_segment",
+                        "parent_checkpoint": str(strict_resume_state.checkpoint_dir),
+                        "parent_global_step": strict_resume_state.global_step,
+                        "parent_optimizer_step": strict_resume_state.optimizer_step,
+                        "parent_completed_epochs": strict_resume_state.completed_epochs,
+                        "vllm_worker_rng_restored": False,
+                    }
+                }
+                if strict_resume_state is not None
+                else {}
+            ),
+            **(
+                {
+                    "rollout_parallel": {
+                        "coordinator_device": args.local_device,
+                        "workers": [gpu.as_dict() for gpu in rollout_parallel.gpus],
+                        "status_dir": str(rollout_parallel.status_dir),
+                        "adapter_barrier": "all_workers_acknowledge_before_policy_sampling",
+                        "engine_seed_base": args.local_rollout_seed_base,
+                        "engine_seed_policy": "base_plus_worker_id_v1",
+                        "engine_seed_fallback": (
+                            None if args.local_rollout_seed_base is not None else "os_entropy_once_per_pool"
+                        ),
+                    }
+                }
+                if rollout_parallel is not None
+                else {}
+            ),
         },
     )
 
     print("\nExact training command:")
-    effective_argv = list(argv) if argv is not None else sys.argv[1:]
     print(f"  {_exact_command(effective_argv)}")
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("RL Training Configuration")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Setting:            {setting.name}")
     print(f"  Model:              {args.model}")
     print(f"  Backend:            {describe_backend(args)}")
+    if rollout_parallel is not None:
+        if phase_shared is None:
+            mapping = ", ".join(f"logical {gpu.logical_index} -> {gpu.device_token}" for gpu in rollout_parallel.gpus)
+            print(f"  Rollout workers:    {len(rollout_parallel.gpus)} ({mapping})")
+        print(f"  Worker status:      {rollout_parallel.status_dir}")
+        seed_text = args.local_rollout_seed_base if args.local_rollout_seed_base is not None else "recorded entropy"
+        print(f"  Sampling RNG:       vLLM engine seeds {seed_text}+worker_id")
+    _print_phase_shared_runtime(phase_shared)
     print(f"  Experiment:         {args.experiment_name}/{args.run_name}")
+    if onpolicy_target_provenance is not None:
+        print(
+            "  On-policy sidecar:  "
+            f"{onpolicy_target_provenance['path']} (sha256:{onpolicy_target_provenance['sha256']})"
+        )
     print(f"  Total datapoints:   {len(datapoints)}")
     print(f"  Perturbations:      {pert_desc}")
     print(f"  LR:                 {args.lr} ({args.lr_schedule})")
+    print(
+        "  AdamW:              "
+        f"beta1={config.optimizer.beta1:g}, beta2={config.optimizer.beta2:g}, "
+        f"eps={config.optimizer.eps:g}, weight_decay={config.optimizer.weight_decay:g}, "
+        f"grad_clip_norm={config.optimizer.grad_clip_norm:g}"
+    )
     print(f"  LoRA rank/alpha:    {config.lora.rank}/{config.lora.resolved_alpha}")
     print(f"  LoRA dropout:       {config.lora.dropout}")
     if config.lora.target_modules is not None:
         print(f"  LoRA targets:       {config.lora.target_modules}")
     else:
         print(
-            "  LoRA components:    "
-            f"mlp={config.lora.train_mlp}, attn={config.lora.train_attn}, unembed={config.lora.train_unembed}"
+            f"  LoRA components:    mlp={config.lora.train_mlp}, attn={config.lora.train_attn}, unembed={config.lora.train_unembed}"
         )
     if args.seed is not None:
         print(f"  Seed:               {args.seed}")
     print(f"  Batch size:         {args.batch_size}")
+    print(f"  Datapoint order:    {'epoch-shuffled' if args.shuffle_datapoints else 'supplied order (no shuffle)'}")
     print(f"  Grad accum steps:   {args.gradient_accumulation_steps}")
     print(f"  N epochs:           {args.n_epochs}")
     print(f"  Estimated steps:    {total_steps}")
@@ -378,11 +608,11 @@ def main(argv: list[str] | None = None):
     )
     if n_train_perts > 1 and args.n_train_rollouts > 8:
         print(
-            f"  ⚠️  WARNING: {n_train_perts} variants × {args.n_train_rollouts} rollouts/variant is a large "
-            f"per-datapoint sampling cost (×{eff_rollouts // (args.n_ref_rollouts + args.n_train_rollouts)} "
-            f"vs single-variant). matched_pair targets ~1-2 rollouts/variant — consider --n-train-rollouts 2."
+            f"  ⚠️  WARNING: {n_train_perts} variants × {args.n_train_rollouts} rollouts/variant is a large per-datapoint sampling cost (×{eff_rollouts // (args.n_ref_rollouts + args.n_train_rollouts)} vs single-variant). matched_pair targets ~1-2 rollouts/variant — consider --n-train-rollouts 2."
         )
-    print(f"  KL coef:            {args.kl_coef}")
+    print(f"  KL:                 coef={args.kl_coef}, discount_factor={args.kl_discount_factor}")
+    if args.backend == "local":
+        print(f"  Local PPO clip:     {args.local_ppo_clip_epsilon}")
     print(f"  Anchor weight:      {args.anchor_weight}")
     print(f"  Anchor model:       {args.anchor_model}")
     if args.advantage_estimator == "snr_scaling":
@@ -394,8 +624,7 @@ def main(argv: list[str] | None = None):
     print(f"  Advantage est.:     {_adv_desc}")
     if n_train_perts > 1 and args.advantage_estimator != "matched_pair":
         print(
-            "  NOTE: this setting has multiple variants but the estimator is not matched_pair; "
-            "the family will be handled by your chosen estimator instead."
+            "  NOTE: this setting has multiple variants but the estimator is not matched_pair; the family will be handled by your chosen estimator instead."
         )
     if args.advantage_estimator == "matched_pair" and n_train_perts == 1:
         print("  NOTE: matched_pair over one variant is equivalent to a single gap vs the reference.")
@@ -403,6 +632,13 @@ def main(argv: list[str] | None = None):
     if args.resume_from:
         print(f"  Resume from:        {args.resume_from}")
         print(f"  With optimizer:     {args.resume_with_optimizer}")
+    if strict_resume_state is not None:
+        print(
+            "  Strict loop state:  "
+            f"global={strict_resume_state.global_step}, optimizer={strict_resume_state.optimizer_step}, "
+            f"epochs={strict_resume_state.completed_epochs}"
+        )
+        print("  vLLM RNG resume:    unavailable (new, explicitly non-exact worker stream)")
     print(f"{'='*60}")
 
     if args.dry_run:
@@ -422,6 +658,7 @@ def main(argv: list[str] | None = None):
         config=config,
         resume_from=args.resume_from,
         resume_with_optimizer=args.resume_with_optimizer,
+        resume_state=strict_resume_state,
         backend=build_backend(args),
     )
     trainer.setup()
@@ -435,10 +672,10 @@ def main(argv: list[str] | None = None):
         )
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Training Complete")
     print(f"Final checkpoint: {final_checkpoint}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"CTM_FINAL_CHECKPOINT={final_checkpoint}")
 
 

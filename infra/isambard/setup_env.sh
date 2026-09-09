@@ -43,7 +43,14 @@ fi
 # compatible CUDA build after uv can see the allocated GH200.
 uv pip install -r requirements.txt --torch-backend=cpu
 uv pip install -e . --no-deps
-uv run python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
+# Python 3.12 + NLTK's import hardening rejects third-party modules while the
+# checkout itself is the working directory.  The project is already installed
+# editable above, so run this one download from scratch with safe-path mode.
+ctm_python=$(pwd -P)/.venv/bin/python
+(
+    cd "${SCRATCHDIR:-/tmp}"
+    "$ctm_python" -P -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
+)
 
 echo
 echo "Login-node sanity check:"

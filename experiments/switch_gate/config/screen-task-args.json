@@ -1,0 +1,5 @@
+{
+  "manifest": "artifacts/switch-gate/split-manifest.json",
+  "split": "screen",
+  "unbiased_log": "logs/switch-gate/20260729/screen"
+}

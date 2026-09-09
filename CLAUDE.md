@@ -23,7 +23,9 @@ file-driven. Evaluation remains independent of the training setting.
 ## Environment
 
 Use `uv` for environment management and command execution. `requirements.txt`
-is the single dependency source of truth.
+is the direct dependency source of truth. The committed Linux CPU lock and
+clean validation procedure are in `environments/README.md`; historical GPU
+training and Figure 6 serving stacks use distinct Isambard setup profiles.
 
 ```bash
 uv venv
@@ -34,7 +36,9 @@ uv pip install -e . --no-deps
 Store API keys in the gitignored `.env` file. Relevant names include
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `TINKER_API_KEY`,
 and `WANDB_API_KEY`. A W&B key does not enable logging by itself; an experiment
-must also set `wandb_project`. No dataset artifacts are committed here.
+must also set `wandb_project`. Large generated datasets and outputs remain
+external. Explicitly pinned, licensed Figure 6 inputs are tracked alongside
+their manifest under `experiments/eval_awareness/figure6/inputs/`.
 
 ## Where things live
 
@@ -98,13 +102,18 @@ must also set `wandb_project`. No dataset artifacts are committed here.
 
 ## Known limitations
 
-1. `train_bct.py` consumes completed response rows; this repository does not
-   generate self-target BCT response data.
-2. Inspect logs can be analyzed individually, but the repository does not yet
-   provide cross-checkpoint aggregation or plotting commands.
-3. The evaluation runner can load LocalBackend LoRA checkpoints directly with
-   `--local-checkpoint`. Full-weight LocalBackend checkpoints are not supported
-   by this evaluation bridge.
+1. `scripts/prepare_bct_targets.py` generates frozen self-target data;
+   `train_bct.py` consumes the resulting response rows. Preserve the target
+   manifest and parent input identities when reusing targets.
+2. Benchmark adapters provide aggregation and plotting. Keep their explicit
+   pairing, estimands, denominators and completion checks when sharing plot
+   mechanics; a rendered figure alone is not evidence of a complete result.
+3. The local evaluation bridge supports LoRA and full-weight checkpoints.
+   Runtime/hardware support remains specific to the selected model/backend.
+4. Historical copied runtimes are not all reproducible from a Git SHA or a
+   complete environment lock. Consult `experiments/catalog.json` and
+   `docs/consolidation/PLAN.md`; retain source bundles and raw evidence until
+   their required artifacts and environments are verified retrievable.
 
 ## Tests and formatting
 

@@ -1,0 +1,37 @@
+{
+  "aggregate_connection_limit": 500,
+  "base_model": {
+    "cache_root": "/workspace/hf-cache-direct",
+    "offline_only": true,
+    "repo_id": "Qwen/Qwen3.5-9B",
+    "snapshot": "c202236235762e1c871ad0ccb60c8ee5ba337b9a"
+  },
+  "checkpoint": {
+    "adapter_model_sha256": "d893a6c202e5c9b0a1d00358b1f656d21ad99168613758046e64749845d8a7dd",
+    "path": "/workspace/ctm-opct-stage2-20260804/checkpoint/rmct_paper_isambard_phase2_qwen3_5_9b_opct_rng_repair_4gpu_20260803_opct-lr-1e-4"
+  },
+  "condition": "opct-phase2-hf-peft",
+  "connections_per_worker": 100,
+  "grader_max_tokens": 256,
+  "grader_model": "openrouter/openai/gpt-5.6-luna-20260709",
+  "manifest": {
+    "path": "/workspace/ctm-ood-hle-20260802/repo/artifacts/stage2-ood-hle-2x2-20260802-r1/manifest.json",
+    "sha256": "f13253b3bdc2536eb726100f419761b1a9be7db1f1cc6140f20f169f1a2d492e"
+  },
+  "schema": "opct-stage2-incremental-luna-consumer-v1",
+  "source_files": {
+    "ctm_data/adapters/mcq_bias/luna_config.py": "fa3e2ab9816e4e0cc4cd4859631dc21eb88ee62232b6aabee08825d63b749594",
+    "ctm_data/adapters/mcq_bias/luna_scorer.py": "d02d21ee37ba95ddbc4eb1d9685b3d881d394c14c412fce89c4ab47bb16bba43",
+    "experiments/stage2_ood_hle/grade_luna.py": "3cc92feca4e86f63a9328d6fffd18a14a5411334355eb2c33c3c9159a5f8938c",
+    "experiments/stage2_ood_hle/hf_peft_resume.py": "5af0dd4ecf72c6772ee9905655cc4e2b4b4527eb12ee45af216e54f070e27a63",
+    "experiments/stage2_ood_hle/hf_peft_runner.py": "e3f139a9975be8df7036bfecf97e07624066e6e597543701fc8a55ce63c3455a",
+    "experiments/stage2_ood_hle/incremental_grade_luna.py": "56209ae21e55189c44283d818c3905def3d33aa146245f3ba4d1500f1f39a9da",
+    "experiments/stage2_ood_hle/materialize.py": "d58460994aef0792fd101480146cd66d1aeab9f3c4d968e0c2ef45afaeb514e4",
+    "experiments/stage2_ood_hle/raw_preflight.py": "837b47c4b246ed97a2b8f7c219cf720cdeac5e331f4d46877d971030f17798bc",
+    "experiments/stage2_ood_hle/stage_luna.py": "581c1e8636d78503f838d1537b0a0fbe24b25f8970ab66dd5db6e30c0bc74b7a",
+    "experiments/stage2_ood_hle/tasks.py": "81291139cab9305eadee281f7514661ece0f11ecb054995eb11b15c2b5b95d5e"
+  },
+  "staged_raw_root": "/workspace/ctm-opct-stage2-20260804/run/luna-incremental-staged-v1",
+  "derived_output_root": "/workspace/ctm-opct-stage2-20260804/run/luna-incremental-derived-v1",
+  "workers": 5
+}

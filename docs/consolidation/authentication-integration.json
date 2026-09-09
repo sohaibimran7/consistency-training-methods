@@ -1,0 +1,63 @@
+{
+  "source_worktree": "/Users/work/.codex/worktrees/a295/consistency-training-methods",
+  "observed_on": "2026-09-08",
+  "files": [
+    {
+      "path": "infra/isambard/auth.py",
+      "sha256": "1793c022d4baa2a1ee17ac6465faceebfb46b17894bda4fead7f6ef7e9505f3e"
+    },
+    {
+      "path": "infra/isambard/AUTHENTICATION.md",
+      "sha256": "a29feca272312e6d79029447f3945f988290b46365fec1d106903ab934ba399c"
+    },
+    {
+      "path": "infra/isambard/jobs.py",
+      "sha256": "e60749414be99eae504233d4536c1a9c6eb5526602f37aac50fed64e18d99364"
+    },
+    {
+      "path": "infra/isambard/job_controller.py",
+      "sha256": "a8765da70600bb5c89df9055b7d2d2a046d3c23e722be9c38885c149030e060f"
+    },
+    {
+      "path": "infra/isambard/job_transport.py",
+      "sha256": "3055de53fe60aef300ad2685c17c87f75113d00789ca09191bb9809d0a633b34"
+    },
+    {
+      "path": "infra/isambard/job_adapters.py",
+      "sha256": "686a10e037732447ec99491ae2b515db111172376037271d9aebe261fa75d68c"
+    },
+    {
+      "path": "infra/isambard/install_jobs.py",
+      "sha256": "4cce8763a2d21f3e8513afa0625ef65711245f48cfc10e1730aee7e35b8918b7"
+    },
+    {
+      "path": "infra/isambard/JOBS.md",
+      "sha256": "e6affc17fcc23ab04081cadbc5da2e75af93afd69fb667498722404fab3b1463"
+    },
+    {
+      "path": "infra/isambard/AGENTS.jobs.md",
+      "sha256": "0ce04bac86ac960b5cd1ba912afb888392e4c602098349282c947ddac01012b8"
+    },
+    {
+      "path": "tests/test_isambard_auth.py",
+      "sha256": "299299bf9a29c0b5d11ceebf0a2b034b89ae9b2a041bcbbffa3fa9a7c13d348b"
+    },
+    {
+      "path": "tests/test_isambard_job_controller.py",
+      "sha256": "f01a6c3ec62020900f59031828369d6bd9c5b12542021ac7b4ac890ca2bab5cb"
+    },
+    {
+      "path": "tests/test_isambard_job_transport.py",
+      "sha256": "77c666b3112fd1141e42c0acbbf5b4539db9e73367f754a0b699466b5008a0aa"
+    },
+    {
+      "path": "tests/test_isambard_job_adapters.py",
+      "sha256": "947ef4edfe272f6a0584adca4e7d8bdd79ee3fee5f73f37a580620ac12e10d30"
+    },
+    {
+      "path": "tests/test_isambard_jobs_cli.py",
+      "sha256": "0de13680ae0493758eae4ecbff18dc78847c7a48092069368702e8f7e7e99f06"
+    }
+  ],
+  "note": "Copied stable helper/controller sources only. Installed helper and shared controller state were not modified. README integrated authentication and shared-controller sections into the existing training/Figure6 documentation."
+}

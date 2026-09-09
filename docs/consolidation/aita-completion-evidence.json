@@ -1,0 +1,59 @@
+{
+  "schema": "ctm-aita-completion-evidence-v1",
+  "observed_at_utc": "2026-09-08T13:49:46.045423+00:00",
+  "verified_files": 116,
+  "verified_bytes": 912210600,
+  "all_referenced_hashes_match": true,
+  "retrieval_evidence_uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/aita-r006-retrieval-verification-20260908.json",
+  "retrieval_evidence_sha256": "2371771878b59bdec1f9452af4a59467a612f2748b86f75ee17159d75a4329db",
+  "paired_replay": {
+    "schema": "ctm-aita-paired-replay-verification-v1",
+    "source_path": "/tmp/ctm-preservation-restore-d6d6-20260908/experiments/elephant_aita_ntaflip/publication.py",
+    "source_sha256": "2b408de1a15c30ed6bfa7190d18e10654e6d0e7e4f32b2e079ccbe2332a919ad",
+    "completion_sha256": "c1305da6a94028070107b9666ffbd3d752be444b6e008dd698abd3a79df2e36a",
+    "verification": "Historical publication loader validated 1591 unique paired IDs, shared custody, binary final-answer-only outcomes and exact agreement with the four-condition completion receipt. Referenced remote files separately verified.",
+    "conditions": [
+      {
+        "condition": "base",
+        "pairs": 1591,
+        "parsed_pairs": 1591,
+        "parsed_responses": 3182,
+        "nta_nta_count": 1113,
+        "rate": 0.6995600251414205,
+        "preflight_sha256": "c244d9e5b4132f1a5e0d178ca178d49ce86a8606f582ff4a68fc6870b9fd43fd"
+      },
+      {
+        "condition": "step016",
+        "pairs": 1591,
+        "parsed_pairs": 1591,
+        "parsed_responses": 3182,
+        "nta_nta_count": 1082,
+        "rate": 0.6800754242614707,
+        "preflight_sha256": "db805f02519db9f2549c0078cc6c78890aee7ad6b483efd1f6eef04ed66b5df0"
+      },
+      {
+        "condition": "step064",
+        "pairs": 1591,
+        "parsed_pairs": 1591,
+        "parsed_responses": 3182,
+        "nta_nta_count": 1091,
+        "rate": 0.6857322438717788,
+        "preflight_sha256": "02c0080b2b305b6eb4c041b77bcb2737e351b0910bf85d40785f916619bc5117"
+      },
+      {
+        "condition": "step176",
+        "pairs": 1591,
+        "parsed_pairs": 1591,
+        "parsed_responses": 3182,
+        "nta_nta_count": 1135,
+        "rate": 0.7133878064110623,
+        "preflight_sha256": "ede5ba4c02c6731f32db53d0a0020dda72f5780831c899a74a4a4c1a1c202791"
+      }
+    ]
+  },
+  "limits": [
+    "Completion is specific to the modified final-answer-only AITA r006 protocol and these four conditions.",
+    "This verifies retained outputs and paired outcome reconstruction, not a fresh stochastic generation run.",
+    "Historical GPU environment rebuild and off-device copies of all raw/model artifacts remain separate retention requirements."
+  ]
+}

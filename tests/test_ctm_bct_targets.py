@@ -8,6 +8,7 @@ from ctm.backends.base import SampledSequence
 from ctm.generation_provenance import make_generator_identity
 from ctm.training.bct_targets import (
     BCTProgressStore,
+    build_bct_progress_identity,
     build_bct_rows_from_completions,
     build_completion_export_generation_provenance,
     completions_from_rows,
@@ -381,3 +382,55 @@ def test_write_bct_target_artifacts_rejects_conflicting_partial_publication(tmp_
             control_messages_field="unbiased_messages",
             generation_config={},
         )
+
+
+def test_generate_bct_rows_preserves_explicit_eos_only_generation():
+    prompts = prepare_paired_prompts(
+        _rows(1),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+    sampler = _Sampler()
+
+    asyncio.run(
+        generate_bct_rows(
+            prompts,
+            sampler=sampler,
+            renderer=_Renderer(),
+            tokenizer=_Tokenizer(),
+            max_tokens=None,
+        )
+    )
+
+    assert sampler.calls == [(0, None, 0.0, [0], 1)]
+
+
+def test_bct_progress_identity_tracks_base_only_worker_topology_without_changing_prompt_order(tmp_path):
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+    prompts = prepare_paired_prompts(
+        _rows(),
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+    )
+
+    identity = build_bct_progress_identity(
+        prompts,
+        source_files=[source],
+        model="unit/model",
+        backend="local frozen-base vllm (logical_workers=0,1, gpu_memory_utilization=0.9)",
+        source_messages_field="unbiased_messages",
+        main_messages_field="biased_messages",
+        control_messages_field="unbiased_messages",
+        generation_config={"max_tokens": 99, "temperature": 0.0, "max_concurrency": 2},
+    )
+    changed_topology = {**identity, "backend": identity["backend"].replace("0,1", "0")}
+
+    assert identity["prompt_count"] == 3
+    assert identity["prompts_sha256"]
+    directory = tmp_path / "progress"
+    BCTProgressStore(directory, identity)
+    with pytest.raises(ValueError, match="identity differs"):
+        BCTProgressStore(directory, changed_topology)

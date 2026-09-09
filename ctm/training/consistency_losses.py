@@ -405,8 +405,16 @@ class MLPConsistencyLoss(ConsistencyLoss):
             aligned_clean = clean_neurons[:, clean_start_index : clean_start_index + actual_len, :].detach()
             aligned_adv = adv_neurons[:, start_index : start_index + actual_len, :]
             if self.normalize:
-                aligned_clean = F.normalize(aligned_clean, p=2, dim=-1)
-                aligned_adv = F.normalize(aligned_adv, p=2, dim=-1)
+                # Cosine similarity is especially susceptible to BF16 rounding
+                # around one. Normalize its inputs in FP32 so an exactly
+                # matched pair cannot acquire a small negative ``1 - cosine``
+                # loss from the reduced-precision norm.
+                if self.distance_metric == "cosine":
+                    aligned_clean = F.normalize(aligned_clean.float(), p=2, dim=-1)
+                    aligned_adv = F.normalize(aligned_adv.float(), p=2, dim=-1)
+                else:
+                    aligned_clean = F.normalize(aligned_clean, p=2, dim=-1)
+                    aligned_adv = F.normalize(aligned_adv, p=2, dim=-1)
             layer_loss = self._compute_distance(aligned_adv, aligned_clean)
             layer_weight = _get_layer_weight(self.layer_weights_type, layer_idx, num_layers)
             total_loss = total_loss + layer_weight * layer_loss
@@ -422,7 +430,12 @@ class MLPConsistencyLoss(ConsistencyLoss):
 
     def _compute_distance(self, adv: torch.Tensor, clean: torch.Tensor) -> torch.Tensor:
         if self.distance_metric == "cosine":
-            return (1 - F.cosine_similarity(adv, clean, dim=-1)).mean()
+            # Do the dot product and norm in FP32 even when the model forward
+            # is BF16.  The mathematical range is [-1, 1], but finite-precision
+            # cosine can otherwise exceed one slightly and turn a distance
+            # negative late in a successful MLPCT run.
+            similarity = F.cosine_similarity(adv.float(), clean.float(), dim=-1).clamp(-1.0, 1.0)
+            return (1 - similarity).mean()
         elif self.distance_metric == "mse":
             return F.mse_loss(adv, clean)
         elif self.distance_metric == "smooth_l1":

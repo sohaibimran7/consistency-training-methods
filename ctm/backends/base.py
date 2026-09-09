@@ -85,7 +85,7 @@ class SamplerHandle(PolicyScorerHandle, Protocol):
         self,
         prompt: Any,
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,

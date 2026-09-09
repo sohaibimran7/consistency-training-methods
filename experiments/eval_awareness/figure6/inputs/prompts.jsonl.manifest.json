@@ -1,0 +1,57 @@
+{
+  "artifact_schema": "ctm.eval_awareness.figure6_prompts",
+  "content_sha256": "eae540adca34bdab00ad0fab200fa6d615e69fe87e7abfa8431324a59e1ac47a",
+  "provenance": {
+    "dataset_configs": [
+      "prompts_safety",
+      "prompts_capability"
+    ],
+    "dataset_id": "aisa-group/EvalAwareBench",
+    "dataset_license": "CC-BY-NC-4.0",
+    "dataset_revision": "736bda484525041972fa214eaf72f3beba492666",
+    "selection": {
+      "conditions": [
+        "baseline",
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5",
+        "F6",
+        "F7",
+        "F8"
+      ],
+      "row_count": 1800,
+      "rule": "one exact baseline plus each exact singleton F1-F8 per task and valence",
+      "task_pair_count": 100,
+      "task_variant_count": 200,
+      "valences": [
+        "safety",
+        "capability"
+      ]
+    },
+    "source_configs": [
+      "prompts_safety",
+      "prompts_capability"
+    ],
+    "source_files": {
+      "prompts_capability": {
+        "content_sha256": "8879bc8fbf60fd14eeba5e231b38950d7375ade03657d1488e6a113a4799d0df",
+        "file_name": "prompts_capability.jsonl",
+        "row_count": 25600
+      },
+      "prompts_safety": {
+        "content_sha256": "748521a9901acb9f8f4393015d2e943af69d5f6930756a81594c59c0af726d55",
+        "file_name": "prompts_safety.jsonl",
+        "row_count": 25600
+      }
+    },
+    "source_license": "CC-BY-NC-4.0",
+    "source_revision": "736bda484525041972fa214eaf72f3beba492666",
+    "source_row_count": 51200,
+    "upstream_code_repository": "https://github.com/aisa-group/decomposing-eval-awareness",
+    "upstream_code_revision": "446be5c605b56a60d4efe2526f0cbf55522c523a"
+  },
+  "row_count": 1800,
+  "schema_version": 1
+}

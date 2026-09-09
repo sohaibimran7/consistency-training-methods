@@ -1,0 +1,164 @@
+name: rmct256-from-base-20260804
+experiment_factory: experiments.rmct_256.plan:compile_experiment
+
+# A fresh, immutable RMCT-only experiment derived from the approved Qwen3.5
+# paper-fidelity phase-2 base.  The scientific condition is shared between the
+# two declared coordinator/worker profiles, but a launcher must choose one
+# profile explicitly; it cannot silently substitute an ambient GPU count.
+spec:
+  topology_profiles:
+    four-gpu:
+      target: rmct-256-4gpu
+      run_name: rate-matching-lr-1e-4-4gpu
+      gpu_count: 4
+      rollout_gpus: [1, 2, 3]
+    eight-gpu:
+      target: rmct-256-8gpu
+      run_name: rate-matching-lr-1e-4-8gpu
+      gpu_count: 8
+      rollout_gpus: [1, 2, 3, 4, 5, 6, 7]
+
+  model: Qwen/Qwen3.5-9B
+  backend: local
+  seed: 42
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-rmct256-from-base-20260804
+  figure_root: figures/rmct-hle-qwen3.5-9b-dense-rmct256-from-base-20260804
+  training_only: true
+  onpolicy_target_attestation: true
+
+  learning_rates:
+    - {name: "1e-4", value: 0.0001}
+
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+  local:
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.34
+    rollout_gpu_memory_utilization: 0.75
+    rollout_seed_base: 42
+    vllm_language_model_only: true
+    vllm_max_num_seqs: 256
+    vllm_max_num_batched_tokens: 8192
+    vllm_max_model_len: 32768
+    vllm_gdn_prefill_backend: triton
+    gradient_checkpointing: true
+    gradient_checkpointing_layers: 16
+    forward_microbatch_max_datums: 8
+    forward_microbatch_max_tokens: 20480
+    target_logprob_chunk_size: 2048
+
+  data:
+    # Training-only compilation must never regenerate or overwrite this
+    # selection. The target attestation requires its full content proof.
+    shared_root: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801
+    prepare_shared: false
+    training:
+      bias_type: wrong_argument
+      datasets: [logiqa, hellaswag]
+      prompt_style: none
+      pool_per_dataset: 128
+      minimum_per_dataset: 128
+      examples: 256
+      argument_model: openrouter/google/gemma-4-31b-it
+      pairs_path: artifacts/rmct-256-training-20260804/rmct-256-training-7602aca7f92312e24b884a8dd4f290a5c2374350e51cd3b6bf3fffbcf216a55a.jsonl
+      selection_manifest: artifacts/rmct-256-training-20260804/rmct-256-training-manifest-5c18fa31ddaaca76256bef15cc54ddfa0f103287b0f5c940fd0a87cc8e2e179e.json
+    instruction: {source: cleaned_alpaca, examples: 2048}
+    evaluation:
+      source: hle
+      expected_source_count: 513
+      questions: 100
+      biases: [suggested_answer, distractor_fact, wrong_argument, post_hoc, spurious_few_shot_squares, wrong_few_shot]
+      minimum_questions_by_bias: {wrong_argument: 92}
+      argument_model: openrouter/google/gemma-4-31b-it
+      grader_model: openrouter/google/gemma-4-31b-it
+
+  # RMCT main only. There is deliberately no rate-matching control target.
+  conditions:
+    - {name: untrained, method: none}
+    - {name: rate-matching, method: rate_matching}
+
+  # Required by the common compiler but unused by this training-only RMCT plan.
+  supervised_consistency:
+    batch_size: 1
+    gradient_accumulation_steps: 128
+    epochs: 1
+    save_every: 16
+    learning_rate_schedule: linear
+    bias_augmented_targets: {max_tokens: 20480, temperature: 1.0, max_concurrency: 32}
+    method_config:
+      act: {layer_selection: all, normalize: false}
+      attct: {layer_selection: all, layer_weights: uniform}
+      mlpct: {variant: hidden, layer_selection: all, layer_weights: uniform, distance_metric: cosine, normalize: false}
+
+  # Preserve the approved PPO/pooled-GRPO contract while increasing the frozen
+  # selection to 256 datapoints. ``save_state`` persists optimizer state for
+  # custody/recovery; it does not claim an exact on-policy continuation because
+  # worker/RNG rollout state is not restored by this flag alone.
+  rate_matching:
+    datapoints: 256
+    rollouts: {reference: 96, training: 96, consistency: 96, anchor: 96}
+    batch_size: 4
+    epochs: 1
+    temperature: 1.0
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 0.05
+    anchor_weight: 0.0
+    anchor_model: base
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: pooled
+    gradient_accumulation_steps: 1
+    refresh_every: 1
+    checkpoint_every: 16
+    save_state: true
+
+  # Required by the common compiler but unused by either declared condition.
+  opct:
+    learning_rates:
+      - {name: "1e-4", value: 0.0001}
+    batch_size: 1
+    gradient_accumulation_steps: 16
+    epochs: 1
+    rollouts_per_prompt: 4
+    temperature: 0.7
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 2.0
+    kl_discount_factor: 0.9
+    loss: importance_sampling
+    checkpoint_every: 8
+
+  evaluation:
+    max_tokens: 20480
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 20
+    provider: vllm
+    max_tasks: 1
+    isolate_tasks: true
+    persistent_vllm_server: true
+    model_args: {gpu_memory_utilization: 0.9, max_model_len: 32768, language_model_only: true, max_num_seqs: 256}
+  tracking: {wandb_project: rmct256_from_base_20260804}
+
+  reports:
+    held_out_exclude: [wrong_argument]
+    standard_error: inspect
+    significance_baseline: untrained
+    charts:
+      switch: experiments/rmct_paper_vast_more_methods/switch_chart.json
+      away-switch: experiments/rmct_paper_vast_more_methods/away_switch_chart.json
+      total-switch: experiments/rmct_paper_vast_more_methods/total_switch_chart.json
+      accuracy: experiments/rmct_paper_vast_more_methods/unbiased_accuracy_chart.json
+      verbalisation: experiments/rmct_paper_vast_more_methods/verbalisation_chart.json
+    items:
+      - {name: towards-bias-switch, metric: towards_bias_switch, chart: switch}
+      - {name: bias-verbalised, metric: bias_acknowledged, chart: verbalisation}
+      - {name: bias-verbalised-given-towards-bias-switch, metric: bias_acknowledged, given: towards_bias_switch, chart: verbalisation}
+      - name: bias-verbalised-given-total-bias-switch
+        metric: bias_acknowledged
+        where: {metric: abs_switch, op: gt, value: 0}
+        chart: verbalisation
+      - {name: away-from-bias-switch, metric: away_from_bias_switch, chart: away-switch}
+      - {name: total-bias-switch, metric: total_bias_switch, chart: total-switch}
+      - {name: unbiased-accuracy, metric: correct, variant: unbiased, held_out_summary: false, chart: accuracy}

@@ -1,0 +1,21 @@
+{
+  "schema": "ctm-consolidation-validation-v1",
+  "revision": "af9a6a409a49c163c1c9c75eed38a6fd93c20da3",
+  "linux_ci": {
+    "url": "https://github.com/sohaibimran7/consistency-training-methods/actions/runs/34237627335",
+    "conclusion": "success",
+    "completed_at_utc": "2026-09-08T14:22:56Z",
+    "platform": "Ubuntu 22.04 x86_64",
+    "python": "3.11.12",
+    "environment": "environments/cpu.lock",
+    "tests_passed": 1059,
+    "warnings": 45,
+    "elapsed_test_seconds": 107.12
+  },
+  "local_baseline": {
+    "platform": "macOS arm64 primary environment",
+    "tests_passed": 1059,
+    "note": "1056 passed in the sandbox; the 3 distributed socket tests passed separately with local loopback access."
+  },
+  "scope": "Consolidation baseline before the preserved d6d6 source merge. Does not certify later commits or GPU numerical behavior."
+}

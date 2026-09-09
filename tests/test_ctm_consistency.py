@@ -27,8 +27,10 @@ from ctm.core.config import AdamConfig, LoRAConfig
 from ctm.training.consistency_data import (
     build_consistency_datum,
     build_consistency_datums,
+    build_consistency_datums_with_audit,
     find_content_token_boundary,
     longest_matching_suffix_len,
+    require_full_reference_suffix_alignment,
 )
 
 VOCAB = 128
@@ -153,6 +155,23 @@ class TestMLPConsistencyLoss:
         clean_states = [torch.randn(1, 6, 5) for _ in range(2)]
         out = MLPConsistencyLoss()(None, None, **IDX, clean_mlp_states=clean_states, adv_mlp_states=adv_states)
         assert out["loss"].item() > 1e-3
+        out["loss"].backward()
+        assert adv_states[0].grad is not None
+
+    def test_bfloat16_cosine_distance_is_bounded_and_differentiable(self):
+        # BF16 cosine can round slightly above one without the FP32/clamp
+        # guard.  A distance is never negative, including at convergence.
+        torch.manual_seed(5)
+        adv_states = [torch.randn(1, 8, 5, dtype=torch.bfloat16, requires_grad=True) for _ in range(2)]
+        clean_states = [state[:, 2:8, :].detach().clone() for state in adv_states]
+        out = MLPConsistencyLoss(normalize=True)(
+            None,
+            None,
+            **IDX,
+            clean_mlp_states=clean_states,
+            adv_mlp_states=adv_states,
+        )
+        assert 0.0 <= out["loss"].item() <= 2.0
         out["loss"].backward()
         assert adv_states[0].grad is not None
 
@@ -290,6 +309,42 @@ class TestConsistencyData:
         assert get("clean_len") == 6
         assert get("start_index") > get("clean_start_index")
 
+    def test_alignment_audit_certifies_complete_reference_suffix(self):
+        datums, audit = build_consistency_datums_with_audit(word_tokenizer(), [sample(), sample()])
+
+        assert len(datums) == 2
+        assert audit["attempted_rows"] == audit["aligned_rows"] == 2
+        assert audit["skipped_rows"] == 0
+        assert audit["alignment_text"] == {
+            "field": None,
+            "uses_complete_reference_user_message": True,
+        }
+        assert audit["checks"] == {
+            "all_pairs_aligned": True,
+            "all_variants_end_with_complete_reference_user_message": True,
+            "all_matching_suffixes_cover_content_window": True,
+        }
+        assert audit["token_windows"]["content_length"] == {"min": 6, "median": 6, "max": 6}
+        require_full_reference_suffix_alignment(audit)
+
+    def test_strict_alignment_rejects_question_only_alignment_even_when_tokenizable(self):
+        external = {
+            "reference_messages": [{"role": "user", "content": f"please {CLEAN} answer now"}],
+            "variant_messages": [{"role": "user", "content": f"my professor says five . {CLEAN} give conclusion"}],
+            "shared_question": CLEAN,
+        }
+        datums, audit = build_consistency_datums_with_audit(
+            word_tokenizer(),
+            [external],
+            alignment_text_field="shared_question",
+        )
+
+        assert len(datums) == 1
+        assert audit["checks"]["all_pairs_aligned"] is True
+        assert audit["checks"]["all_variants_end_with_complete_reference_user_message"] is False
+        with pytest.raises(ValueError, match="complete reference user message"):
+            require_full_reference_suffix_alignment(audit)
+
     def test_trailing_assistant_message_is_dropped(self):
         s = sample()
         s["variant_messages"] = s["variant_messages"] + [{"role": "assistant", "content": "five"}]
@@ -373,11 +428,7 @@ class TestLocalBackendConsistency:
         backend.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=4))
         out = asyncio.run(step(backend, [consistency_datum()], "activation_consistency", lr=1e-3))
         assert math.isfinite(out.metrics["loss"])
-        assert all(
-            "attn" in name
-            for name, parameter in backend.model.named_parameters()
-            if parameter.requires_grad
-        )
+        assert all("attn" in name for name, parameter in backend.model.named_parameters() if parameter.requires_grad)
 
 
 @pytest.mark.skipif(not HAS_PEFT, reason="peft not installed")
@@ -391,6 +442,8 @@ class TestLocalBackendConsistencyLoRA:
     def test_loss_finite_and_grads_reach_adapter(self, loss_fn):
         backend = self.make_backend()
         datums = [consistency_datum(), consistency_datum(clean=(9, 8, 7, 6), prefix=(2, 3, 4))]
+        lm_head_calls = []
+        hook = backend.model.get_output_embeddings().register_forward_hook(lambda *_args: lm_head_calls.append(True))
 
         async def run():
             pending = await backend.submit_forward_backward(datums, loss_fn)
@@ -400,7 +453,11 @@ class TestLocalBackendConsistencyLoRA:
             await (await backend.submit_optim_step(learning_rate=1e-3, adam=AdamConfig())).result()
             return out
 
-        out = asyncio.run(run())
+        try:
+            out = asyncio.run(run())
+        finally:
+            hook.remove()
+        assert lm_head_calls == []
         assert math.isfinite(out.metrics["loss"])
         assert out.metrics["loss"] >= 0
         assert out.logprobs == []

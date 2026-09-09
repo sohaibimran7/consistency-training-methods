@@ -10,22 +10,21 @@ Canonical home of helpers previously in ``cot_transparency.apis.tinker.common``
 ``parse_response_text``); those modules now re-export from here.
 """
 
+from collections.abc import Mapping
 from typing import Any, Literal
 
 import torch
 from tinker import types
-from tinker_cookbook.renderers.base import TrainOnWhat
-from transformers import AutoTokenizer
-
 from tinker_cookbook import model_info, renderers
-from tinker_cookbook.renderers.base import get_text_content
+from tinker_cookbook.renderers.base import TrainOnWhat, get_text_content
 from tinker_cookbook.tokenizer_utils import get_tokenizer
+from transformers import AutoTokenizer
 
 
 def _flat_token_ids(value: Any, *, operation: str) -> list[int]:
     """Normalize one unbatched HF chat-template result to integer token IDs."""
 
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         value = value.get("input_ids")
     if hasattr(value, "tolist"):
         value = value.tolist()
@@ -34,6 +33,25 @@ def _flat_token_ids(value: Any, *, operation: str) -> list[int]:
     if not isinstance(value, list) or any(not isinstance(token, int) or isinstance(token, bool) for token in value):
         raise TypeError(f"Hugging Face chat template returned invalid token IDs while {operation}")
     return value
+
+
+def _flat_offsets(value: Any, *, operation: str) -> list[tuple[int, int]]:
+    """Normalize one unbatched fast-tokenizer offset mapping."""
+
+    if isinstance(value, Mapping):
+        value = value.get("offset_mapping")
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+        value = value[0]
+    if not isinstance(value, list) or any(
+        not isinstance(offset, (list, tuple))
+        or len(offset) != 2
+        or any(not isinstance(item, int) or isinstance(item, bool) for item in offset)
+        for offset in value
+    ):
+        raise TypeError(f"Hugging Face tokenizer returned invalid offsets while {operation}")
+    return [(start, end) for start, end in value]
 
 
 class HuggingFaceChatTemplateRenderer:
@@ -90,13 +108,55 @@ class HuggingFaceChatTemplateRenderer:
             operation="building the supervised prompt prefix",
         )
         full = self._apply(messages, add_generation_prompt=False, operation="building the supervised example")
-        if len(full) <= len(prefix) or full[: len(prefix)] != prefix:
-            raise ValueError(
-                "the Hugging Face chat template does not preserve the generation-prompt prefix for a completed "
-                "assistant message; refusing to guess the supervised loss mask"
-            )
-        weights = torch.tensor([0.0] * len(prefix) + [1.0] * (len(full) - len(prefix)))
+        if len(full) > len(prefix) and full[: len(prefix)] == prefix:
+            weights = torch.tensor([0.0] * len(prefix) + [1.0] * (len(full) - len(prefix)))
+        else:
+            weights = self._assistant_content_boundary_weights(messages, full)
         return types.ModelInput.from_ints(tokens=full), weights
+
+    def _assistant_content_boundary_weights(self, messages: list[dict], full: list[int]) -> torch.Tensor:
+        """Mask from the exact final assistant content when templates rewrite the role prefix.
+
+        Some hybrid-model templates render a generation prompt differently from
+        a completed assistant turn, so token-prefix subtraction is unavailable.
+        The rendered assistant content is still an exact string region. A fast
+        tokenizer's offsets give that region a deterministic token boundary;
+        tokens after it include the assistant content and turn terminator.
+        """
+
+        error = (
+            "the Hugging Face chat template does not expose a provable assistant-content token boundary; "
+            "refusing to guess the supervised loss mask"
+        )
+        content = messages[-1].get("content")
+        if not isinstance(content, str) or not content:
+            raise ValueError(error)
+        try:
+            rendered = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            if not isinstance(rendered, str):
+                raise TypeError("rendered chat is not a string")
+            content_start = rendered.rfind(content)
+            if content_start < 0:
+                raise ValueError("assistant content is absent from the rendered chat")
+            encoded = self.tokenizer(
+                rendered,
+                add_special_tokens=False,
+                return_offsets_mapping=True,
+            )
+            rendered_ids = _flat_token_ids(encoded, operation="locating the assistant content")
+            offsets = _flat_offsets(encoded, operation="locating the assistant content")
+            if rendered_ids != full or len(offsets) != len(full):
+                raise ValueError("offset tokenization differs from chat-template tokenization")
+            boundary = next((index for index, (_start, end) in enumerate(offsets) if end > content_start), None)
+            if boundary is None:
+                raise ValueError("no token overlaps the assistant content")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(error) from exc
+        return torch.tensor([0.0] * boundary + [1.0] * (len(full) - boundary))
 
     def get_stop_sequences(self) -> list[int]:
         eos = getattr(self.tokenizer, "eos_token_id", None)

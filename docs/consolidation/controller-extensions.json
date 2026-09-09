@@ -1,0 +1,22 @@
+{
+  "schema": "ctm-controller-extension-integration-v1",
+  "source_root": "/Users/work/.codex/worktrees/a295/consistency-training-methods",
+  "source_sha256": {
+    "infra/isambard/JOBS.md": "85f4483aa54964e563e6b35a1c8a0cd97398dfb7545dd9ff072d110cd2f75403",
+    "infra/isambard/job_adapters.py": "6ee8faa9f045e56e5aebd826585e76d67ae46819400021586fa1cc29705495d7",
+    "infra/isambard/job_controller.py": "8108dd77e26bf3bf01d7bd060eec3c385cba6efc5cb301a080e59bef9e4a47ec",
+    "infra/isambard/job_transport.py": "edf81fe55f975948c9133320e24bde63f3c46bad5ee4b6f7a594e0248a82947e",
+    "infra/isambard/jobs.py": "07f6fa95e671ae78467bc043d571a1bd27f8985c03d097915ee5e1667eb389a8",
+    "tests/test_isambard_bayesian_adapter.py": "26aa332b0e14e08d4591593c3ba4f863d73f770f24d117819eb105ff0444f19b",
+    "tests/test_isambard_job_adapters.py": "de92416c58e94ce6e223c20e808cb5a732234c47901f19d6404aea980d397e69",
+    "tests/test_isambard_job_controller.py": "4f01d77fae4cb3151d93fb8d73b4f41854439a2bffc43796e62c4d130d60b515",
+    "tests/test_isambard_job_transport.py": "dd071765a78408fa2b00117ef24ebffa5826a00080857a1290329951fa21b381",
+    "tests/test_isambard_jobs_cli.py": "2e0fb9bf65645a047965b1d6cb8d4158039ea4c150fd9d0b14a8e4f56c48af54",
+    "tests/test_isambard_luna_adapter.py": "eb068d1739e15b47aec41e5b73743bd7ba01b35c0b55bf772102c174f2e04b29"
+  },
+  "owner_receipt_uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/controller-extensions-source-20260908-v2/owner-receipt.json",
+  "owner_receipt_sha256": "9b3c156478fb95fcfab44d97d28ec7214489ea63d03941f911eff55f4f2f64f5",
+  "owner_tests_passed": 122,
+  "installed_state_changed_by_consolidation": false,
+  "note": "Owner installed this extension and supplied validation. Consolidation independently matched all11source digests and copied only repository source/tests/docs. Earlier receipt mismatch stopped its copy before source mutation."
+}

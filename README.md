@@ -17,6 +17,14 @@ data and training grader separately from the evaluation dataset, task, scorer,
 and judge. CTM does not infer an evaluation split or replace a benchmark's
 official evaluation method.
 
+Start with the [experiment catalogue](experiments/README.md) to find protocol
+status, source snapshots, artifact locations and result caveats. The
+[consolidation ledger](docs/consolidation/PLAN.md) records ongoing integration
+work and the [recovery guide](docs/consolidation/README.md) explains how to
+restore preserved experimental source.
+The [research workflow](docs/research-workflow.md) explains how to prepare,
+record, validate and retain a new experiment.
+
 ## Architecture
 
 ```mermaid
@@ -36,12 +44,20 @@ The dependency boundary is deliberate:
 - `ctm/` contains generic training, backend, artifact, and evaluation code.
 - `ctm_data/adapters/` contains benchmark-specific training adapters and data
   builders.
-- `experiments/` contains reproducible YAML composition files.
-- `scripts/` contains generic command-line entry points.
+- `experiments/` contains protocol definitions, YAML composition, experiment
+  analysis and immutable recovery contracts.
+- `scripts/` contains command-line entry points and the existing shared MCQ
+  experiment compiler.
 
-The `ctm/` package must not import concrete adapters or benchmark packages.
+The `ctm/` package must not import concrete adapters, benchmark packages,
+experiment modules or scripts.
 
 ## Installation
+
+For reproducible Linux CPU validation, use the committed
+[environment lock and clean-install instructions](environments/README.md).
+The GPU training and Figure 6 serving environments have distinct
+[Isambard profiles](infra/isambard/README.md#gpu-environment-profiles).
 
 Install the complete experiment environment:
 
@@ -237,6 +253,27 @@ grader failure and excluded from rates and gradients; it does not abort the
 run. Set the policy to `raise` for a fail-fast diagnostic run. If all usable
 advantages in a batch are zero or missing, CTM records the batch and skips the
 optimizer update.
+
+### Experimental phase-shared local execution
+
+The RMCT/RLCT entrypoint also has an opt-in phase-shared local execution path.
+It keeps persistent vLLM rollout workers and HF/PEFT replicated
+trainers on the same explicitly allocated GPUs, using vLLM level-1 sleep while
+the trainers run. This is an execution placement only: it does not change the
+configured objective, data selection, rollout budget, or optimizer settings.
+
+The replicated update is deliberately **not** PyTorch `DistributedDataParallel`:
+independent LoRA replicas deterministically shard the batch and NCCL-**SUM**
+their globally normalized gradients before AdamW. The path is implemented and
+has passed a four-GPU GH200 non-production preflight, but it has not yet passed
+a representative three-lane-versus-four-lane production benchmark. Do not use
+it for a production experiment until that benchmark is complete.
+
+See [the phase-shared status and evidence guide](docs/phase-shared-local-training.md)
+for the exact implemented optimisations, what the hardware preflight proves,
+and the next benchmark required before a production launch. Isambard setup and
+the non-production wrapper are documented in
+[infra/isambard/README.md](infra/isambard/README.md).
 
 ## BCT, OPCT, and representation consistency
 

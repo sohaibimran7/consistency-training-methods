@@ -1,0 +1,64 @@
+{
+  "schema": "ctm-worktree-registration-archive-v1",
+  "observed_on": "2026-09-08",
+  "reason": "Four stale registrations pointed to temporary worktrees that were already missing. Their complete registration metadata was moved, not deleted; commit ancestry is retained by the integrated Figure6 branch and initial Git bundle.",
+  "registrations": [
+    {
+      "registration": "figure6-judge-daa354e",
+      "missing_gitdir": "/private/tmp/figure6-judge-daa354e/.git",
+      "original": "/Users/work/consistency-training-methods/.git/worktrees/figure6-judge-daa354e",
+      "archive": "/Users/work/consistency-training-methods/.git/_archive/worktree-registrations-20260908/figure6-judge-daa354e",
+      "files_sha256": {
+        "ORIG_HEAD": "7a7166e3bbfbb0914f903a7b803d24798187489c82cce79c5897cb7140480086",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "HEAD": "7a7166e3bbfbb0914f903a7b803d24798187489c82cce79c5897cb7140480086",
+        "index": "edca37379498c590ac7a815c0a3d6c0a92d73dc750eb6c98e0e1e051c06081d9",
+        "gitdir": "b8d19c2aaad14806879fe45892b849399cc8ef3fbec6ae5c46db453ff4ce8003",
+        "logs/HEAD": "3959d147d4ab2e7045da4d6dd13e61d474456967509e790161e6f90416c178e9"
+      }
+    },
+    {
+      "registration": "figure6-judge-6c71f5f",
+      "missing_gitdir": "/private/tmp/figure6-judge-6c71f5f/.git",
+      "original": "/Users/work/consistency-training-methods/.git/worktrees/figure6-judge-6c71f5f",
+      "archive": "/Users/work/consistency-training-methods/.git/_archive/worktree-registrations-20260908/figure6-judge-6c71f5f",
+      "files_sha256": {
+        "ORIG_HEAD": "b524f3bcf26b7fe39690a46b7cb32730c4c5674a1abef0046feee2e570aeda22",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "HEAD": "b524f3bcf26b7fe39690a46b7cb32730c4c5674a1abef0046feee2e570aeda22",
+        "index": "546021bf40e2344e94db777393e0f50f1bbc55338a4d6342f4be156023b24787",
+        "gitdir": "03a75748f89e31f89fa4cbdd70a981b67a2cd5c49cd05f9c41e8af521c36cd6e",
+        "logs/HEAD": "c2598099990b737492115030134f2fc0b3e52fc391455100c828928dfd271bd2"
+      }
+    },
+    {
+      "registration": "figure6-judge-8f6d2b0",
+      "missing_gitdir": "/private/tmp/figure6-judge-8f6d2b0/.git",
+      "original": "/Users/work/consistency-training-methods/.git/worktrees/figure6-judge-8f6d2b0",
+      "archive": "/Users/work/consistency-training-methods/.git/_archive/worktree-registrations-20260908/figure6-judge-8f6d2b0",
+      "files_sha256": {
+        "ORIG_HEAD": "d297dc842289243ec56e2fa9d2860e93a6d96aadc0e005b624c3a0bb3e845fd5",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "HEAD": "d297dc842289243ec56e2fa9d2860e93a6d96aadc0e005b624c3a0bb3e845fd5",
+        "index": "2f470c71d818ef54b56afeb0580447f450445ab2ea35344e386bcb1a9c684204",
+        "gitdir": "c378e8895776c8b292fb61897f958af487eeb200dedab06d883d6eed15918229",
+        "logs/HEAD": "e2eb5392a07fc1b31a4eb2d1a52bc492cb75ba939d7747008f924d7c5a8ed9d7"
+      }
+    },
+    {
+      "registration": "figure6-judge-bde28e4",
+      "missing_gitdir": "/private/tmp/figure6-judge-bde28e4/.git",
+      "original": "/Users/work/consistency-training-methods/.git/worktrees/figure6-judge-bde28e4",
+      "archive": "/Users/work/consistency-training-methods/.git/_archive/worktree-registrations-20260908/figure6-judge-bde28e4",
+      "files_sha256": {
+        "ORIG_HEAD": "d2801bc454fa99a2e6f9897f015f82ff15e958271c60f73713c405d3a15125ae",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "HEAD": "d2801bc454fa99a2e6f9897f015f82ff15e958271c60f73713c405d3a15125ae",
+        "index": "90993cff1b034df83a4fd787bb8a4b6414b9ee8f8155740adbedcbfe43a84ae3",
+        "gitdir": "f02612d94a3fafbb237b631a0a90c36f9eaaee8d94b5ffe1603758b38d23a263",
+        "logs/HEAD": "bf945098c2a184409fa67cef2f029fa4c8cca8d25369f010861ea78c894960d9"
+      }
+    }
+  ],
+  "restore": "Move a registration directory back to its original .git/worktrees location only when intentionally restoring/repairing that missing worktree. Do not overwrite another registration."
+}

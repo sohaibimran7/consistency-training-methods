@@ -1,0 +1,430 @@
+name: act_repair_gate_qwen3_5_9b_20260731
+
+# A deliberately direct, single-method repair gate.  It does not use the
+# broad RMCT experiment factory: the aim is to establish whether paper-like
+# ACT can change behaviour when its shared-suffix assumption is actually true.
+#
+# The only input that must be staged on the remote machine is the immutable
+# 3,000-row source below.  Do *not* copy the old IID split manifest: it records
+# absolute paths from its original machine.  The gate-local prep wrapper
+# recreates a remote-local manifest and its exact 200-row train/held-out splits,
+# and safely resumes only byte-identical completed artifacts.
+variables:
+  model: Qwen/Qwen3.5-9B
+  frozen_iid_source: artifacts/stage1-iid-diagnostic-20260731/source/distractor-argument-pairs.jsonl
+  artifact_root: artifacts/act-repair-gate-20260731
+
+# CPU-only, no model or network calls.  The wrapper localizes the frozen IID
+# splits first, then derives one canonical prompt file per split. Each derived
+# file has 200 rows: 100 LogiQA and 100 HellaSwag.
+data_preparation:
+  - name: prepare_remote_local_gate_data
+    target: data
+    resource: cpu
+    command: ["${python}", -m, experiments.act_repair_gate.prepare]
+    args:
+      source: "${frozen_iid_source}"
+      output_dir: "${artifact_root}/data"
+
+# Exactly one local-GPU ACT training command.  The 200 canonical train-domain
+# pairs are repeated for 20 epochs at batch size one, producing exactly 4,000
+# optimizer steps if (and only if) every pair aligns.  The guard rechecks that
+# count after tokenization, so a malformed canonical artifact cannot silently
+# turn this into the previous 16-step training run.
+training:
+  - name: act_repair
+    target: act
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      backend: local
+      local_dtype: bfloat16
+      # ACT has no rollout phase.  HF avoids booting a vLLM sampler during
+      # the paired-forward training-only run.
+      local_sampler: hf
+      local_gradient_checkpointing: true
+      local_forward_microbatch_max_datums: 1
+      local_forward_microbatch_max_tokens: 20480
+      model: "${model}"
+      method: act
+      data: ["${artifact_root}/data/canonical-train-eval-n200.jsonl:200"]
+      data_manifest: ["${artifact_root}/data/canonical-train-eval-n200.manifest.json"]
+      reference_messages_field: unbiased_messages
+      variant_messages_field: biased_messages
+      # Deliberately omit alignment_text_field: ACT must train on the complete
+      # shared suffix, not a question-only fallback.
+      # The one-pair native HF/PEFT preflight records finite nonzero gradients
+      # for both Qwen3.5 attention families before the full repair trajectory.
+      qwen35_consistency_preflight: true
+      method_config:
+        weight: 0.00005
+        layer_selection: all
+        normalize: false
+      # Qwen3.5 has conventional and DeltaNet attention.  This is the
+      # attention-only paper analogue for both families; MLP projections stay
+      # frozen. The fixed list was meta-checked against Qwen3.5 as exactly 152
+      # Linear modules (all conventional and DeltaNet attention projections).
+      lora_config:
+        rank: 8
+        alpha: 16
+        dropout: 0.05
+        target_modules: [q_proj, k_proj, v_proj, o_proj, in_proj_qkv, in_proj_z, in_proj_b, in_proj_a, out_proj]
+        train_mlp: false
+        train_attn: false
+        train_unembed: false
+        seed: 42
+      optimizer_config:
+        # The experiment-wide fixed rate selected for this run family.
+        learning_rate: 0.0001
+        lr_schedule: constant
+        beta1: 0.9
+        beta2: 0.999
+        eps: 0.00000001
+        weight_decay: 0.01
+        grad_clip_norm: 1.0
+      batch_size: 1
+      gradient_accumulation_steps: 1
+      minimum_optimizer_steps: 4000
+      epochs: 20
+      save_every: 500
+      save_state: true
+      experiment_name: "${experiment}"
+      run_name: canonical-train-n200-4000steps
+      "yes": true
+
+# Four prompt/split cells are generated for the untrained base and the ACT
+# checkpoint.  Each canonical cell emits the two clean task logs first and
+# then its two canonical biased task logs.  Its paired native cell generates
+# only biased prompts and consumes those exact clean logs, so native versus
+# canonical differs only in the biased user prompt—not in the sampled clean
+# answer used for the conditional TBSR denominator.
+#
+# Keep this stage sequential (the runner default).  A native cell depends on
+# the immediately preceding canonical cell's clean logs, so --parallel would
+# be a dependency race even on a multi-GPU host.
+evaluation:
+  - name: untrained_canonical_train_eval
+    target: preflight
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_tasks
+      model: "vllm/${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: train_eval
+        unbiased_log: "logs/evals/${experiment}/untrained/canonical/train_eval"
+        variant_file: "${artifact_root}/data/canonical-train-eval-n200.jsonl"
+        include_bias_acknowledged: false
+      model_args:
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/untrained/canonical/train_eval"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+  - name: untrained_native_train_eval
+    target: preflight
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_biased_tasks
+      model: "vllm/${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: train_eval
+        unbiased_log: "logs/evals/${experiment}/untrained/canonical/train_eval"
+        include_bias_acknowledged: false
+      model_args:
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/untrained/native/train_eval"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+  - name: untrained_canonical_heldout_in_domain
+    target: preflight
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_tasks
+      model: "vllm/${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: heldout_in_domain
+        unbiased_log: "logs/evals/${experiment}/untrained/canonical/heldout_in_domain"
+        variant_file: "${artifact_root}/data/canonical-heldout-in-domain-n200.jsonl"
+        include_bias_acknowledged: false
+      model_args:
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/untrained/canonical/heldout_in_domain"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+  - name: untrained_native_heldout_in_domain
+    target: preflight
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_biased_tasks
+      model: "vllm/${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: heldout_in_domain
+        unbiased_log: "logs/evals/${experiment}/untrained/canonical/heldout_in_domain"
+        include_bias_acknowledged: false
+      model_args:
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/untrained/native/heldout_in_domain"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+  # Before the expensive generated-answer evaluation, use a fixed 4-per-
+  # dataset canonical slice (16 prompts across the two splits) to establish a
+  # real native HF/PEFT behavioral movement.  The following CPU command
+  # hashes the checkpoint, frozen sources, selected IDs, and report, and stops
+  # this target if the adapter has not strictly reduced direct TBSR on the
+  # training-domain portion of that tiny diagnostic.
+  - name: act_hf_tiny_behavior_report
+    target: act
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", -m, experiments.act_repair_gate.direct_answer]
+    args:
+      model: "${model}"
+      adapter: "${checkpoint}"
+      train_data: "${artifact_root}/data/canonical-train-eval-n200.jsonl"
+      heldout_data: "${artifact_root}/data/canonical-heldout-in-domain-n200.jsonl"
+      output_dir: "${artifact_root}/tiny-hf-behavioral-gate/direct-answer"
+      condition_name: act
+      limit_per_dataset: 4
+
+  - name: attest_act_hf_tiny_behavior
+    target: act
+    resource: cpu
+    command: ["${python}", -m, experiments.act_repair_gate.behavioral_gate]
+    args:
+      report: "${artifact_root}/tiny-hf-behavioral-gate/direct-answer/report.json"
+      adapter: "${checkpoint}"
+      train_data: "${artifact_root}/data/canonical-train-eval-n200.jsonl"
+      heldout_data: "${artifact_root}/data/canonical-heldout-in-domain-n200.jsonl"
+      output: "${artifact_root}/tiny-hf-behavioral-gate/attestation.json"
+      gate_split: train_eval
+      min_base_switches: 1
+      expected_limit_per_dataset: 4
+      require_pass: true
+
+  - name: act_canonical_train_eval
+    target: act
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_tasks
+      local_checkpoint: "${checkpoint}"
+      base_model: "${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: train_eval
+        unbiased_log: "logs/evals/${experiment}/act/canonical/train_eval"
+        variant_file: "${artifact_root}/data/canonical-train-eval-n200.jsonl"
+        include_bias_acknowledged: false
+      model_args:
+        provider: vllm
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/act/canonical/train_eval"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+  - name: act_native_train_eval
+    target: act
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_biased_tasks
+      local_checkpoint: "${checkpoint}"
+      base_model: "${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: train_eval
+        unbiased_log: "logs/evals/${experiment}/act/canonical/train_eval"
+        include_bias_acknowledged: false
+      model_args:
+        provider: vllm
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/act/native/train_eval"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+  - name: act_canonical_heldout_in_domain
+    target: act
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_tasks
+      local_checkpoint: "${checkpoint}"
+      base_model: "${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: heldout_in_domain
+        unbiased_log: "logs/evals/${experiment}/act/canonical/heldout_in_domain"
+        variant_file: "${artifact_root}/data/canonical-heldout-in-domain-n200.jsonl"
+        include_bias_acknowledged: false
+      model_args:
+        provider: vllm
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/act/canonical/heldout_in_domain"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+  - name: act_native_heldout_in_domain
+    target: act
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/run_evals.py]
+    args:
+      task_factory: experiments.stage1_iid_diagnostic.tasks:diagnostic_biased_tasks
+      local_checkpoint: "${checkpoint}"
+      base_model: "${model}"
+      task_args:
+        manifest: "${artifact_root}/data/manifest.json"
+        split: heldout_in_domain
+        unbiased_log: "logs/evals/${experiment}/act/canonical/heldout_in_domain"
+        include_bias_acknowledged: false
+      model_args:
+        provider: vllm
+        gpu_memory_utilization: 0.9
+        language_model_only: true
+        max_model_len: 32768
+        max_num_seqs: 256
+      generation_config:
+        max_tokens: 20480
+        temperature: 1.0
+        top_p: 0.95
+        top_k: 20
+        extra_body: {top_k: 20}
+      log_dir: "logs/evals/${experiment}/act/native/heldout_in_domain"
+      max_tasks: 1
+      isolate_tasks: true
+      persistent_vllm_server: true
+      "yes": true
+
+# These are raw, deterministic reports only.  The shared gate analyzer rejects
+# missing or duplicate cells and proves native/canonical comparability before
+# emitting a report.  They run after the corresponding target's evaluations
+# and before any optional Luna grading.
+analysis:
+  - name: analyze_untrained_raw_gate
+    target: preflight
+    resource: cpu
+    command: ["${python}", -m, experiments.stage1_iid_diagnostic.gate_analysis]
+    args:
+      native_root: "logs/evals/${experiment}/untrained/native"
+      canonical_root: "logs/evals/${experiment}/untrained/canonical"
+      condition: untrained
+      output: "${artifact_root}/analysis/untrained-raw.json"
+
+  - name: analyze_act_raw_gate
+    target: act
+    resource: cpu
+    command: ["${python}", -m, experiments.stage1_iid_diagnostic.gate_analysis]
+    args:
+      native_root: "logs/evals/${experiment}/act/native"
+      canonical_root: "logs/evals/${experiment}/act/canonical"
+      condition: act
+      output: "${artifact_root}/analysis/act-raw.json"
+
+# Render only the immutable local paired-switch reports.  This shares the main
+# paper figure renderer and intentionally makes no model, OpenRouter, or Luna
+# call.  It follows analysis so it cannot silently use incomplete raw logs.
+rendering:
+  - name: render_publication_style_tbsr
+    target: act
+    resource: cpu
+    command: ["${python}", -m, experiments.act_repair_gate.plot]
+    args:
+      untrained_report: "${artifact_root}/analysis/untrained-raw.json"
+      act_report: "${artifact_root}/analysis/act-raw.json"
+      output_dir: "${artifact_root}/figures"

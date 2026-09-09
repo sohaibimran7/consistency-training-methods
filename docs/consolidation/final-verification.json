@@ -1,0 +1,43 @@
+{
+  "revision": "8e4794803e0f44d478e6d5dca761c02d912f61e8",
+  "tree": "1c4b8be6790057b8062b32e907aea342b9586a33",
+  "snapshot": "/tmp/ctm-final-consolidation-candidate-20260908",
+  "schema": "ctm-final-consolidation-verification-v1",
+  "local_tests": {
+    "passed": 2114,
+    "skipped": 1,
+    "warnings": 45,
+    "elapsed_seconds": 263.74,
+    "platform": "macOS arm64 Python3.11.12, frozen Git export",
+    "log_sha256": "5049078c3e3e6861bb44cd25c3ee8e004ba2cf38c0979f6551bce8afbf015ff0",
+    "log_uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/final-consolidation-local-tests.log",
+    "skip_reason": "Gated local HLE artifacts are not present; tests/test_expedited_screen_import.py:149"
+  },
+  "gpu_or_paid_runs_started_by_consolidation": 0,
+  "registered_worktrees_remaining": 14,
+  "available_repository_references_verified": 44,
+  "catalogue_entries": 31,
+  "linux_ci": {
+    "url": "https://github.com/sohaibimran7/consistency-training-methods/actions/runs/34246401841",
+    "result": "success",
+    "tests_passed": 2114,
+    "tests_skipped": 1,
+    "warnings": 45,
+    "elapsed_test_seconds": 197.93,
+    "platform": "Ubuntu22.04 x86_64 CPython3.11.12",
+    "environment": "environments/cpu.lock",
+    "log_sha256": "eaa102342032039a4429988a8eb80028fd5de1b4da6e7e044a82a52c2c4d5c13",
+    "log_uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/final-ci-34246401841.log",
+    "completed_at_utc": "2026-09-08T15:45:38Z"
+  },
+  "production_runtime_qualification": "Not claimed. No campaign deployment or GPU/paid run was performed; historical hardware evidence retains its limited scope.",
+  "replacement_pr": {
+    "url": "https://github.com/sohaibimran7/consistency-training-methods/pull/10",
+    "state": "open_ready_for_review",
+    "superseded_prs_closed": [
+      6,
+      9
+    ],
+    "main_changed": false
+  }
+}

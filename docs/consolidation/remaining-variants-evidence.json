@@ -1,0 +1,2301 @@
+{
+  "asset_archive": {
+    "asset_bytes": 12745702,
+    "asset_count": 35,
+    "asset_tree_sha256": "3fc193690bd09d52b404064af252cdd1b0458bcce24d7dfde1eb7141b54000be",
+    "manifest": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/remaining-variant-assets-20260908/manifest.json",
+    "manifest_sha256": "c4a0fbb254f6e0cf3f9a4990fef05fc54d8d5fbb885396dfa3895972bc0da60a",
+    "root": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/remaining-variant-assets-20260908",
+    "source_and_archive_hashes_reverified": true,
+    "source_mutation": "none; original 3f19 worktree files were copied only"
+  },
+  "candidate_static_test_contracts": {
+    "tests/test_ctm_backend_cli.py": true,
+    "tests/test_ctm_local_backend.py": true,
+    "tests/test_ctm_phase_shared_cli.py": true,
+    "tests/test_ctm_phase_shared_topology.py": true,
+    "tests/test_ctm_replicated_backend.py": true,
+    "tests/test_ctm_rollout_workers.py": true,
+    "tests/test_ctm_vllm_sampler.py": true,
+    "tests/test_qwen35_vllm_rollout_compat.py": true
+  },
+  "coordination": {
+    "candidate_validation": {
+      "clean_linux_full_suite": "2003 passed",
+      "local_full_suite": "2003 passed",
+      "note": "Recorded from coordinator report; this static review did not run the suite.",
+      "status": "coordinator_reported"
+    },
+    "chart_configurations": {
+      "note": "Lorentz's final disposition: retain the four configurations only in the immutable a3ce snapshot. No current-candidate or supported-consolidation copy is permitted because required legacy split aggregation/renderer fields are absent.",
+      "status": "complete_frozen_snapshot_only"
+    }
+  },
+  "review_scope": {
+    "audit_inputs": {
+      "changed_variants_sha256": "6977d5de892a488626146e2d7e142284f0696bd7ac1b6fc2cd738b953c93e8a1",
+      "root": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/codebase-audit",
+      "worktrees_sha256": "51e31532cb21f330246226f5eecf72262ad7fd26b0524dbca818511ab9b32664"
+    },
+    "baseline": {
+      "candidate_inventory": {
+        "files": 1230,
+        "inventory_sha256": "21275b7746e401641588843b43980684a28e187ece02efd6b178199e5de1d5a3"
+      },
+      "export_has_git_metadata": false,
+      "export_root": "/tmp/ctm-merge-candidate-20260908-v2",
+      "identity_note": "The staged-tree identifier was supplied by the coordinator. The exported tree has no .git metadata, so this review compares files in that immutable export and records an independent inventory digest.",
+      "reported_staged_tree": "af902216fd277e686d0ddca1177d02abcd85b0d7"
+    },
+    "disposition_state": {
+      "finalized_chart_disposition": true,
+      "source_changes_after_freeze": "none",
+      "status": "frozen"
+    },
+    "method_limits": [
+      "Snapshot contents and the frozen candidate were read statically. The active 3f19 worktree was read only to copy its 35 non-snapshot tmp/pdfs assets; source hashes were checked before and after copy and no source write occurred.",
+      "Qualified AST identifier containment is name-level evidence, not behavioral or numerical equivalence.",
+      "No plotting, MCQ analysis, experiment execution, remote/API access, GPU work, or runtime test was performed for this review."
+    ],
+    "preservation": {
+      "restore_verification": {
+        "3f19": {
+          "files": 373,
+          "tree_sha256": "8e2ca2c593504d5dfcebaf77e588b5f68363f9165a4e843e4deeacafd90e81b2",
+          "verified_read_only": true
+        },
+        "a3ce": {
+          "files": 260,
+          "tree_sha256": "43abbba389c5164a24c7c9bb9ff0a24768a36c40d22d35c698e41bfe893fc200",
+          "verified_read_only": true
+        },
+        "c9b7": {
+          "files": 245,
+          "tree_sha256": "88439bad820dc9c1c4937baf94c52dfa6861918f29ee0ae4c968a77e5e75c75c",
+          "verified_read_only": true
+        },
+        "d6d6": {
+          "files": 616,
+          "tree_sha256": "2891866daf0301a8abf7dffa049a92685a2c2af1493d2b9ac2e1b80bd2b5e5c7",
+          "verified_read_only": true
+        }
+      },
+      "root": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/20260908-initial",
+      "snapshot_schema": "ctm-preserved-source-v1"
+    }
+  },
+  "schema": "ctm-remaining-variants-disposition-v1",
+  "successor_contracts": {
+    "all_source_symbols_present": true,
+    "comparison_source": "3f19 preserved snapshot",
+    "mappings": [
+      {
+        "contract_disposition": "backward_compatible_extension",
+        "contract_note": "The target retains the name/spec keyword contract and adds optional topology_profile=None. It extends validation for frozen training manifests and resume-state settings, and rewires source commands to the relocated helpers.",
+        "shared_function_signature_deltas": [
+          "compile_experiment"
+        ],
+        "source": "ctm_data/adapters/mcq_bias/experiment_factory.py",
+        "source_imports": [
+          "__future__:annotations",
+          "math",
+          "re",
+          "collections.abc:Mapping",
+          "typing:Any"
+        ],
+        "source_qualified_symbols": [
+          "_apply_execution_allocations",
+          "_execution_target",
+          "_metric",
+          "_named_items",
+          "_section",
+          "_slug",
+          "compile_experiment"
+        ],
+        "source_sha256": "9b66fdf7bacb070022431efaf14a5571ae09f55810d5feea2d18652b3c3d57fb",
+        "source_symbols_missing_from_target": [],
+        "static_diff_line_count": 152,
+        "target": "scripts/rmct_paper_vast_more_methods/experiment_factory.py",
+        "target_imports": [
+          "__future__:annotations",
+          "math",
+          "re",
+          "collections.abc:Mapping",
+          "typing:Any"
+        ],
+        "target_sha256": "047d9a41ac07d39d7ad8ddf1a870e79416048fe1c1cc576b3c6dd0bfb715bf0a",
+        "verified": true,
+        "wiring_evidence": [
+          "commands scripts.rmct_paper_vast_more_methods.hle_source",
+          "commands scripts.rmct_paper_vast_more_methods.cleaned_alpaca_source"
+        ]
+      },
+      {
+        "contract_disposition": "relocated_public_contract",
+        "contract_note": "The target retains both public functions and their signatures. Malformed row/input validation now raises TypeError rather than ValueError; the normal prompt-selection contract is unchanged by static comparison.",
+        "shared_function_signature_deltas": [],
+        "source": "ctm_data/sources/cleaned_alpaca.py",
+        "source_imports": [
+          "__future__:annotations",
+          "argparse",
+          "hashlib",
+          "json",
+          "random",
+          "urllib.request",
+          "datetime:datetime",
+          "datetime:timezone",
+          "pathlib:Path",
+          "typing:Any",
+          "typing:Sequence",
+          "ctm.artifacts:write_atomic_bytes"
+        ],
+        "source_qualified_symbols": [
+          "main",
+          "select_prompt_rows"
+        ],
+        "source_sha256": "ff4f3d835f15920e3b3cb6d374b728a593a09c6ca4f9cb75125790e339b4debd",
+        "source_symbols_missing_from_target": [],
+        "static_diff_line_count": 61,
+        "target": "scripts/rmct_paper_vast_more_methods/cleaned_alpaca_source.py",
+        "target_imports": [
+          "__future__:annotations",
+          "argparse",
+          "hashlib",
+          "json",
+          "random",
+          "urllib.request",
+          "collections.abc:Sequence",
+          "datetime:UTC",
+          "datetime:datetime",
+          "pathlib:Path",
+          "typing:Any",
+          "ctm.artifacts:write_atomic_bytes"
+        ],
+        "target_sha256": "44181c0824607bdc1a45ea0586bcdc0c96ed2acbf5c5ee7b770ca50d5206a4c5",
+        "verified": true,
+        "wiring_evidence": [
+          "factory command points to this module"
+        ]
+      },
+      {
+        "contract_disposition": "relocated_public_contract",
+        "contract_note": "The target retains all public symbols and signatures. Static differences are documentation, typing imports, UTC spelling, and formatting; the pinned HLE export constants and canonical-row contract remain present.",
+        "shared_function_signature_deltas": [],
+        "source": "ctm_data/sources/hle.py",
+        "source_imports": [
+          "__future__:annotations",
+          "argparse",
+          "hashlib",
+          "json",
+          "re",
+          "datetime:datetime",
+          "datetime:timezone",
+          "pathlib:Path",
+          "string:ascii_uppercase",
+          "typing:Any",
+          "typing:Iterable",
+          "ctm.artifacts:write_atomic_bytes",
+          "datasets:load_dataset"
+        ],
+        "source_qualified_symbols": [
+          "canonical_rows",
+          "main",
+          "parse_multiple_choice_question"
+        ],
+        "source_sha256": "3984654e52ff5349928f5a83a12981774610a2b83822df5e3ab6473f5007ebc4",
+        "source_symbols_missing_from_target": [],
+        "static_diff_line_count": 49,
+        "target": "scripts/rmct_paper_vast_more_methods/hle_source.py",
+        "target_imports": [
+          "__future__:annotations",
+          "argparse",
+          "hashlib",
+          "json",
+          "re",
+          "collections.abc:Iterable",
+          "datetime:UTC",
+          "datetime:datetime",
+          "pathlib:Path",
+          "string:ascii_uppercase",
+          "typing:Any",
+          "ctm.artifacts:write_atomic_bytes",
+          "datasets:load_dataset"
+        ],
+        "target_sha256": "3b1ef279a2d0c5a4a6914b49de970f4f26f011ee811e6c93ac364294b3aeaaa7",
+        "verified": true,
+        "wiring_evidence": [
+          "factory command points to this module",
+          "expedited importer imports this module's pinned HLE constants"
+        ]
+      },
+      {
+        "contract_disposition": "import_only_relocation",
+        "contract_note": "The target retains all public symbols and signatures. Its only static source diff is replacement of the HLE constants import with scripts.rmct_paper_vast_more_methods.hle_source.",
+        "shared_function_signature_deltas": [],
+        "source": "ctm_data/adapters/mcq_bias/import_expedited_screen.py",
+        "source_imports": [
+          "__future__:annotations",
+          "argparse",
+          "hashlib",
+          "json",
+          "random",
+          "re",
+          "datetime:UTC",
+          "datetime:datetime",
+          "pathlib:Path",
+          "string:ascii_uppercase",
+          "typing:Any",
+          "ctm_data.sources.hle:DATASET_ID",
+          "ctm_data.sources.hle:DATASET_REVISION",
+          "ctm_data.sources.hle:EXPECTED_TEXT_MC_COUNT",
+          "yaml"
+        ],
+        "source_qualified_symbols": [
+          "_biased_option",
+          "_full_stage1_spec",
+          "_inside_repository",
+          "_message_list",
+          "_ordered_ids_sha256",
+          "_parsed_input",
+          "_question_id",
+          "_read_json",
+          "_read_jsonl",
+          "_sha256",
+          "_stage1_source_rows",
+          "_validate_suite",
+          "_verify_requirements",
+          "import_expedited_screen",
+          "import_expedited_screen.repository_path",
+          "main"
+        ],
+        "source_sha256": "b3d48c8aaaa28c1ba9e9b217460d61315acbf36e78711e3d12b6c39cfdfb6379",
+        "source_symbols_missing_from_target": [],
+        "static_diff_line_count": 11,
+        "target": "experiments/rmct_paper_vast_dense_models/import_expedited_screen.py",
+        "target_imports": [
+          "__future__:annotations",
+          "argparse",
+          "hashlib",
+          "json",
+          "random",
+          "re",
+          "datetime:UTC",
+          "datetime:datetime",
+          "pathlib:Path",
+          "string:ascii_uppercase",
+          "typing:Any",
+          "scripts.rmct_paper_vast_more_methods.hle_source:DATASET_ID",
+          "scripts.rmct_paper_vast_more_methods.hle_source:DATASET_REVISION",
+          "scripts.rmct_paper_vast_more_methods.hle_source:EXPECTED_TEXT_MC_COUNT",
+          "yaml"
+        ],
+        "target_sha256": "9f7cf310ce4cf8dc966bab56607f13d4eedc99ddc509e74ee16aeb7354c2fd61",
+        "verified": true,
+        "wiring_evidence": [
+          "imports scripts.rmct_paper_vast_more_methods.hle_source constants"
+        ]
+      }
+    ],
+    "method": "AST qualified-symbol and signature comparison plus static import/command wiring inspection. This establishes successor availability and compatibility limits, not runtime or scientific equivalence."
+  },
+  "variants": {
+    "3f19": {
+      "local_backend_symbol_audit": {
+        "method": "qualified AST identifier containment against primary snapshot",
+        "rows": [
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/base.py",
+            "source_new_qualified_symbols": [
+              "PolicyScorerHandle.score_completions",
+              "class:PolicyScorerHandle"
+            ],
+            "source_new_symbol_count": 2
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/cli.py",
+            "source_new_qualified_symbols": [
+              "_validate_local_execution_args",
+              "_vllm_options",
+              "build_base_generation_backend",
+              "class:RolloutParallelCLIConfig",
+              "describe_base_generation_backend",
+              "resolve_base_generation_parallel_args",
+              "resolve_rollout_parallel_args"
+            ],
+            "source_new_symbol_count": 7
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/engine.py",
+            "source_new_qualified_symbols": [
+              "LocalBackend._forward_microbatches",
+              "LocalBackend._opct_logprobs_batch",
+              "LocalBackend._predictive_logprobs_batch",
+              "LocalBackend._score_completions",
+              "LocalBackend._target_logprobs_batch",
+              "LocalBackend.run_qwen35_consistency_preflight",
+              "LocalBackend.submit_opct_forward_backward",
+              "LocalSamplerHandle.score_completions",
+              "_adapter_parameter_digest",
+              "_gradient_checkpointing_backbone_layers",
+              "_inspect_qwen35_act_attention_lora",
+              "_inspect_qwen35_consistency_topology",
+              "_inspect_qwen35_strict_qv_lora",
+              "_selected_hidden_logprobs",
+              "_selected_hidden_logprobs.selected",
+              "_selected_hidden_raw_and_temperature_logprobs",
+              "_selected_hidden_raw_and_temperature_logprobs.selected",
+              "_selected_target_logprobs",
+              "_selected_target_logprobs.selected",
+              "_selected_token_components",
+              "_underlying_causal_lm",
+              "class:FusedExpertLoRAWarning",
+              "class:_SelectedTokenComponents"
+            ],
+            "source_new_symbol_count": 23
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/vllm_sampler.py",
+            "source_new_qualified_symbols": [
+              "VLLMSampler.score_completions",
+              "_qwen35_runtime_lora_is_unsafe"
+            ],
+            "source_new_symbol_count": 2
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/rollout_workers.py",
+            "source_new_qualified_symbols": [
+              "DistributedSamplerHandle.__init__",
+              "DistributedSamplerHandle._flush_pending",
+              "DistributedSamplerHandle._same_generation_params",
+              "DistributedSamplerHandle.sample",
+              "DistributedSamplerHandle.sample_batch",
+              "DistributedSamplerHandle.score_completions",
+              "FrozenBaseSamplerHandle.__init__",
+              "FrozenBaseSamplerHandle.sample_batch",
+              "FrozenBaseSamplerHandle.score_completions",
+              "FrozenBaseVLLMBackend.__init__",
+              "FrozenBaseVLLMBackend.base_sampler",
+              "FrozenBaseVLLMBackend.policy_sampler",
+              "FrozenBaseVLLMBackend.sample_base_batch",
+              "FrozenBaseVLLMBackend.setup",
+              "FrozenBaseVLLMBackend.shutdown",
+              "RolloutGPU.as_dict",
+              "RolloutParallelBackend.__getattr__",
+              "RolloutParallelBackend.__init__",
+              "RolloutParallelBackend._snapshot_adapter",
+              "RolloutParallelBackend.base_sampler",
+              "RolloutParallelBackend.policy_sampler",
+              "RolloutParallelBackend.refresh_policy_sampler",
+              "RolloutParallelBackend.setup",
+              "RolloutParallelBackend.shutdown",
+              "RolloutWorkerPool.__init__",
+              "RolloutWorkerPool._assignments",
+              "RolloutWorkerPool._call_all",
+              "RolloutWorkerPool._ensure_usable",
+              "RolloutWorkerPool._mark_fatal",
+              "RolloutWorkerPool._next_request_id",
+              "RolloutWorkerPool._score_assignments",
+              "RolloutWorkerPool._validate_adapter_acks",
+              "RolloutWorkerPool.adapter_version",
+              "RolloutWorkerPool.publish_adapter",
+              "RolloutWorkerPool.publish_adapter_sync",
+              "RolloutWorkerPool.sample_batch",
+              "RolloutWorkerPool.score_completions",
+              "RolloutWorkerPool.shutdown",
+              "RolloutWorkerPool.start",
+              "RolloutWorkerPool.worker_count",
+              "_ProcessEndpoint.__init__",
+              "_ProcessEndpoint._check_response",
+              "_ProcessEndpoint._recv_sync",
+              "_ProcessEndpoint.call",
+              "_ProcessEndpoint.call_sync",
+              "_ProcessEndpoint.close_sync",
+              "_ProcessEndpoint.launch_sync",
+              "_ProcessEndpoint.wait_ready_sync",
+              "_append_jsonl",
+              "_payload_size",
+              "_read_payload",
+              "_remove_payload",
+              "_utc_now",
+              "_validated_engine_seed_base",
+              "_validated_payload_path",
+              "_worker_main",
+              "_write_payload",
+              "class:DistributedSamplerHandle",
+              "class:FrozenBaseSamplerHandle",
+              "class:FrozenBaseVLLMBackend",
+              "class:RolloutGPU",
+              "class:RolloutParallelBackend",
+              "class:RolloutWorkerError",
+              "class:RolloutWorkerPool",
+              "class:_ProcessEndpoint",
+              "class:_WorkerProcessConfig",
+              "resolve_base_only_gpus",
+              "resolve_rollout_gpus"
+            ],
+            "source_new_symbol_count": 68
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/qwen35_vllm_compat.py",
+            "source_new_qualified_symbols": [
+              "_adapter_identity",
+              "_canonical_json_value",
+              "_fixed_token_probe",
+              "_is_sha256",
+              "_json_sha256",
+              "_lora_b_stats",
+              "_normalized_worker_gpus",
+              "_read_manifest",
+              "_relative_adapter_path",
+              "_require_adapter_directory",
+              "_require_passing_effect_summary",
+              "_resolve_manifest_adapter",
+              "_tensor_content_sha256",
+              "_validated_adapter_hashes",
+              "build_qwen35_rollout_worker_parity_attestation",
+              "file_sha256",
+              "is_qwen35_model_name",
+              "materialize_qwen35_vllm_rollout_compat_adapter",
+              "qwen35_rollout_adapter_has_nonzero_lora_effect",
+              "translate_lora_key",
+              "validate_qwen35_rollout_worker_parity_attestation",
+              "validate_qwen35_vllm_rollout_compat_adapter",
+              "write_qwen35_rollout_worker_parity_attestation"
+            ],
+            "source_new_symbol_count": 23
+          }
+        ]
+      },
+      "snapshot": {
+        "source_roots": [
+          ".github",
+          "_archive",
+          "ctm",
+          "ctm_data",
+          "docs",
+          "experiments",
+          "infra",
+          "scripts",
+          "tests"
+        ],
+        "summary": {
+          "candidate_missing_paths": [
+            "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "ctm_data/adapters/mcq_bias/import_expedited_screen.py",
+            "ctm_data/sources/cleaned_alpaca.py",
+            "ctm_data/sources/hle.py"
+          ],
+          "candidate_relation_counts": {
+            "missing": 4,
+            "other_candidate": 74,
+            "same_d6d6": 24,
+            "same_variant": 271
+          },
+          "content_different_from_d6d6": [
+            "ctm/backends/base.py",
+            "ctm/backends/cli.py",
+            "ctm/backends/local/engine.py",
+            "ctm/backends/local/rollout_workers.py",
+            "ctm/backends/local/vllm_sampler.py",
+            "ctm/evals/local_model.py",
+            "ctm/evals/runner.py",
+            "ctm/training/bct_targets.py",
+            "ctm/training/checkpoints.py",
+            "ctm/training/opct.py",
+            "ctm/training/rl.py",
+            "ctm/training/sft.py",
+            "ctm_data/adapters/mcq_bias/__init__.py",
+            "ctm_data/adapters/mcq_bias/analysis.py",
+            "ctm_data/adapters/mcq_bias/data.py",
+            "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "ctm_data/adapters/mcq_bias/plot.py",
+            "ctm_data/adapters/mcq_bias/setting.py",
+            "ctm_data/adapters/mcq_bias/tests/test_adapter.py",
+            "ctm_data/adapters/mcq_bias/tests/test_analysis.py",
+            "ctm_data/adapters/mcq_bias/tests/test_plot.py",
+            "experiments/act_repair_gate/runtime_parity.py",
+            "experiments/rmct_paper_vast_dense_models/stage1/onpolicy_recovery_preflight.py",
+            "experiments/rmct_paper_vast_dense_models/stage1/onpolicy_target_attestation.py",
+            "experiments/stage2_ood_hle/analyze.py",
+            "experiments/stage2_ood_hle/tasks.py",
+            "infra/isambard/README.md",
+            "infra/isambard/vllm-constraints.txt",
+            "scripts/ctm_opct_stage2_incremental_luna_consumer_20260804.contract.json",
+            "scripts/ctm_opct_stage2_incremental_luna_consumer_20260804.sh",
+            "scripts/prepare_bct_targets.py",
+            "scripts/run_experiment.py",
+            "scripts/train_bct.py",
+            "scripts/train_opct.py",
+            "scripts/train_rlct.py",
+            "tests/test_act_repair_gate.py",
+            "tests/test_ctm_backend_cli.py",
+            "tests/test_ctm_bct_targets.py",
+            "tests/test_ctm_eval_runner.py",
+            "tests/test_ctm_local_backend.py",
+            "tests/test_ctm_opct.py",
+            "tests/test_ctm_rl_anchor.py",
+            "tests/test_ctm_rl_cli_config.py",
+            "tests/test_ctm_rollout_workers.py",
+            "tests/test_ctm_vllm_sampler.py",
+            "tests/test_qwen35_isambard_phase2_4gpu.py",
+            "tests/test_stage2_ood_hle.py",
+            "tests/test_stage2_ood_hle_tasks.py"
+          ],
+          "files": 373,
+          "paths_absent_from_d6d6": []
+        },
+        "tree_sha256": "8e2ca2c593504d5dfcebaf77e588b5f68363f9165a4e843e4deeacafd90e81b2"
+      },
+      "temporary_paper_assets": {
+        "archive_manifest": "/Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/remaining-variant-assets-20260908/manifest.json",
+        "audit_source": "worktrees.json untracked tmp/ status entries",
+        "candidate_present_count": 0,
+        "count": 35,
+        "disposition": "archived_hash_verified",
+        "paths": [
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/2510.27062v1.txt"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/2606.05817v1.txt"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/filter-audit/2510-p-07.png"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/filter-audit/2510.txt"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/filter-audit/2510_hits.txt"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/filter-audit/2606-p-24.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/filter-audit/2606-p-25.png"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/filter-audit/2606.txt"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/filter-audit/2606_hits.txt"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1-p24-24.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1-p27-27.png"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/paper1/pages_16_37.txt"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/paper1/pages_1_15.txt"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/paper1/paper.txt"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1/rendered/ablation-13.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1/rendered/ablation-14.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1/rendered/page-24.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1/rendered/page-25.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1/rendered/page-26.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper1/rendered/page-27.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper2-07.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper2-08.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper2-p14-14.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/paper2-p18-18.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/refusal_variance_audit/appendix-16.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/refusal_variance_audit/appendix-17.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/refusal_variance_audit/page-05.png"
+          },
+          {
+            "kind": "text extract",
+            "path": "tmp/pdfs/refusal_variance_audit/paper.txt"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/training-source-audit/irpan-06.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/training-source-audit/irpan-07.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/training-source-audit/irpan-08.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/training-source-audit/stack-23.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/training-source-audit/stack-24.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/training-source-audit/stack-25.png"
+          },
+          {
+            "kind": "rendered raster",
+            "path": "tmp/pdfs/training-source-audit/stack-26.png"
+          }
+        ],
+        "reason_not_captured": "tmp/ is outside the snapshot source_roots",
+        "snapshot_captured": false
+      }
+    },
+    "a3ce": {
+      "chart_configuration_variants": {
+        "count": 4,
+        "disposition": "final_snapshot_only_archived_historical_presentation",
+        "final_disposition": {
+          "active_consolidation_copy": false,
+          "candidate_copy": false,
+          "disposition_source": "Lorentz final disposition relayed by coordinator",
+          "hash_verification": {
+            "all_four_snapshot_blob_and_source_hashes_match": true,
+            "hashes": {
+              "experiments/rmct_paper_vast_more_methods/away_switch_split_chart.json": "59f075050ebaa6aec069a7f4c56f19bc4b74d7bd607640a1fb11b8bf8dc3cdc4",
+              "experiments/rmct_paper_vast_more_methods/switch_split_chart.json": "abd4fd8e04b05b44c67f7f616b3d744841be2ca5108ffe6bcd1f65f925f57671",
+              "experiments/rmct_paper_vast_more_methods/total_switch_split_chart.json": "918f8dfbae54893371b61724cf5beb082384324903149fdd6dbcf52e3f2a8875",
+              "experiments/rmct_paper_vast_more_methods/verbalisation_split_chart.json": "ac9979c8c28455ed31a32c082b634375307a718f3168a1957dc1a47f73bd776c"
+            }
+          },
+          "rationale": "Legacy split aggregation and renderer fields are absent from the supported consolidation; copying the JSON variants into active consolidation would silently lose presentation semantics.",
+          "retention_location": "immutable a3ce preserved-source snapshot only",
+          "status": "complete_frozen"
+        },
+        "paths": [
+          {
+            "candidate_absent": true,
+            "candidate_relation": "missing",
+            "final_disposition": "retain_only_in_immutable_a3ce_snapshot",
+            "json_top_level_keys": [
+              "bias_labels",
+              "bias_order",
+              "ci_multiplier",
+              "held_out_label",
+              "percent",
+              "show_controls",
+              "show_significance",
+              "split_held_out_label",
+              "split_training_label",
+              "ylabel",
+              "ylim"
+            ],
+            "path": "experiments/rmct_paper_vast_more_methods/away_switch_split_chart.json",
+            "sha256": "59f075050ebaa6aec069a7f4c56f19bc4b74d7bd607640a1fb11b8bf8dc3cdc4",
+            "size": 468,
+            "snapshot_blob_verified": true,
+            "source_verified": true
+          },
+          {
+            "candidate_absent": true,
+            "candidate_relation": "missing",
+            "final_disposition": "retain_only_in_immutable_a3ce_snapshot",
+            "json_top_level_keys": [
+              "bias_labels",
+              "bias_order",
+              "ci_multiplier",
+              "held_out_label",
+              "percent",
+              "show_controls",
+              "show_significance",
+              "split_held_out_label",
+              "split_training_label",
+              "ylabel",
+              "ylim"
+            ],
+            "path": "experiments/rmct_paper_vast_more_methods/switch_split_chart.json",
+            "sha256": "abd4fd8e04b05b44c67f7f616b3d744841be2ca5108ffe6bcd1f65f925f57671",
+            "size": 466,
+            "snapshot_blob_verified": true,
+            "source_verified": true
+          },
+          {
+            "candidate_absent": true,
+            "candidate_relation": "missing",
+            "final_disposition": "retain_only_in_immutable_a3ce_snapshot",
+            "json_top_level_keys": [
+              "bias_labels",
+              "bias_order",
+              "ci_multiplier",
+              "held_out_label",
+              "percent",
+              "show_controls",
+              "show_significance",
+              "split_held_out_label",
+              "split_training_label",
+              "ylabel",
+              "ylim"
+            ],
+            "path": "experiments/rmct_paper_vast_more_methods/total_switch_split_chart.json",
+            "sha256": "918f8dfbae54893371b61724cf5beb082384324903149fdd6dbcf52e3f2a8875",
+            "size": 459,
+            "snapshot_blob_verified": true,
+            "source_verified": true
+          },
+          {
+            "candidate_absent": true,
+            "candidate_relation": "missing",
+            "final_disposition": "retain_only_in_immutable_a3ce_snapshot",
+            "json_top_level_keys": [
+              "bias_labels",
+              "bias_order",
+              "ci_multiplier",
+              "held_out_label",
+              "percent",
+              "show_controls",
+              "show_significance",
+              "split_held_out_label",
+              "split_training_label",
+              "ylabel",
+              "ylim"
+            ],
+            "path": "experiments/rmct_paper_vast_more_methods/verbalisation_split_chart.json",
+            "sha256": "ac9979c8c28455ed31a32c082b634375307a718f3168a1957dc1a47f73bd776c",
+            "size": 465,
+            "snapshot_blob_verified": true,
+            "source_verified": true
+          }
+        ],
+        "static_candidate_references": {
+          "experiments/rmct_paper_vast_more_methods/away_switch_split_chart.json": [],
+          "experiments/rmct_paper_vast_more_methods/switch_split_chart.json": [],
+          "experiments/rmct_paper_vast_more_methods/total_switch_split_chart.json": [],
+          "experiments/rmct_paper_vast_more_methods/verbalisation_split_chart.json": []
+        }
+      },
+      "local_backend_symbol_audit": {
+        "method": "qualified AST identifier containment against primary snapshot",
+        "rows": [
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/base.py",
+            "source_new_qualified_symbols": [
+              "PolicyScorerHandle.score_completions",
+              "class:PolicyScorerHandle"
+            ],
+            "source_new_symbol_count": 2
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/cli.py",
+            "source_new_qualified_symbols": [
+              "_validate_local_execution_args",
+              "_vllm_options",
+              "build_base_generation_backend",
+              "class:RolloutParallelCLIConfig",
+              "describe_base_generation_backend",
+              "resolve_base_generation_parallel_args",
+              "resolve_rollout_parallel_args"
+            ],
+            "source_new_symbol_count": 7
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/engine.py",
+            "source_new_qualified_symbols": [
+              "LocalBackend._forward_microbatches",
+              "LocalBackend._opct_logprobs_batch",
+              "LocalBackend._predictive_logprobs_batch",
+              "LocalBackend._score_completions",
+              "LocalBackend._target_logprobs_batch",
+              "LocalBackend.submit_opct_forward_backward",
+              "LocalSamplerHandle.score_completions",
+              "_gradient_checkpointing_backbone_layers",
+              "_selected_hidden_logprobs",
+              "_selected_hidden_logprobs.selected",
+              "_selected_hidden_raw_and_temperature_logprobs",
+              "_selected_hidden_raw_and_temperature_logprobs.selected",
+              "_selected_target_logprobs",
+              "_selected_target_logprobs.selected",
+              "_selected_token_components",
+              "class:FusedExpertLoRAWarning",
+              "class:_SelectedTokenComponents"
+            ],
+            "source_new_symbol_count": 17
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/vllm_sampler.py",
+            "source_new_qualified_symbols": [
+              "VLLMSampler.score_completions"
+            ],
+            "source_new_symbol_count": 1
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/rollout_workers.py",
+            "source_new_qualified_symbols": [
+              "DistributedSamplerHandle.__init__",
+              "DistributedSamplerHandle._flush_pending",
+              "DistributedSamplerHandle._same_generation_params",
+              "DistributedSamplerHandle.sample",
+              "DistributedSamplerHandle.sample_batch",
+              "DistributedSamplerHandle.score_completions",
+              "FrozenBaseSamplerHandle.__init__",
+              "FrozenBaseSamplerHandle.sample_batch",
+              "FrozenBaseSamplerHandle.score_completions",
+              "FrozenBaseVLLMBackend.__init__",
+              "FrozenBaseVLLMBackend.base_sampler",
+              "FrozenBaseVLLMBackend.policy_sampler",
+              "FrozenBaseVLLMBackend.sample_base_batch",
+              "FrozenBaseVLLMBackend.setup",
+              "FrozenBaseVLLMBackend.shutdown",
+              "RolloutGPU.as_dict",
+              "RolloutParallelBackend.__getattr__",
+              "RolloutParallelBackend.__init__",
+              "RolloutParallelBackend._snapshot_adapter",
+              "RolloutParallelBackend.base_sampler",
+              "RolloutParallelBackend.policy_sampler",
+              "RolloutParallelBackend.refresh_policy_sampler",
+              "RolloutParallelBackend.setup",
+              "RolloutParallelBackend.shutdown",
+              "RolloutWorkerPool.__init__",
+              "RolloutWorkerPool._assignments",
+              "RolloutWorkerPool._call_all",
+              "RolloutWorkerPool._ensure_usable",
+              "RolloutWorkerPool._mark_fatal",
+              "RolloutWorkerPool._next_request_id",
+              "RolloutWorkerPool._score_assignments",
+              "RolloutWorkerPool._validate_adapter_acks",
+              "RolloutWorkerPool.adapter_version",
+              "RolloutWorkerPool.publish_adapter",
+              "RolloutWorkerPool.publish_adapter_sync",
+              "RolloutWorkerPool.sample_batch",
+              "RolloutWorkerPool.score_completions",
+              "RolloutWorkerPool.shutdown",
+              "RolloutWorkerPool.start",
+              "RolloutWorkerPool.worker_count",
+              "_ProcessEndpoint.__init__",
+              "_ProcessEndpoint._check_response",
+              "_ProcessEndpoint._recv_sync",
+              "_ProcessEndpoint.call",
+              "_ProcessEndpoint.call_sync",
+              "_ProcessEndpoint.close_sync",
+              "_ProcessEndpoint.launch_sync",
+              "_ProcessEndpoint.wait_ready_sync",
+              "_append_jsonl",
+              "_payload_size",
+              "_read_payload",
+              "_remove_payload",
+              "_utc_now",
+              "_validated_payload_path",
+              "_worker_main",
+              "_write_payload",
+              "class:DistributedSamplerHandle",
+              "class:FrozenBaseSamplerHandle",
+              "class:FrozenBaseVLLMBackend",
+              "class:RolloutGPU",
+              "class:RolloutParallelBackend",
+              "class:RolloutWorkerError",
+              "class:RolloutWorkerPool",
+              "class:_ProcessEndpoint",
+              "class:_WorkerProcessConfig",
+              "resolve_base_only_gpus",
+              "resolve_rollout_gpus"
+            ],
+            "source_new_symbol_count": 67
+          }
+        ]
+      },
+      "snapshot": {
+        "source_roots": [
+          ".github",
+          "_archive",
+          "ctm",
+          "ctm_data",
+          "docs",
+          "experiments",
+          "infra",
+          "scripts",
+          "tests"
+        ],
+        "summary": {
+          "candidate_missing_paths": [
+            "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "ctm_data/adapters/mcq_bias/import_expedited_screen.py",
+            "ctm_data/sources/cleaned_alpaca.py",
+            "ctm_data/sources/hle.py",
+            "experiments/rmct_paper_vast_more_methods/away_switch_split_chart.json",
+            "experiments/rmct_paper_vast_more_methods/switch_split_chart.json",
+            "experiments/rmct_paper_vast_more_methods/total_switch_split_chart.json",
+            "experiments/rmct_paper_vast_more_methods/verbalisation_split_chart.json"
+          ],
+          "candidate_relation_counts": {
+            "missing": 8,
+            "other_candidate": 66,
+            "same_d6d6": 31,
+            "same_variant": 155
+          },
+          "content_different_from_d6d6": [
+            "ctm/backends/base.py",
+            "ctm/backends/cli.py",
+            "ctm/backends/local/engine.py",
+            "ctm/backends/local/rollout_workers.py",
+            "ctm/backends/local/vllm_sampler.py",
+            "ctm/evals/local_model.py",
+            "ctm/evals/runner.py",
+            "ctm/training/bct_targets.py",
+            "ctm/training/checkpoints.py",
+            "ctm/training/consistency_data.py",
+            "ctm/training/consistency_losses.py",
+            "ctm/training/opct.py",
+            "ctm/training/rl.py",
+            "ctm/training/sft.py",
+            "ctm_data/adapters/mcq_bias/__init__.py",
+            "ctm_data/adapters/mcq_bias/analysis.py",
+            "ctm_data/adapters/mcq_bias/data.py",
+            "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "ctm_data/adapters/mcq_bias/plot.py",
+            "ctm_data/adapters/mcq_bias/plot_registry.toml",
+            "ctm_data/adapters/mcq_bias/setting.py",
+            "ctm_data/adapters/mcq_bias/tests/test_adapter.py",
+            "ctm_data/adapters/mcq_bias/tests/test_analysis.py",
+            "ctm_data/adapters/mcq_bias/tests/test_consistency_pairs.py",
+            "ctm_data/adapters/mcq_bias/tests/test_plot.py",
+            "experiments/act_repair_gate/README.md",
+            "experiments/act_repair_gate/experiment.yaml",
+            "experiments/rmct_paper_vast_dense_models/README.md",
+            "experiments/rmct_paper_vast_dense_models/stage1/qwen3_5_9b.yaml",
+            "experiments/rmct_paper_vast_dense_models/stage1/qwen3_8b.yaml",
+            "experiments/rmct_paper_vast_more_methods/experiment.yaml",
+            "experiments/stage1_iid_diagnostic/README.md",
+            "experiments/stage1_iid_diagnostic/analyze.py",
+            "experiments/stage1_iid_diagnostic/grade_luna.py",
+            "infra/isambard/README.md",
+            "infra/isambard/setup_env.sh",
+            "infra/isambard/setup_gpu_env.sh",
+            "infra/isambard/vllm-constraints.txt",
+            "infra/vastai/benchmark_qwen35_opct_group.py",
+            "infra/vastai/setup_synced_validation_env.sh",
+            "scripts/prepare_bct_targets.py",
+            "scripts/run_experiment.py",
+            "scripts/train_bct.py",
+            "scripts/train_opct.py",
+            "scripts/train_rlct.py",
+            "tests/test_act_repair_gate.py",
+            "tests/test_ctm_backend_cli.py",
+            "tests/test_ctm_backend_integration.py",
+            "tests/test_ctm_bct_targets.py",
+            "tests/test_ctm_consistency.py",
+            "tests/test_ctm_eval_runner.py",
+            "tests/test_ctm_experiment_config.py",
+            "tests/test_ctm_local_backend.py",
+            "tests/test_ctm_opct.py",
+            "tests/test_ctm_persistent_eval_server.py",
+            "tests/test_ctm_rl_anchor.py",
+            "tests/test_ctm_rl_cli_config.py",
+            "tests/test_ctm_rollout_workers.py",
+            "tests/test_ctm_vllm_sampler.py",
+            "tests/test_stage1_iid_diagnostic.py"
+          ],
+          "files": 260,
+          "paths_absent_from_d6d6": [
+            "experiments/rmct_paper_vast_more_methods/away_switch_split_chart.json",
+            "experiments/rmct_paper_vast_more_methods/switch_split_chart.json",
+            "experiments/rmct_paper_vast_more_methods/total_switch_split_chart.json",
+            "experiments/rmct_paper_vast_more_methods/verbalisation_split_chart.json"
+          ]
+        },
+        "tree_sha256": "43abbba389c5164a24c7c9bb9ff0a24768a36c40d22d35c698e41bfe893fc200"
+      }
+    },
+    "c9b7": {
+      "added_vs_primary": {
+        "all_paths_present_in_d6d6": true,
+        "candidate_relation_counts": {
+          "missing": 1,
+          "other_candidate": 20,
+          "same_d6d6": 11,
+          "same_variant": 50
+        },
+        "count": 82,
+        "files": [
+          {
+            "c9b7_sha256": "ee7a0fe3959c04021a94e784074036a0c61efb647b7f371b11395bce53f680de",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "ctm/backends/local/rollout_workers.py",
+            "top_level": "ctm"
+          },
+          {
+            "c9b7_sha256": "94b39c71975322999c64743883a9c8a548359de30a4a9917483404464e97e3c6",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "ctm/training/opct.py",
+            "top_level": "ctm"
+          },
+          {
+            "c9b7_sha256": "b3d48c8aaaa28c1ba9e9b217460d61315acbf36e78711e3d12b6c39cfdfb6379",
+            "candidate_relation": "missing",
+            "d6d6_relation": "same_c9b7",
+            "path": "ctm_data/adapters/mcq_bias/import_expedited_screen.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "f41ff1b65058f8b60ebbe3f85478c7e19554bfa20edbbf020ca440cba81561ab",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "ctm_data/adapters/mcq_bias/import_legacy_pairs.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "fa3e2ab9816e4e0cc4cd4859631dc21eb88ee62232b6aabee08825d63b749594",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "ctm_data/adapters/mcq_bias/luna_config.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "d02d21ee37ba95ddbc4eb1d9685b3d881d394c14c412fce89c4ab47bb16bba43",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "ctm_data/adapters/mcq_bias/luna_scorer.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "ffe960c9b73dc6ee6245b3181cb03d5a6284af182625544685895396bd2485af",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "ctm_data/adapters/mcq_bias/parser_compat.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "5d95ba1d4fbc2d87ae887f2be732552388e6cfc06f357f4e4b8b1a7ccfbd97cc",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "ctm_data/adapters/mcq_bias/scorer_compat.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "0a671639f4ea13b42973fa1ed99a250889f67f272cdabab6f095cf466d57c969",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "ctm_data/adapters/mcq_bias/tasks.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "13ec61ab18ad67bf3a1bc1c7aaaab878f227c1dc5674d2ba87f84844fd858eed",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "ctm_data/adapters/mcq_bias/tests/test_import_legacy_pairs.py",
+            "top_level": "ctm_data"
+          },
+          {
+            "c9b7_sha256": "8c7e16e9e027bb698cf3f878bd1d47812b17a1abb34db4b6ab65cc06c94cd1b3",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "experiments/rmct_paper_vast_dense_models/README.md",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "88c3f0158645512d03997548c678056cf4978e8b030edb5f159d5cfc2d392fdd",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/debug/qwen3_5_9b_smoke.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "15a95e78bf0bf620fcc78f5808c8894bef08429ec57e5598c801936ec8634a3b",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/debug/qwen3_8b_smoke.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "f618d82f2e00d5072b7cf40bfc5080522cfe2db698ae5d824a2e62d72f820b57",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/debug/shared_data_smoke.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "1a0baf28ddf6c09d8475627ef45624610b471486569ab8b2c3e84545bd8ee55f",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/expedited/qwen3_5_9b_12h_screen.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "c8287b2bda7f2c8e0384a9bd676869221eefec2fcec6e7a7b658f5a98f2c5ca9",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/expedited_screen/shared_data_import.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "117574f2a24ecc04425ffa5b97e536cee08c5464ce14d9bd3b1c96ac0a4bf9f0",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/qwen3_5_9b.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "89d67efcf69179caa9cba7e9d27580cbda7132b05a9a4cae90d7a344c1d6c9a9",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/qwen3_8b.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "a51a1c5599a33df096a9c3f8c691ad85a2a5abafcbe3329a2758bb6fa2569c58",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/shared_data.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "51f9833b9e075e60b4813caa150dfc7055b5d995b5a8984236a7b573fb6b9dfb",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "experiments/rmct_paper_vast_dense_models/stage1/qwen3_5_9b.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "a13dd31baaa86e9557ef58d3cf113c2f313cf616893072cf0b84010414b7b00e",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_paper_vast_dense_models/stage1/qwen3_8b.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "04cb971c7f2b655c7245e4ad4b4b4c988f270941591c1d3dac03477ac21f7fa1",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/README.md",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "b845f59387dfaaef542a747d67ce5ff9dcaee2fea0bb8430d4bfdcf5a50c1e85",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/__init__.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "f26605d9397d28e43e7e60b8d3a8833061d037db84f0c05dc0adcd768dd75a57",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/analyze.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "ce1f5ec47ab21fcc0dbf215ac5dc64d6e05d58a90e599999395c9a4342354e4f",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/config/hle-task-args.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "60f76b2db89d6ed44c8308d22308968f22d1c43aebac908229cfb2bef8106d9f",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/config/training-task-args.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "a96408bb9be7ee3fd627fa50c6fcb85327d2a41ffa2845b23c5bdb1349cda48d",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/constants.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "9e968d175f6b80c107cf651b136497c1941a1a152526a5cd767362e184cad5d8",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/cost.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "d8638483afc3b3de0f37b6136bcea188ca4122d6b56dc67388e67baec3e5f1f6",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/prepare.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "8a4501ca212c1d379cdc83971cca9c5f4cf1f694769537d3c0f5f04e92aa7fb8",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/rmct_tbsr/tasks.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "7d22f74a89654d0bb0618895351772f20cb2a226a031c3ce2090eaee5c9ea891",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "experiments/stage1_iid_diagnostic/README.md",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "636739e79dfdb45bf3ddce63532ba1649433917b51e4cef3fecaf0d6e011f576",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/stage1_iid_diagnostic/__init__.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "e0889e92da722320a92dd085764f4f623a662aeca94edc1b8a00aeeeb1e54f6e",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "experiments/stage1_iid_diagnostic/analyze.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "6bd0ca583f1374bb355f1f6e7481ab68fd93a60c84f6ff865e8457f8fb5bbebf",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "experiments/stage1_iid_diagnostic/grade_luna.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "933802e71bb78a84ecfd45eb353b14bf1474d2ffa593f6907f21af5083eb7fc7",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/stage1_iid_diagnostic/plot.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "e3093c2de1122e231793fb4f3ce5eb9a82dd9febd31a2f25bd78a78a5ce25948",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/stage1_iid_diagnostic/prepare.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "41e68a1e8ec39136c0f450b5db0a8b86bc3cffa42191abedaacb37b99fd24026",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/stage1_iid_diagnostic/run_vast_matrix.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "daec8b9e0489a133c9b4af485d3d870fe613563135e20428c7cd71759d84e418",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "experiments/stage1_iid_diagnostic/tasks.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "62e54f6917f1b13c21064518358299782114b34958198243d70397b82e4edf98",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/README.md",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "48f55e099a22ae2ba3e98b270cfdd66f03cf79e377d36a1792b11567146b6683",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/analyze.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "29d7155918dd82419bfa8edcd58caac05f631afae1d2c57ce42802dd00210ec9",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/audit.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "d03a091a69b3632c5757445ed0e305a14dcb75c8fb81cbeeeabd25b3d6dc3f0f",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/config/confirmation-task-args.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "036461f51c167dbae0f43364a7533479eb6b00e1894ab4d0fb903e2b0c2bfc32",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/config/hle-task-args.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "ad6991d679bc93e94903b2c6e17965b4ac0ed5b833aabbae84382fe68136d383",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/config/qwen3-generation.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "edfc3130f5dd1f1aa82f409db58d3becf62dc29e958dd8d65ddf9da919522fb0",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/config/qwen3.5-generation.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "67090b461baa4031d1c9b75cbc1d2506cc54926c1114d78f4a0e179a242ba27b",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/config/screen-task-args.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "c8c44a55452117569c31998ea9fa3fe8e1ba870e8b2a15560442360e7e529283",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/cost.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "33896f237d11222620b50441d90c976a81a72d82a50c5db792b87346fde11ed5",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/lock.json",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "d89e8e36b5f78dd4e55181af2ec7e5f7b841b0e9997e8a2bc638681f7c15ff62",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/power.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "c58bc92b2d43419ef9fc71b1ff52b9f75d7d75f2a023232691fc48b4aeb50ceb",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/prepare.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "ebe3c8d03ce84f7da5521513c3c58102ccf22100f4894b24170b2830d10650e1",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/preregistration.md",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "a705ddc7606b16dd46d3863366278d8466e36b99f6566664e01f5f2da205d60e",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/protocol.yaml",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "6cb69234bcd5f55e3e0bee2bde9bdae0c54eef80d1a2d169f3d565a21b4ce1bc",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "experiments/switch_gate/tasks.py",
+            "top_level": "experiments"
+          },
+          {
+            "c9b7_sha256": "ba6f18f27f06f94fdda5fba2b9c4eba3eaa2c191ce15ac15b0e503ff9967d279",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "infra/isambard/probe_training_memory.py",
+            "top_level": "infra"
+          },
+          {
+            "c9b7_sha256": "5ca08a638d4ed3b16a10984ffeb72939de3e2f148c92d1aa153f0133be363b82",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "infra/isambard/probe_training_memory.sbatch",
+            "top_level": "infra"
+          },
+          {
+            "c9b7_sha256": "22d4b7bd2b332bdbda511cf2b75766dc1940e26916e905a76bdb92c82497caff",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "infra/vastai/benchmark_qwen35_opct_group.py",
+            "top_level": "infra"
+          },
+          {
+            "c9b7_sha256": "24c523765b7fd18b0cb4727d176d1e8226816878f7d2d21b28851204350456d0",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "infra/vastai/benchmark_qwen35_parallel.py",
+            "top_level": "infra"
+          },
+          {
+            "c9b7_sha256": "bc29d85cb1d96505136befbff87cf4874d4dab28baa18762c6dce537fee7b9f1",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "infra/vastai/preflight.sh",
+            "top_level": "infra"
+          },
+          {
+            "c9b7_sha256": "df9ce85cce559111dea7e39c9351a96490ee7f05fe3f9285ee942b985b7c86e4",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "infra/vastai/run_qwen35_stage1_continuation.sh",
+            "top_level": "infra"
+          },
+          {
+            "c9b7_sha256": "ba3cc669928d87b46efcdd6f93f162d462d0a82ee32755620b79d0c8a62c5c62",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "infra/vastai/setup_synced_validation_env.sh",
+            "top_level": "infra"
+          },
+          {
+            "c9b7_sha256": "722ee5d36091f84d938194ecec000e193c9f725f4b100f71392011bea36c2f51",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "scripts/finish_wrong_argument_sampling_recovery.sh",
+            "top_level": "scripts"
+          },
+          {
+            "c9b7_sha256": "e7a217bc5e31ea4630a8fd64a6ab9c12a932e32d65d7cbc31eea98f516fda811",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "scripts/recover_wrong_arguments_prompt_fallback.py",
+            "top_level": "scripts"
+          },
+          {
+            "c9b7_sha256": "2617e054f54a0ca8f840ea0162b81e4b9b9a4a48500d68b24a4ea5bc3a9b7852",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "scripts/recover_wrong_arguments_sampling.py",
+            "top_level": "scripts"
+          },
+          {
+            "c9b7_sha256": "9ad328dd330d101061dcf9781d8201b7793e408b5571caee52b44c16100bed0e",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "scripts/run_wrong_argument_prompt_fallback.sh",
+            "top_level": "scripts"
+          },
+          {
+            "c9b7_sha256": "07edfa23fd336c90f424e6d8fec26fec62ff6ad5c970456dbdd111d6fbc8ee61",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "scripts/run_wrong_argument_sampling_recovery.sh",
+            "top_level": "scripts"
+          },
+          {
+            "c9b7_sha256": "ca7348234d615569c662b0a1cca8c7a8583d36ad26564762352abdb5e66a9beb",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "scripts/train_opct.py",
+            "top_level": "scripts"
+          },
+          {
+            "c9b7_sha256": "6ae05d6b50183241e6b6d983701286e42fcb97c7959717902035fc9c9ffc6a0c",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "tests/test_ctm_opct.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "ca6b623a1910fd10618a0a8b1e0b9b6a44a21d3e25d57fdbee578a85648aeac2",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "tests/test_ctm_persistent_eval_server.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "e95195c60ce8260cddbd288715c39660080f139aa5fe6d04de8aa4f0b2280938",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "tests/test_ctm_rollout_workers.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "fd08f539c3c4af89a219ced542018471140270b1194d912652c16b5901b27cb1",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_expedited_screen_import.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "c7acac48e51643c0abd48793fded6f0759ea4a10b1a5f115e9ddbf8491fd4994",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_luna_scorer.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "b8f6b53ac936dc433077e564d8e7c5130662b3b4914352ee34046400b9dd84fa",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_mcq_bias_parser_compat.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "eac34decb0961bf1f94b56bb28f7ae5b0d051ddff22753dfb87860db45de5119",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "tests/test_mcq_bias_scorer_compat.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "481618d1e737abefa878c06d8572e349a1d1209e241d94a7fb3b592c5693941f",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "path": "tests/test_rmct_paper_vast_dense_models.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "6ea3912e85ff3d711247f7f1e45f53ee566f208eb596d496a33bb384039712ec",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_rmct_tbsr_analyze.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "7f29f4568e81ca3def9b5a95882aeb53306d6f7e7dafa4c6d4d5995917ab2078",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_rmct_tbsr_prepare.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "3489c144385799d21963138b3c60845f1c638d359eb9d961e1d018d607f25ef6",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_rmct_tbsr_tasks.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "9efcacb7c149634c7b006f27eb29fc1ef8a94adb49e6f0099cf5e695c07246d8",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "path": "tests/test_stage1_iid_diagnostic.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "3e7fa0141b817a94dc57a72e0fcc69808d92a1b6a122c73308d2bb38bf3dc060",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_switch_gate_analyze.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "e9d363282465fcf9067bb3a82c6632da9efdcc05eba4e42e64a071fca3e643c0",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_switch_gate_power.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "cee91e1f30979c4c8468f20d9ecdf77b2281916fb6b2f366c9f862ed56ee2089",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_switch_gate_prepare.py",
+            "top_level": "tests"
+          },
+          {
+            "c9b7_sha256": "45fa873a6bcdafef077851e2934e0bbeb744dd0009e827be2bf885f873f98d3c",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "path": "tests/test_switch_gate_tasks.py",
+            "top_level": "tests"
+          }
+        ],
+        "missing_candidate_successor": {
+          "source": "ctm_data/adapters/mcq_bias/import_expedited_screen.py",
+          "target": "experiments/rmct_paper_vast_dense_models/import_expedited_screen.py",
+          "verified_contract": true
+        }
+      },
+      "changed_vs_primary": {
+        "count": 42,
+        "files": [
+          {
+            "c9b7_sha256": "fc2d4654e6a96382f3a797b77d7c8e46f72a19bb91adf8628c2f6975eddd6c2f",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "repository_metadata",
+            "path": ".gitignore",
+            "primary_sha256": "783963435218ae34d98e0b93883b762ca266f6fba1d36e2bf2aa12a07b3097ad"
+          },
+          {
+            "c9b7_sha256": "ee481750013bf486fb64ff6141278c8241848d0639ee7a88611a62795e6eccd3",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "local_backend",
+            "path": "ctm/backends/__init__.py",
+            "primary_sha256": "fca0bc8148be8cec8138659743624e958d78c69009537e27515e1974fb20cb61"
+          },
+          {
+            "c9b7_sha256": "1ff1753854c4273e6f3346f067c61acf05b0bdc561ce6d77352e781a4086a313",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "local_backend",
+            "path": "ctm/backends/base.py",
+            "primary_sha256": "e5c05d38b396f1d8e43adbcdfbc5fdd7da6f7a592fbefe71d6cfe98417201c90"
+          },
+          {
+            "c9b7_sha256": "8340c7716708dfde4de9305b1f0f9dc9ba70ee05d578fe7f947f0f3b64f7f0a4",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "local_backend",
+            "path": "ctm/backends/cli.py",
+            "primary_sha256": "09495cc411ac1e8eae4a5e5f3171b8ae28a78e215d0e509939f4c5eb29e16a73"
+          },
+          {
+            "c9b7_sha256": "a8c82dfdeceefc4446be84140de925cb22f469da0ccf77bba09d511b599a0523",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "local_backend",
+            "path": "ctm/backends/local/engine.py",
+            "primary_sha256": "07e2f08d4d600ff5698ef9d6b157f168af7461cf4c8ff9729c866d1bf415f0ca"
+          },
+          {
+            "c9b7_sha256": "4e28bfde2beaa934bd32ec546e3bcb3d4c5f9184671d7402a37a56505d7ae3dc",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "local_backend",
+            "path": "ctm/backends/local/vllm_sampler.py",
+            "primary_sha256": "7fb739a6da84392ec1cc619500b12d842f719df753b4bcac21f303cc59cdfb20"
+          },
+          {
+            "c9b7_sha256": "3cfe2b5bf23b8b65ab2020fc63d26d42d4c3becd9dda738f93f7961c563c9b62",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "local_backend",
+            "path": "ctm/backends/renderers.py",
+            "primary_sha256": "6b42af051d5a470b3fae7077886694b9647b909fbf3f6569de99cf1c5f67b88e"
+          },
+          {
+            "c9b7_sha256": "554f31b9bb7ee74c8e8902ccb7363ffdaeb2d2a0bb55553430f3f0f3d5d9bbd2",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "local_backend",
+            "path": "ctm/backends/tinker.py",
+            "primary_sha256": "1478daa6ddee8f267a294de0157f2f1b23ce3b40e2194017cd0120e1af07cca4"
+          },
+          {
+            "c9b7_sha256": "df52230675692847b9f01e7798b2c60220b1dc476ab7129552d6320c9b34e8ea",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "local_backend",
+            "path": "ctm/core/types.py",
+            "primary_sha256": "fe469ddf1d4e833e109010630acbc510de67c1fae64b3b0eca828bfbfac0e83f"
+          },
+          {
+            "c9b7_sha256": "d0f8ccf3f422c0e395b816f92e063bc3ece627b7083c53b2ce2b7bf39e92a72f",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "local_evaluation",
+            "path": "ctm/evals/local_model.py",
+            "primary_sha256": "c02da298eb064a3abb0a8e178b59045687bd49ab3a50330616d0a2f311ab09d3"
+          },
+          {
+            "c9b7_sha256": "dd3cecfcd17c3e010d6bd5f2ea6923b54bdac83766d564d5d83509aaffde3b79",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "local_evaluation",
+            "path": "ctm/evals/runner.py",
+            "primary_sha256": "f194f39d7402a0a9464f08cc1fe493f6b3a713b485c3c9eff2570bb2ad8e1975"
+          },
+          {
+            "c9b7_sha256": "ac3a9972f7267ca7fe4ae8d48f69f617fe4dfca4d2a294e57d7b3e28c1f2f596",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "training",
+            "path": "ctm/training/rl.py",
+            "primary_sha256": "97fbca184b45b20dbd5789456726f1f5d81137a810ffe11684ece9b73def71a7"
+          },
+          {
+            "c9b7_sha256": "80009e534a88a04c11558b6a9a18410f1f23ebfa96158c16e78674958a4b7d01",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "training",
+            "path": "ctm/training/rollout_log.py",
+            "primary_sha256": "49e861530fb4a10fc6129f975003adc90294922112161b8de7ad4d6f36d6f3a1"
+          },
+          {
+            "c9b7_sha256": "9f1ec2e9933f9bdb40ac73db8d41ec75e9c9a5f8a122eb79d8e26480cbdbaa2f",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "mcq_adapter_and_tests",
+            "path": "ctm_data/adapters/mcq_bias/analysis.py",
+            "primary_sha256": "bc9b97e2227a8119dd837b4453164eca111dacdcb70e87a6b384a5b558ecca96"
+          },
+          {
+            "c9b7_sha256": "6440d44aefe3625d084467a0b1724a4b318400bf573bfd530a5731ca57af4df2",
+            "candidate_relation": "missing",
+            "d6d6_relation": "different",
+            "group": "mcq_adapter_and_tests",
+            "path": "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "primary_sha256": "32f48585718f4bf4020d1b0a178a878c3ce83deae33d366c33150c75e22bfac2"
+          },
+          {
+            "c9b7_sha256": "1faceb0f9bcf1f1bac197557fd61838e3db04bed767e51b7275ac729ef739d0a",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "mcq_adapter_and_tests",
+            "path": "ctm_data/adapters/mcq_bias/materialize.py",
+            "primary_sha256": "5d4ba14ddd7f0f40d3efb67858a677d9c19a03057972ca91160c8a071ece7809"
+          },
+          {
+            "c9b7_sha256": "7e9c1dd70456dc729addeeeb28cabbec27744958d2182823fd4245e37aee43ec",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "mcq_adapter_and_tests",
+            "path": "ctm_data/adapters/mcq_bias/materialize_eval.py",
+            "primary_sha256": "db96366a75289e6de5a4ebb39e2700794fdbf77fda9db623d508c0658d61cd46"
+          },
+          {
+            "c9b7_sha256": "b73437d56ba61de16368ebf7a66f04790e074545a2483f87a8cebad62d0a288d",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "mcq_adapter_and_tests",
+            "path": "ctm_data/adapters/mcq_bias/plot_registry.toml",
+            "primary_sha256": "cf208e4523855f53dc1c9646b9f7bef0318f504e067ed4f011517c80fdb79204"
+          },
+          {
+            "c9b7_sha256": "a3d082ebc39e995f6335293d32d1cc7f955119601377451d27c22a0c374db81e",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "mcq_adapter_and_tests",
+            "path": "ctm_data/adapters/mcq_bias/tests/test_analysis.py",
+            "primary_sha256": "678c902c11440099e9e7f6103cd1c63a33ae31c158c93ae162ca8969fda7e044"
+          },
+          {
+            "c9b7_sha256": "595314507e747b4adcb1e430c33c095234800cb1fc02f9fbb30d16181656b317",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "mcq_adapter_and_tests",
+            "path": "ctm_data/adapters/mcq_bias/tests/test_materialize.py",
+            "primary_sha256": "4c9eeca5d577ee1f371c695b3a3fb1a7e1cf0ed7988a8fa3fe83b2b44876919f"
+          },
+          {
+            "c9b7_sha256": "e98e8961e0e9b3efbb1846773c02ff757c771333bd7e9de6da460964c077c299",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "environment_and_provisioning",
+            "path": "infra/isambard/README.md",
+            "primary_sha256": "d5a8164362b4ff3fa70ec3fe04b1f00f9d5189492159e1efcb271c0d96ac1525"
+          },
+          {
+            "c9b7_sha256": "b4dcd9184a9a66b24a73e36843497d7876c3b77bbda9a8e589caf3723a46bd40",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "environment_and_provisioning",
+            "path": "infra/isambard/setup_gpu_env.sh",
+            "primary_sha256": "c01528cac3e3c9bf0772ccef88f87deb404da2c87c55b0544d9acfe4131272e3"
+          },
+          {
+            "c9b7_sha256": "4adc4eac21ee97e12735fa80cd4c1f9ac566846432e5c2250687fdddd95e731a",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "environment_and_provisioning",
+            "path": "infra/isambard/vllm-constraints.txt",
+            "primary_sha256": "d6e05e18fab1aa707a671abdf7bfbe633a251d9259e263176f8da276648690c1"
+          },
+          {
+            "c9b7_sha256": "f775b9bd87c312f913de31a55688788c64e10bfc266752ce96295024f629b36c",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "environment_and_provisioning",
+            "path": "infra/vastai/Dockerfile",
+            "primary_sha256": "1cfeb2e7ae2e5ce3e6c1e272b1291ed3dee42c950e7f69320d93482cd7854409"
+          },
+          {
+            "c9b7_sha256": "af201a675ee2f00499fa401375a5df35e9603384cb436ad2f6fd7b9a39f5ab5e",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "environment_and_provisioning",
+            "path": "infra/vastai/README.md",
+            "primary_sha256": "ac0b9b54bdd8f4c8181aad740954538413cfb2a6664fb3287b199475b6096e23"
+          },
+          {
+            "c9b7_sha256": "f8bf1f95b0bb3fcb6b49b80d1d7aebf4b1a3176947e91f2a6878681bc50d2212",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "environment_and_provisioning",
+            "path": "infra/vastai/provision.sh",
+            "primary_sha256": "b4fadeae6da0764897991bfb21c9a19fa3684313e38d972bb40be05cffc973c2"
+          },
+          {
+            "c9b7_sha256": "e4a952e741fabb075d9379c04cd796691549adc0509e2ece024db29b18eeee11",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "environment_and_provisioning",
+            "path": "requirements.txt",
+            "primary_sha256": "d0ae97ad173189bb1c864240834cc278da87dc90b9a8d1ffcddcaffbb6967641"
+          },
+          {
+            "c9b7_sha256": "2aaf01432c9e90f9ec8b30b9ca87eb9d4d5a5b174fb207a7e90c0bc7aa33d9c6",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "launcher_scripts",
+            "path": "scripts/prepare_bct_targets.py",
+            "primary_sha256": "66fe3dd28e56b2e967bd18c3114f661443eb5c2e3a1b2ed35ca13cf44dc38d66"
+          },
+          {
+            "c9b7_sha256": "f07c54292d1e46f6a485800ed4ffb08fab093a3606b2436d76c6bb7d8af3a7c8",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "same_c9b7",
+            "group": "launcher_scripts",
+            "path": "scripts/run_evals.py",
+            "primary_sha256": "c03dd6e9fa2850f18f3a464fb107e6c0d53804659c31e122e2979c8a75b97b76"
+          },
+          {
+            "c9b7_sha256": "dc690beeff9f2dd1a245ea3ceec7e79e98363d7c4a889b35b1a8cda9ed09fcd1",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "launcher_scripts",
+            "path": "scripts/run_experiment.py",
+            "primary_sha256": "3d89d00a66201895699ba167e58c908cc3d37b63abd93bdcb57fd936ea493056"
+          },
+          {
+            "c9b7_sha256": "0eee9f815229c29595ec0fa1edc624e7f245aa84092b8d23e273c1402d080be2",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "launcher_scripts",
+            "path": "scripts/train_rlct.py",
+            "primary_sha256": "961f247fb87d630e53e3b06d6065617133839a50c4a8aac5128b5614aa53c199"
+          },
+          {
+            "c9b7_sha256": "060553907f5be775c671f95cba4d8410ce02977879a6c0384670704814153fd3",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_backend_cli.py",
+            "primary_sha256": "dffe19f7d3ccea9b09d8fdb47e07f066f1e8c31e7b05c2fe1881a2b3c0375eb8"
+          },
+          {
+            "c9b7_sha256": "8461d0bb346839e49bb029f4ceae26790d9c3c085e4de23a6333c033c4e97a70",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_backend_integration.py",
+            "primary_sha256": "8b810afe2e3c9e5ac80de6cf5cb0b5f121806bdad9a03f8ce2a8f6c93e591aaa"
+          },
+          {
+            "c9b7_sha256": "4241bd19a8048db1edd3c90b2fab40f0e88aa171ff48219cb70a329ec118f271",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_bct_targets.py",
+            "primary_sha256": "bf2ac88419b751935a2239339010fabb5983f5ac91fc20e94b828511149c7ee2"
+          },
+          {
+            "c9b7_sha256": "66338f32b78a3062e3d2bfaaa11ff1c1f86f20ab1c4266c0af5bba308a508b41",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_consistency.py",
+            "primary_sha256": "f40d0aab68c776fc61b5e1ed3257821c2f4798de70bca123fe13936db82bc42a"
+          },
+          {
+            "c9b7_sha256": "928dcbae9a49a68b2fa2e4c37acbdc52d67338508b234f2c289b635795769823",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_eval_runner.py",
+            "primary_sha256": "6637344c03159091e890539d85e1a58da4941bb81ac95892614e210372a2876c"
+          },
+          {
+            "c9b7_sha256": "5dfa45c14228c7ace9838bfa19b79b1b0a499573c4748771ea9f15460677bd1d",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_experiment_config.py",
+            "primary_sha256": "859fdc047c4aaef2d7e2c87b283c8c36d96b65e2ad06d6cd58c80a16e5597b74"
+          },
+          {
+            "c9b7_sha256": "b1ad5a320934232824181d8ee10fa050cc398b252eb8c7f37ede5fa4944e264f",
+            "candidate_relation": "other_candidate",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_local_backend.py",
+            "primary_sha256": "9993042800e57523fc7db1ec2519d1d1712bbcc9083132513667da0d7012cb0e"
+          },
+          {
+            "c9b7_sha256": "0278502b213b5c4d39e0fe597bd3ca39a0f5a48919012f9ef80d226a734913ec",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "tests",
+            "path": "tests/test_ctm_renderers.py",
+            "primary_sha256": "9862419a64d62545d0b00ecdf5eb3e9a81bedd734101cbec24956a1e5d1ae784"
+          },
+          {
+            "c9b7_sha256": "4fde9b07e38577a90a0b44f1289c9acdb00eb042cf9d1e69c00d8aa8b4aff607",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_rl_cli_config.py",
+            "primary_sha256": "41d354c0615a7ca5152cb1214e297b7071e681dddda81e14de280e479df3f92f"
+          },
+          {
+            "c9b7_sha256": "99909dfed815a447403340743484c7947e374b0ac17616e256ec40e1ba14cb13",
+            "candidate_relation": "same_variant",
+            "d6d6_relation": "same_c9b7",
+            "group": "tests",
+            "path": "tests/test_ctm_rollout_log.py",
+            "primary_sha256": "f193ceb42739ae23265d5b446a2eab5b649e80bbae69c65a3016184c3b383b12"
+          },
+          {
+            "c9b7_sha256": "74708cc48cfdc18c16bd97b0e229042e9aaab89a484ade5c0e13f7263fa5baba",
+            "candidate_relation": "same_d6d6",
+            "d6d6_relation": "different",
+            "group": "tests",
+            "path": "tests/test_ctm_vllm_sampler.py",
+            "primary_sha256": "1735f81cc5a5e0382b4bbff4a046d7e921586555d5be71d4d576a51578893912"
+          }
+        ],
+        "groups": {
+          "environment_and_provisioning": [
+            "infra/isambard/README.md",
+            "infra/isambard/setup_gpu_env.sh",
+            "infra/isambard/vllm-constraints.txt",
+            "infra/vastai/Dockerfile",
+            "infra/vastai/README.md",
+            "infra/vastai/provision.sh",
+            "requirements.txt"
+          ],
+          "launcher_scripts": [
+            "scripts/prepare_bct_targets.py",
+            "scripts/run_evals.py",
+            "scripts/run_experiment.py",
+            "scripts/train_rlct.py"
+          ],
+          "local_backend": [
+            "ctm/backends/__init__.py",
+            "ctm/backends/base.py",
+            "ctm/backends/cli.py",
+            "ctm/backends/local/engine.py",
+            "ctm/backends/local/vllm_sampler.py",
+            "ctm/backends/renderers.py",
+            "ctm/backends/tinker.py",
+            "ctm/core/types.py"
+          ],
+          "local_evaluation": [
+            "ctm/evals/local_model.py",
+            "ctm/evals/runner.py"
+          ],
+          "mcq_adapter_and_tests": [
+            "ctm_data/adapters/mcq_bias/analysis.py",
+            "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "ctm_data/adapters/mcq_bias/materialize.py",
+            "ctm_data/adapters/mcq_bias/materialize_eval.py",
+            "ctm_data/adapters/mcq_bias/plot_registry.toml",
+            "ctm_data/adapters/mcq_bias/tests/test_analysis.py",
+            "ctm_data/adapters/mcq_bias/tests/test_materialize.py"
+          ],
+          "repository_metadata": [
+            ".gitignore"
+          ],
+          "tests": [
+            "tests/test_ctm_backend_cli.py",
+            "tests/test_ctm_backend_integration.py",
+            "tests/test_ctm_bct_targets.py",
+            "tests/test_ctm_consistency.py",
+            "tests/test_ctm_eval_runner.py",
+            "tests/test_ctm_experiment_config.py",
+            "tests/test_ctm_local_backend.py",
+            "tests/test_ctm_renderers.py",
+            "tests/test_ctm_rl_cli_config.py",
+            "tests/test_ctm_rollout_log.py",
+            "tests/test_ctm_vllm_sampler.py"
+          ],
+          "training": [
+            "ctm/training/rl.py",
+            "ctm/training/rollout_log.py"
+          ]
+        }
+      },
+      "local_backend_symbol_audit": {
+        "method": "qualified AST identifier containment against primary snapshot",
+        "rows": [
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/base.py",
+            "source_new_qualified_symbols": [
+              "PolicyScorerHandle.score_completions",
+              "class:PolicyScorerHandle"
+            ],
+            "source_new_symbol_count": 2
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/cli.py",
+            "source_new_qualified_symbols": [
+              "_validate_local_execution_args",
+              "_vllm_options",
+              "build_base_generation_backend",
+              "class:RolloutParallelCLIConfig",
+              "describe_base_generation_backend",
+              "resolve_base_generation_parallel_args",
+              "resolve_rollout_parallel_args"
+            ],
+            "source_new_symbol_count": 7
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/engine.py",
+            "source_new_qualified_symbols": [
+              "LocalBackend._forward_microbatches",
+              "LocalBackend._opct_logprobs_batch",
+              "LocalBackend._predictive_logprobs_batch",
+              "LocalBackend._score_completions",
+              "LocalBackend._target_logprobs_batch",
+              "LocalBackend.submit_opct_forward_backward",
+              "LocalSamplerHandle.score_completions",
+              "_gradient_checkpointing_backbone_layers",
+              "_selected_hidden_logprobs",
+              "_selected_hidden_logprobs.selected",
+              "_selected_hidden_raw_and_temperature_logprobs",
+              "_selected_hidden_raw_and_temperature_logprobs.selected",
+              "_selected_target_logprobs",
+              "_selected_target_logprobs.selected",
+              "_selected_token_components",
+              "class:FusedExpertLoRAWarning",
+              "class:_SelectedTokenComponents"
+            ],
+            "source_new_symbol_count": 17
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/vllm_sampler.py",
+            "source_new_qualified_symbols": [
+              "VLLMSampler.score_completions"
+            ],
+            "source_new_symbol_count": 1
+          },
+          {
+            "candidate_missing_qualified_symbols": [],
+            "candidate_missing_symbol_count": 0,
+            "path": "ctm/backends/local/rollout_workers.py",
+            "source_new_qualified_symbols": [
+              "DistributedSamplerHandle.__init__",
+              "DistributedSamplerHandle._flush_pending",
+              "DistributedSamplerHandle._same_generation_params",
+              "DistributedSamplerHandle.sample",
+              "DistributedSamplerHandle.sample_batch",
+              "DistributedSamplerHandle.score_completions",
+              "FrozenBaseSamplerHandle.__init__",
+              "FrozenBaseSamplerHandle.sample_batch",
+              "FrozenBaseSamplerHandle.score_completions",
+              "FrozenBaseVLLMBackend.__init__",
+              "FrozenBaseVLLMBackend.base_sampler",
+              "FrozenBaseVLLMBackend.policy_sampler",
+              "FrozenBaseVLLMBackend.sample_base_batch",
+              "FrozenBaseVLLMBackend.setup",
+              "FrozenBaseVLLMBackend.shutdown",
+              "RolloutGPU.as_dict",
+              "RolloutParallelBackend.__getattr__",
+              "RolloutParallelBackend.__init__",
+              "RolloutParallelBackend._snapshot_adapter",
+              "RolloutParallelBackend.base_sampler",
+              "RolloutParallelBackend.policy_sampler",
+              "RolloutParallelBackend.refresh_policy_sampler",
+              "RolloutParallelBackend.setup",
+              "RolloutParallelBackend.shutdown",
+              "RolloutWorkerPool.__init__",
+              "RolloutWorkerPool._assignments",
+              "RolloutWorkerPool._call_all",
+              "RolloutWorkerPool._ensure_usable",
+              "RolloutWorkerPool._mark_fatal",
+              "RolloutWorkerPool._next_request_id",
+              "RolloutWorkerPool._score_assignments",
+              "RolloutWorkerPool._validate_adapter_acks",
+              "RolloutWorkerPool.adapter_version",
+              "RolloutWorkerPool.publish_adapter",
+              "RolloutWorkerPool.publish_adapter_sync",
+              "RolloutWorkerPool.sample_batch",
+              "RolloutWorkerPool.score_completions",
+              "RolloutWorkerPool.shutdown",
+              "RolloutWorkerPool.start",
+              "RolloutWorkerPool.worker_count",
+              "_ProcessEndpoint.__init__",
+              "_ProcessEndpoint._check_response",
+              "_ProcessEndpoint._recv_sync",
+              "_ProcessEndpoint.call",
+              "_ProcessEndpoint.call_sync",
+              "_ProcessEndpoint.close_sync",
+              "_ProcessEndpoint.launch_sync",
+              "_ProcessEndpoint.wait_ready_sync",
+              "_append_jsonl",
+              "_payload_size",
+              "_read_payload",
+              "_remove_payload",
+              "_utc_now",
+              "_validated_payload_path",
+              "_worker_main",
+              "_write_payload",
+              "class:DistributedSamplerHandle",
+              "class:FrozenBaseSamplerHandle",
+              "class:FrozenBaseVLLMBackend",
+              "class:RolloutGPU",
+              "class:RolloutParallelBackend",
+              "class:RolloutWorkerError",
+              "class:RolloutWorkerPool",
+              "class:_ProcessEndpoint",
+              "class:_WorkerProcessConfig",
+              "resolve_base_only_gpus",
+              "resolve_rollout_gpus"
+            ],
+            "source_new_symbol_count": 67
+          }
+        ]
+      },
+      "snapshot": {
+        "source_roots": [
+          ".github",
+          "_archive",
+          "ctm",
+          "ctm_data",
+          "docs",
+          "experiments",
+          "infra",
+          "scripts",
+          "tests"
+        ],
+        "summary": {
+          "candidate_missing_paths": [
+            "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "ctm_data/adapters/mcq_bias/import_expedited_screen.py",
+            "ctm_data/sources/cleaned_alpaca.py",
+            "ctm_data/sources/hle.py"
+          ],
+          "candidate_relation_counts": {
+            "missing": 4,
+            "other_candidate": 66,
+            "same_d6d6": 29,
+            "same_variant": 146
+          },
+          "content_different_from_d6d6": [
+            "ctm/backends/base.py",
+            "ctm/backends/cli.py",
+            "ctm/backends/local/engine.py",
+            "ctm/backends/local/rollout_workers.py",
+            "ctm/backends/local/vllm_sampler.py",
+            "ctm/evals/local_model.py",
+            "ctm/evals/runner.py",
+            "ctm/training/bct_targets.py",
+            "ctm/training/checkpoints.py",
+            "ctm/training/consistency_data.py",
+            "ctm/training/consistency_losses.py",
+            "ctm/training/opct.py",
+            "ctm/training/rl.py",
+            "ctm/training/sft.py",
+            "ctm_data/adapters/mcq_bias/__init__.py",
+            "ctm_data/adapters/mcq_bias/analysis.py",
+            "ctm_data/adapters/mcq_bias/data.py",
+            "ctm_data/adapters/mcq_bias/experiment_factory.py",
+            "ctm_data/adapters/mcq_bias/plot.py",
+            "ctm_data/adapters/mcq_bias/scorer_compat.py",
+            "ctm_data/adapters/mcq_bias/setting.py",
+            "ctm_data/adapters/mcq_bias/tests/test_adapter.py",
+            "ctm_data/adapters/mcq_bias/tests/test_analysis.py",
+            "ctm_data/adapters/mcq_bias/tests/test_plot.py",
+            "experiments/rmct_paper_vast_dense_models/README.md",
+            "experiments/rmct_paper_vast_dense_models/stage1/qwen3_5_9b.yaml",
+            "experiments/stage1_iid_diagnostic/README.md",
+            "experiments/stage1_iid_diagnostic/analyze.py",
+            "experiments/stage1_iid_diagnostic/grade_luna.py",
+            "experiments/stage1_iid_diagnostic/tasks.py",
+            "infra/isambard/README.md",
+            "infra/isambard/setup_env.sh",
+            "infra/isambard/setup_gpu_env.sh",
+            "infra/isambard/vllm-constraints.txt",
+            "infra/vastai/benchmark_qwen35_opct_group.py",
+            "infra/vastai/run_qwen35_stage1_continuation.sh",
+            "infra/vastai/setup_synced_validation_env.sh",
+            "scripts/prepare_bct_targets.py",
+            "scripts/run_experiment.py",
+            "scripts/train_bct.py",
+            "scripts/train_opct.py",
+            "scripts/train_rlct.py",
+            "tests/test_ctm_backend_cli.py",
+            "tests/test_ctm_backend_integration.py",
+            "tests/test_ctm_bct_targets.py",
+            "tests/test_ctm_consistency.py",
+            "tests/test_ctm_eval_runner.py",
+            "tests/test_ctm_experiment_config.py",
+            "tests/test_ctm_local_backend.py",
+            "tests/test_ctm_opct.py",
+            "tests/test_ctm_persistent_eval_server.py",
+            "tests/test_ctm_rl_anchor.py",
+            "tests/test_ctm_rl_cli_config.py",
+            "tests/test_ctm_rollout_workers.py",
+            "tests/test_ctm_sft_cli_config.py",
+            "tests/test_ctm_vllm_sampler.py",
+            "tests/test_mcq_bias_scorer_compat.py",
+            "tests/test_rmct_paper_vast_dense_models.py",
+            "tests/test_stage1_iid_diagnostic.py"
+          ],
+          "files": 245,
+          "paths_absent_from_d6d6": []
+        },
+        "tree_sha256": "88439bad820dc9c1c4937baf94c52dfa6861918f29ee0ae4c968a77e5e75c75c"
+      }
+    }
+  }
+}

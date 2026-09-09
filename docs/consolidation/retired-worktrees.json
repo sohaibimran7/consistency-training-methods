@@ -1,0 +1,90 @@
+{
+  "schema": "ctm-retired-worktrees-v1",
+  "archived_at_utc": "2026-09-08T14:58:58.457771+00:00",
+  "preservation": "Initial source/Git bundle and artifact backup verified separately. Directory moves retain every ignored file and virtual environment. No files are deleted.",
+  "restore_command": "python3 /Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/archive-legacy-worktrees.py restore",
+  "worktrees": [
+    {
+      "original_worktree": "/Users/work/consistency-training-methods/.claude/worktrees/consistency-training-datasets-pr-cd60ca",
+      "archived_worktree": "/Users/work/consistency-training-methods/_archive/worktrees-20260908/consistency-training-datasets-pr-cd60ca",
+      "original_registration": "/Users/work/consistency-training-methods/.git/worktrees/consistency-training-datasets-pr-cd60ca",
+      "archived_registration": "/Users/work/consistency-training-methods/.git/_archive/worktrees-20260908/consistency-training-datasets-pr-cd60ca",
+      "registration_sha256": {
+        "FETCH_HEAD": "e103a2b8eb8a990d3fafd9d1ae160a982473edb64ee8d66cf8f90d5f1c891313",
+        "HEAD": "651c0d52c3d23376878c758425435ea45cdeadbcdc33bad3ba8532eb807a8339",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "config.worktree": "9aa4a10bf51a7abd35a42a5208b58569bc9fac45b6040aca2db07221a3106887",
+        "gitdir": "838431ce440ef144e2156da5a25539b49472b98c3ec94ef7bba15fc1f64477cc",
+        "index": "7fd769633521da17faec0092515d621894d04d05f2a4bcea247582a8be3b92cc",
+        "logs/HEAD": "d6f5deee02573a240ad4b5c21c1db829e6e037fc4226877f2092c6d05490b496"
+      },
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "status_before": [],
+      "source_inode": 138061014,
+      "state": "archived"
+    },
+    {
+      "original_worktree": "/Users/work/consistency-training-methods/.claude/worktrees/eloquent-torvalds-dcb313",
+      "archived_worktree": "/Users/work/consistency-training-methods/_archive/worktrees-20260908/eloquent-torvalds-dcb313",
+      "original_registration": "/Users/work/consistency-training-methods/.git/worktrees/eloquent-torvalds-dcb313",
+      "archived_registration": "/Users/work/consistency-training-methods/.git/_archive/worktrees-20260908/eloquent-torvalds-dcb313",
+      "registration_sha256": {
+        "HEAD": "691e04291f54f0172307f4852e62a0833c4fbbf7a1b0d91666f6a118aaa74eef",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "config.worktree": "9aa4a10bf51a7abd35a42a5208b58569bc9fac45b6040aca2db07221a3106887",
+        "gitdir": "25e979b7a6ba9336ba413a3ae3ca59e4326450a86fc86bee21011697e270daad",
+        "index": "719f22375ed587766c950b389acb6f9724347ca2f20cbbfe324c448762e794c7",
+        "logs/HEAD": "3c1e917a4e17a9624b6d6b29f847072e90d05d4aabdd819274e417d4c1014515"
+      },
+      "head": "dbe4a46e2b56886216650803cca27d431d0a2b37",
+      "status_before": [
+        "?? .claude/.DS_Store"
+      ],
+      "source_inode": 148793334,
+      "state": "archived"
+    },
+    {
+      "original_worktree": "/Users/work/consistency-training-methods/.claude/worktrees/mcq-bias-experiment-configs-44649a",
+      "archived_worktree": "/Users/work/consistency-training-methods/_archive/worktrees-20260908/mcq-bias-experiment-configs-44649a",
+      "original_registration": "/Users/work/consistency-training-methods/.git/worktrees/mcq-bias-experiment-configs-44649a",
+      "archived_registration": "/Users/work/consistency-training-methods/.git/_archive/worktrees-20260908/mcq-bias-experiment-configs-44649a",
+      "registration_sha256": {
+        "HEAD": "d88836a8a5e0a869438cef9f6a239277ccd046df4e36d1eeb4349378dd9f3487",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "config.worktree": "9aa4a10bf51a7abd35a42a5208b58569bc9fac45b6040aca2db07221a3106887",
+        "gitdir": "f1c1d0853897fd4a9de43474ddecd37148e3e57fa5d296a96af1bb4c904a0ace",
+        "index": "3c8d3e5935a01a591774414d30fd0de4927c5abc5959593d5fd5d09615e78cba",
+        "logs/HEAD": "abc2c540db10c10320f55404e84cc8fe1ae1588bb27be6c5684ab20fa9879b1e"
+      },
+      "head": "4a6db30ccb788155fb5ff0783d585bad0fcf07dc",
+      "status_before": [
+        "?? .claude/.DS_Store"
+      ],
+      "source_inode": 136031222,
+      "state": "archived"
+    },
+    {
+      "original_worktree": "/Users/work/consistency-training-methods/.claude/worktrees/paper-replication-support-81aaae",
+      "archived_worktree": "/Users/work/consistency-training-methods/_archive/worktrees-20260908/paper-replication-support-81aaae",
+      "original_registration": "/Users/work/consistency-training-methods/.git/worktrees/paper-replication-support-81aaae",
+      "archived_registration": "/Users/work/consistency-training-methods/.git/_archive/worktrees-20260908/paper-replication-support-81aaae",
+      "registration_sha256": {
+        "FETCH_HEAD": "6e649337a61ea360170a2725fbe5d59af2a4b9c414fa1a829e311f87a20b1237",
+        "HEAD": "651c0d52c3d23376878c758425435ea45cdeadbcdc33bad3ba8532eb807a8339",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "config.worktree": "9aa4a10bf51a7abd35a42a5208b58569bc9fac45b6040aca2db07221a3106887",
+        "gitdir": "4ccd8a1554a9100d2c3d9eb9ded39a75503f4dd85a3e08b11c23e7f4f69fbc13",
+        "index": "ce23f85f5fe4b82a0f0cbd493d4ba9625e27b7dd7debbb81503839b7b274dd6c",
+        "logs/HEAD": "efe47507fb2e3e97a2a68f6ceb0da738bd260e6f98e9c6cf66c90b6279569e6f"
+      },
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "status_before": [],
+      "source_inode": 138479831,
+      "state": "archived"
+    }
+  ],
+  "restore_helper": {
+    "uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/archive-legacy-worktrees.py",
+    "sha256": "1c2d4ecbf214112c4ccc90cd9b70fe67e324c800fda4f09f4f29fc14315bab93"
+  }
+}

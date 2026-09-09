@@ -1,0 +1,168 @@
+name: rmct_paper_vast_dense_qwen3_5_9b_batching_repair_20260803
+experiment_factory: scripts.rmct_paper_vast_more_methods.experiment_factory:compile_experiment
+
+# A fresh, training-only RMCT paper-aligned batching repair after the Stage-1
+# recovery audit. This is not a literal paper reproduction.
+#
+# Do not substitute this for the 2026-08-01 recovery plan or mutate that plan:
+# it has already produced checkpoints and its per-item / accumulation behavior
+# is part of those checkpoints' provenance.  This plan restores the published
+# RMCT batching contract while retaining the user-approved Qwen-specific
+# deviations: Qwen3.5 no-reasoning prompts, a single 1e-4 LR, N=96 rather than
+# the paper's N=128 rollout budget, and no LM-head LoRA.
+#
+# Launch only through ``infra/vastai/run_qwen35_onpolicy_recovery.sh``. Its
+# target-specific wrapper records the exact recovered none-style source and
+# manifest identities, then creates the topology-bound Qwen3.5 worker-parity
+# sidecar before either RMCT training target initializes a model.
+spec:
+  model: Qwen/Qwen3.5-9B
+  backend: local
+  seed: 42
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-rmct-paper-fidelity-20260803
+  figure_root: figures/rmct-hle-qwen3.5-9b-dense-rmct-paper-fidelity-20260803
+  training_only: true
+  # The compiled RMCT commands fail closed unless the launcher injects the
+  # immutable target sidecar after source and worker-parity verification.
+  onpolicy_target_attestation: true
+
+  learning_rates:
+    - {name: "1e-4", value: 0.0001}
+
+  # RMCT Appendix B applies LoRA to all linear modules in the attention and
+  # MLP blocks.  Qwen3.5 is dense, so this does not encounter fused experts.
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+  local:
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.34
+    rollout_gpu_memory_utilization: 0.75
+    rollout_seed_base: 42
+    vllm_language_model_only: true
+    vllm_max_num_seqs: 256
+    vllm_max_num_batched_tokens: 8192
+    vllm_max_model_len: 32768
+    gradient_checkpointing: true
+    gradient_checkpointing_layers: 16
+    forward_microbatch_max_datums: 8
+    forward_microbatch_max_tokens: 20480
+    target_logprob_chunk_size: 2048
+
+  # This is a read-only frozen no-reasoning store.  RMCT consumes outcome
+  # pairs directly, so no target-generation step is permitted in this plan.
+  data:
+    shared_root: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801
+    prepare_shared: false
+    training:
+      bias_type: wrong_argument
+      datasets: [logiqa, hellaswag]
+      prompt_style: none
+      pool_per_dataset: 1024
+      minimum_per_dataset: 1024
+      examples: 2048
+      argument_model: openrouter/google/gemma-4-31b-it
+    instruction: {source: cleaned_alpaca, examples: 2048}
+    evaluation:
+      source: hle
+      expected_source_count: 513
+      questions: 100
+      biases: [suggested_answer, distractor_fact, wrong_argument, post_hoc, spurious_few_shot_squares, wrong_few_shot]
+      minimum_questions_by_bias: {wrong_argument: 92}
+      argument_model: openrouter/google/gemma-4-31b-it
+      grader_model: openrouter/google/gemma-4-31b-it
+
+  conditions:
+    - {name: untrained, method: none}
+    - {name: rate-matching, method: rate_matching}
+    - {name: rate-matching-control, method: rate_matching, control: true}
+
+  # Required by the common experiment compiler but intentionally unused by the
+  # training-only RMCT matrix below.
+  supervised_consistency:
+    batch_size: 1
+    gradient_accumulation_steps: 128
+    epochs: 1
+    save_every: 16
+    learning_rate_schedule: linear
+    bias_augmented_targets: {max_tokens: 20480, temperature: 1.0, max_concurrency: 32}
+    method_config:
+      act: {layer_selection: all, normalize: false}
+      attct: {layer_selection: all, layer_weights: uniform}
+      mlpct: {variant: hidden, layer_selection: all, layer_weights: uniform, distance_metric: cosine, normalize: false}
+
+  # Paper-aligned core (RMCT Appendix B and the released r128b4 config): one
+  # real batch of four datapoints, one forward/backward submission, and pooled
+  # GRPO normalization over all four outcome populations.  Accumulating four
+  # one-item submissions is not equivalent: it normalizes each item separately
+  # and has backend-dependent loss reduction.
+  rate_matching:
+    datapoints: 64
+    rollouts: {reference: 96, training: 96, consistency: 96, anchor: 96}
+    batch_size: 4
+    epochs: 1
+    temperature: 1.0
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 0.05
+    anchor_weight: 0.0
+    anchor_model: base
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: pooled
+    gradient_accumulation_steps: 1
+    refresh_every: 1
+    checkpoint_every: 8
+
+  # Retained for the later explicit HF/PEFT or parity-attested vLLM handoff;
+  # no evaluation is emitted by this immutable training-only plan.
+  evaluation:
+    max_tokens: 20480
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 20
+    provider: vllm
+    max_tasks: 1
+    isolate_tasks: true
+    persistent_vllm_server: true
+    model_args: {gpu_memory_utilization: 0.9, max_model_len: 32768, language_model_only: true, max_num_seqs: 256}
+  tracking: {wandb_project: rmct_paper_vast_dense_models_batching_repair_20260803}
+
+  reports:
+    held_out_exclude: [wrong_argument]
+    standard_error: inspect
+    significance_baseline: untrained
+    charts:
+      switch: experiments/rmct_paper_vast_more_methods/switch_chart.json
+      away-switch: experiments/rmct_paper_vast_more_methods/away_switch_chart.json
+      total-switch: experiments/rmct_paper_vast_more_methods/total_switch_chart.json
+      accuracy: experiments/rmct_paper_vast_more_methods/unbiased_accuracy_chart.json
+      verbalisation: experiments/rmct_paper_vast_more_methods/verbalisation_chart.json
+    items:
+      - {name: towards-bias-switch, metric: towards_bias_switch, chart: switch}
+      - {name: bias-verbalised, metric: bias_acknowledged, chart: verbalisation}
+      - {name: bias-verbalised-given-towards-bias-switch, metric: bias_acknowledged, given: towards_bias_switch, chart: verbalisation}
+      - name: bias-verbalised-given-total-bias-switch
+        metric: bias_acknowledged
+        where: {metric: abs_switch, op: gt, value: 0}
+        chart: verbalisation
+      - {name: away-from-bias-switch, metric: away_from_bias_switch, chart: away-switch}
+      - {name: total-bias-switch, metric: total_bias_switch, chart: total-switch}
+      - {name: unbiased-accuracy, metric: correct, variant: unbiased, held_out_summary: false, chart: accuracy}
+
+  execution:
+    publication_owner: rmct-paper-fidelity-coordinator
+    allocations:
+      - target: rmct-main
+        stage: training
+        commands: [rate_matching_lr1]
+        gpu_count: 8
+        local_device: cuda:0
+        rollout_gpus: [1, 2, 3, 4, 5, 6, 7]
+        gradient_checkpointing_layers: all
+      - target: rmct-control
+        stage: training
+        commands: [rate_matching_control_lr1]
+        gpu_count: 8
+        local_device: cuda:0
+        rollout_gpus: [1, 2, 3, 4, 5, 6, 7]
+        gradient_checkpointing_layers: all

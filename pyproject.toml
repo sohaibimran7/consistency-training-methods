@@ -18,6 +18,8 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "ctm_data.adapters.mcq_bias" = ["*.toml"]
+"ctm_data.adapters.eval_awareness" = ["*.toml"]
+"ctm_data.adapters.wildjailbreak" = ["*.toml"]
 
 [tool.black]
 line-length = 120

@@ -1,0 +1,188 @@
+name: rmct_paper_vast_dense_qwen3_5_9b_stage1_recovery_20260801
+experiment_factory: scripts.rmct_paper_vast_more_methods.experiment_factory:compile_experiment
+
+# Fresh replacement for the invalid Qwen3.5 on-policy runs.  It has a wholly
+# new experiment/artifact namespace.  Do not reuse this identity after an
+# interrupted OPCT/RMCT run.
+#
+# Qwen3.5's reasoning template requires ``prompt_style: none``.  The previous
+# Stage-1 pair store is *actually* encourage-CoT (not merely labelled that
+# way), so it is prohibited as an input here.  The distinct root below must be
+# materialized from genuine none-style prompts and a frozen manifest before any
+# training target is launched.  Merely changing the old rows' metadata would
+# be a scientific provenance error.
+#
+# The raw PEFT final checkpoints are deliberately not evaluated here.  They
+# must first be copied to an immutable vLLM compatibility adapter and pass the
+# static HF/vLLM evaluator attestation; that separate handoff then owns evals.
+spec:
+  model: Qwen/Qwen3.5-9B
+  backend: local
+  seed: 42
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-stage1-recovery-20260801
+  figure_root: figures/rmct-hle-qwen3.5-9b-dense-stage1-recovery-20260801
+  training_only: true
+
+  learning_rates:
+    - {name: "1e-4", value: 0.0001}
+
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+  local:
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.34
+    rollout_gpu_memory_utilization: 0.75
+    vllm_language_model_only: true
+    vllm_max_num_seqs: 256
+    vllm_max_num_batched_tokens: 8192
+    vllm_max_model_len: 32768
+    gradient_checkpointing: true
+    gradient_checkpointing_layers: 16
+    forward_microbatch_max_datums: 8
+    forward_microbatch_max_tokens: 20480
+    target_logprob_chunk_size: 2048
+
+  # This is intentionally a new, read-only input namespace. RMCT and OPCT
+  # consume its frozen `distractor-argument-pairs` JSONL directly; no recovery
+  # command may write or regenerate it.
+  data:
+    shared_root: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801
+    prepare_shared: false
+    training:
+      bias_type: wrong_argument
+      datasets: [logiqa, hellaswag]
+      prompt_style: none
+      # Full recovery training consumes 2,048 rows: 1,024 from each source.
+      # The required frozen store must meet this exact per-dataset floor.
+      pool_per_dataset: 1024
+      minimum_per_dataset: 1024
+      examples: 2048
+      argument_model: openrouter/google/gemma-4-31b-it
+    instruction: {source: cleaned_alpaca, examples: 2048}
+    evaluation:
+      source: hle
+      expected_source_count: 513
+      questions: 100
+      biases: [suggested_answer, distractor_fact, wrong_argument, post_hoc, spurious_few_shot_squares, wrong_few_shot]
+      minimum_questions_by_bias: {wrong_argument: 92}
+      argument_model: openrouter/google/gemma-4-31b-it
+      grader_model: openrouter/google/gemma-4-31b-it
+
+  # `untrained` remains the required baseline declaration. With
+  # `training_only: true` it has no executable entry; the later handoff runs
+  # its base vLLM evaluation alongside the three attested adapters.
+  conditions:
+    - {name: untrained, method: none}
+    - {name: rate-matching, method: rate_matching}
+    - {name: rate-matching-control, method: rate_matching, control: true}
+    - {name: opct, method: opct}
+
+  # Retained as the complete scientific contract even though this plan excludes
+  # SFT-style methods and consequently has no target-generation stage.
+  supervised_consistency:
+    batch_size: 1
+    gradient_accumulation_steps: 128
+    epochs: 1
+    save_every: 16
+    learning_rate_schedule: linear
+    bias_augmented_targets: {max_tokens: 20480, temperature: 1.0, max_concurrency: 32}
+    method_config:
+      act: {layer_selection: all, normalize: false}
+      attct: {layer_selection: all, layer_weights: uniform}
+      mlpct: {variant: hidden, layer_selection: all, layer_weights: uniform, distance_metric: cosine, normalize: false}
+
+  opct:
+    learning_rates:
+      - {name: "1e-4", value: 0.0001}
+    batch_size: 1
+    gradient_accumulation_steps: 16
+    epochs: 1
+    rollouts_per_prompt: 4
+    temperature: 0.7
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 2.0
+    kl_discount_factor: 0.9
+    loss: importance_sampling
+    checkpoint_every: 8
+
+  rate_matching:
+    datapoints: 64
+    rollouts: {reference: 96, training: 96, consistency: 96, anchor: 128}
+    batch_size: 1
+    epochs: 1
+    temperature: 1.0
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 0.05
+    anchor_weight: 0.0
+    anchor_model: base
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: per_item
+    gradient_accumulation_steps: 4
+    refresh_every: 1
+    checkpoint_every: 8
+
+  # Retained for the static compatibility/evaluation handoff, but no eval
+  # command is generated by this training-only plan.
+  evaluation:
+    max_tokens: 20480
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 20
+    provider: vllm
+    max_tasks: 1
+    isolate_tasks: true
+    persistent_vllm_server: true
+    model_args: {gpu_memory_utilization: 0.9, max_model_len: 32768, language_model_only: true, max_num_seqs: 256}
+  tracking: {wandb_project: rmct_paper_vast_dense_models_stage1_recovery_20260801}
+
+  reports:
+    held_out_exclude: [wrong_argument]
+    standard_error: inspect
+    significance_baseline: untrained
+    charts:
+      switch: experiments/rmct_paper_vast_more_methods/switch_chart.json
+      away-switch: experiments/rmct_paper_vast_more_methods/away_switch_chart.json
+      total-switch: experiments/rmct_paper_vast_more_methods/total_switch_chart.json
+      accuracy: experiments/rmct_paper_vast_more_methods/unbiased_accuracy_chart.json
+      verbalisation: experiments/rmct_paper_vast_more_methods/verbalisation_chart.json
+    items:
+      - {name: towards-bias-switch, metric: towards_bias_switch, chart: switch}
+      - {name: bias-verbalised, metric: bias_acknowledged, chart: verbalisation}
+      - {name: bias-verbalised-given-towards-bias-switch, metric: bias_acknowledged, given: towards_bias_switch, chart: verbalisation}
+      - name: bias-verbalised-given-total-bias-switch
+        metric: bias_acknowledged
+        where: {metric: abs_switch, op: gt, value: 0}
+        chart: verbalisation
+      - {name: away-from-bias-switch, metric: away_from_bias_switch, chart: away-switch}
+      - {name: total-bias-switch, metric: total_bias_switch, chart: total-switch}
+      - {name: unbiased-accuracy, metric: correct, variant: unbiased, held_out_summary: false, chart: accuracy}
+
+  # Each target owns only one raw final checkpoint. The designated coordinator
+  # is the sole process allowed to merge their target-scoped output states.
+  execution:
+    publication_owner: stage1-recovery-coordinator
+    allocations:
+      - target: rmct-main
+        stage: training
+        commands: [rate_matching_lr1]
+        gpu_count: 8
+        local_device: cuda:0
+        rollout_gpus: [1, 2, 3, 4, 5, 6, 7]
+        gradient_checkpointing_layers: all
+      - target: rmct-control
+        stage: training
+        commands: [rate_matching_control_lr1]
+        gpu_count: 8
+        local_device: cuda:0
+        rollout_gpus: [1, 2, 3, 4, 5, 6, 7]
+        gradient_checkpointing_layers: all
+      - target: opct
+        stage: training
+        commands: [opct_lr1]
+        gpu_count: 8
+        local_device: cuda:0
+        rollout_gpus: [1, 2, 3, 4, 5, 6, 7]
+        gradient_checkpointing_layers: all

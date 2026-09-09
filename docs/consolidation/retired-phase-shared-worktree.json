@@ -1,0 +1,32 @@
+{
+  "schema": "ctm-retired-worktrees-v1",
+  "archived_at_utc": "2026-09-08T15:52:37.965268+00:00",
+  "preservation": "Initial source/Git bundle and artifact backup verified separately. Directory moves retain every ignored file and virtual environment. No files are deleted.",
+  "restore_command": "python3 /Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/archive-phase-shared-worktree.py restore",
+  "worktrees": [
+    {
+      "original_worktree": "/Users/work/.codex/worktrees/phase-shared-pr",
+      "archived_worktree": "/Users/work/consistency-training-methods/_archive/worktrees-20260908/phase-shared-pr",
+      "original_registration": "/Users/work/consistency-training-methods/.git/worktrees/phase-shared-pr",
+      "archived_registration": "/Users/work/consistency-training-methods/.git/_archive/worktrees-20260908/phase-shared-pr",
+      "registration_sha256": {
+        "COMMIT_EDITMSG": "aa441fb46b7531424c2900db4dca17f9e70969fd0051fda96bdb4c5ab15a9053",
+        "HEAD": "578ab28f3406cfab205c9b61efb3ccc248569354a5794c401293db5dfe729260",
+        "ORIG_HEAD": "1d6a17b8705c07644a25631ae144c3b02dfaa2bc6aca60823f0a3710e365e244",
+        "commondir": "340ddcb67a6204f742cd1e28e5b462622dde7daaa8ee36001897196aacdc6d47",
+        "config.worktree": "da89256d91364984591e686f641271bbbf63fc48a9e6add5690bf9979b795529",
+        "gitdir": "0c91a3ea4bf6e018f58fd398607cadead82f02c788a9fa81b08a5ff921c02608",
+        "index": "a96edfba36203016bd0eb57f487b7ed0d74756fc7f4ce8f0e4821247522e2edc",
+        "logs/HEAD": "a949f4ba204925dbe2ab6c3d72323828541bed0cc9e257096974432ec51f275f"
+      },
+      "head": "5d9aa7bfc28e0f4b8109f33502b1ba1f650500dc",
+      "status_before": [],
+      "source_inode": 145209169,
+      "state": "archived"
+    }
+  ],
+  "restore_helper": {
+    "uri": "file:///Users/work/.codex/visualizations/2026/09/08/01a08105-5843-7be1-9f22-0a739c1a40fe/preservation/archive-phase-shared-worktree.py",
+    "sha256": "045fdc1aa9a876226b5ab255fcecc53eb9823545dea5382d56daec6e91f72349"
+  }
+}

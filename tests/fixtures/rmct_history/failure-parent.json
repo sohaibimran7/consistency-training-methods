@@ -1,0 +1,81 @@
+{
+  "condition": "rmct-convergence",
+  "execution_delta": {
+    "local_forward_microbatch_max_tokens": {
+      "from": 49152,
+      "to": 40960
+    },
+    "scientific_contract_unchanged": true
+  },
+  "failed_attempt_not_used_as_state": {
+    "attempted_logical_segment_index": 4,
+    "attempted_run_prefix": "rmct-convergence-gcall-r2-mb49152-r3",
+    "attempted_run_name": "rmct-convergence-gcall-r2-mb49152-r3-s005",
+    "job_id": "6031786",
+    "outcome": "failed",
+    "policy": "fresh_r4_namespace_without_checkpoint_or_receipt_from_failed_attempt",
+    "recovery_parent_optimizer_step": 64,
+    "scheduler": "slurm"
+  },
+  "failed_attempt_evidence": {
+    "config": {
+      "path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s005/config.json",
+      "sha256": "ce841eba88f5e43cc5f24b973f5cf20766de84e7e251161a79d7aac04dfc43d6"
+    },
+    "logs": {
+      "path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s005/logs.log",
+      "sha256": "72ecc765553f5075793197cfeb0e4d835de58c506975225e859f86352eae0d18"
+    },
+    "manifest": {
+      "path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s005/manifest.json",
+      "sha256": "6973e51705a0992b89c35b5d588b0ea2b1a21513de7c837c31afd819c9727a18"
+    },
+    "metrics": {
+      "path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s005/metrics.jsonl",
+      "sha256": "f2af87e48febac43793f36ff914ca87f7543c12e1fd965b4fd1865de500af558"
+    },
+    "slurm_output": {
+      "path": "slurm-rmct-convergence-r3-segment-6031786.out",
+      "sha256": "f3f6814c7e00d1c2e640bde8e976493c79ed1fc535c30be3f721865f1da2240d"
+    },
+    "training_command": {
+      "path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s005/segment/training-command.json",
+      "sha256": "4e119f61dc8ae9bbac7e66693bd33dcee594878625be13338d3caa57f17a0382"
+    },
+    "training_started": {
+      "path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s005/segment/training-started.json",
+      "sha256": "d61999f2138d42ff1874d8a663cdf07652e498841e243b6e0395b238cb8ee4fb"
+    }
+  },
+  "logical_start_segment_index": 4,
+  "parent": {
+    "checkpoint_relative_path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s004/checkpoints/rmct-convergence_rmct-convergence-gcall-r2-mb49152-r3-s004",
+    "completion_receipt_relative_path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s004/segment/completion-receipt.json",
+    "condition": "rmct-convergence",
+    "decision_directory_relative_path": "logs/rmct-convergence/rmct-convergence-gcall-r2-mb49152-r3-s004/decisions",
+    "expected_final": true,
+    "expected_kind": "both",
+    "optimizer_step": 64,
+    "run_name": "rmct-convergence-gcall-r2-mb49152-r3-s004",
+    "run_prefix": "rmct-convergence-gcall-r2-mb49152-r3",
+    "segment_index": 3
+  },
+  "preflight_evidence": {
+    "all_gradient_checkpointing_layers": "all",
+    "contract": {
+      "path": "artifacts/rmct-convergence-gcall-r2-mb49152-r3-20260814/same-gh200-all-gc-preflight-contract.json",
+      "sha256": "a71c0d74cb65b3b3aba56eb61f03e5ab25fe5cf28e909448b60fe62e051c6394"
+    },
+    "contract_sha256": "a71c0d74cb65b3b3aba56eb61f03e5ab25fe5cf28e909448b60fe62e051c6394",
+    "hardware_scope": "same-GH200",
+    "highest_validated_local_forward_microbatch_max_tokens": 49152,
+    "result": {
+      "path": "artifacts/rmct-convergence-gcall-r2-mb49152-r3-20260814/same-gh200-all-gc-preflight-result.json",
+      "sha256": "da5783f1aca63cd7f7df500cd85e3460f204ddf2398417c8f44a5c9fadcdd0e9"
+    },
+    "result_sha256": "da5783f1aca63cd7f7df500cd85e3460f204ddf2398417c8f44a5c9fadcdd0e9",
+    "selected_validated_local_forward_microbatch_max_tokens": 40960
+  },
+  "run_prefix": "rmct-convergence-gcall-r2-mb40960-r4",
+  "schema": "rmct-convergence-r4-recovery-failure-parent-v2"
+}

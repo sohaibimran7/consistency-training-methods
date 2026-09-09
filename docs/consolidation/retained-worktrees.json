@@ -1,0 +1,133 @@
+{
+  "schema": "ctm-retained-worktree-disposition-v1",
+  "observed_at_utc": "2026-09-08T15:53:39.383979+00:00",
+  "worktrees": [
+    {
+      "id": "primary",
+      "path": "/Users/work/consistency-training-methods",
+      "head": "3984e08d6caa156754bff7303ed630a48bf827bd",
+      "branch": "refs/heads/codex/evalaware-figure6-isambard",
+      "changed_tracked_files": 0,
+      "untracked_files": 735,
+      "retention_reason": "Figure6 task and shared primary environment; preserve in place."
+    },
+    {
+      "id": "1a9b",
+      "path": "/Users/work/.codex/worktrees/1a9b/consistency-training-methods",
+      "head": "ce5052cf5d5a85baeab97bcb5fb73ab22bf53f8d",
+      "branch": "refs/heads/codex/incorporate-pr5-pr7",
+      "changed_tracked_files": 0,
+      "untracked_files": 0,
+      "retention_reason": "Earlier PR7 review task workspace retained for user continuation."
+    },
+    {
+      "id": "2b9f",
+      "path": "/Users/work/.codex/worktrees/2b9f/consistency-training-methods",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "branch": null,
+      "changed_tracked_files": 0,
+      "untracked_files": 2,
+      "retention_reason": "Separate laptop sleep/watcher task; outside experiment cleanup scope."
+    },
+    {
+      "id": "3a39",
+      "path": "/Users/work/.codex/worktrees/3a39/consistency-training-methods",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "branch": null,
+      "changed_tracked_files": 1,
+      "untracked_files": 3,
+      "retention_reason": "Separate Symphony setup task; outside experiment cleanup scope."
+    },
+    {
+      "id": "3be0",
+      "path": "/Users/work/.codex/worktrees/3be0/consistency-training-methods",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "branch": null,
+      "changed_tracked_files": 0,
+      "untracked_files": 0,
+      "retention_reason": "Separate agent/model configuration task; outside experiment cleanup scope."
+    },
+    {
+      "id": "3f19",
+      "path": "/Users/work/.codex/worktrees/3f19/consistency-training-methods",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "branch": null,
+      "changed_tracked_files": 47,
+      "untracked_files": 245,
+      "retention_reason": "Pinned research/diagnostic tasks; source features covered and paper assets now archived independently. Retain task workspace."
+    },
+    {
+      "id": "9e79",
+      "path": "/Users/work/.codex/worktrees/9e79/consistency-training-methods",
+      "head": "d21b9bd9519e028bdb101126923ab8e84944d785",
+      "branch": null,
+      "changed_tracked_files": 9,
+      "untracked_files": 16,
+      "retention_reason": "Adapter conversion task still attached; plotting integrated and raw smoke logs retained. Keep task workspace and its artifact location."
+    },
+    {
+      "id": "a253",
+      "path": "/Users/work/.codex/worktrees/a253/consistency-training-methods",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "branch": null,
+      "changed_tracked_files": 0,
+      "untracked_files": 0,
+      "retention_reason": "Explanatory MLPCT task workspace; no evidence of a live experiment to retire."
+    },
+    {
+      "id": "a295",
+      "path": "/Users/work/.codex/worktrees/a295/consistency-training-methods",
+      "head": "9d574e8e448d4c8bf32373600bb5050cbfb1368f",
+      "branch": null,
+      "changed_tracked_files": 1,
+      "untracked_files": 16,
+      "retention_reason": "Maintained authentication/controller owner and collector process working directory."
+    },
+    {
+      "id": "ad75",
+      "path": "/Users/work/.codex/worktrees/ad75/consistency-training-methods",
+      "head": "6a9cf3f2a41ee69515b3f45fabf5ec428d4ac8e3",
+      "branch": "refs/heads/codex/experiment-consolidation",
+      "changed_tracked_files": 7,
+      "untracked_files": 3,
+      "retention_reason": "Current consolidation branch and review."
+    },
+    {
+      "id": "c9b7",
+      "path": "/Users/work/.codex/worktrees/c9b7/consistency-training-methods",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "branch": "refs/heads/codex/fused-expert-profiling",
+      "changed_tracked_files": 38,
+      "untracked_files": 82,
+      "retention_reason": "Historical run-cost/research tasks still attached. Source features covered; retain task workspace."
+    },
+    {
+      "id": "d6d6",
+      "path": "/Users/work/.codex/worktrees/d6d6/consistency-training-methods",
+      "head": "bc6828e7eaf868a7073b2975bd9ad2d59b7ca536",
+      "branch": null,
+      "changed_tracked_files": 55,
+      "untracked_files": 459,
+      "retention_reason": "Active Gemma/RMCT source worktree; deployed campaigns and newCPUenvironment work continue separately."
+    },
+    {
+      "id": "db11",
+      "path": "/Users/work/.codex/worktrees/db11/consistency-training-methods",
+      "head": "9d574e8e448d4c8bf32373600bb5050cbfb1368f",
+      "branch": null,
+      "changed_tracked_files": 0,
+      "untracked_files": 0,
+      "retention_reason": "Adapter audit task; no path retirement requested during its independent review."
+    },
+    {
+      "id": "e368",
+      "path": "/Users/work/.codex/worktrees/e368/consistency-training-methods",
+      "head": "ba62edb28b32a4b3eb17a941f3ea345097f9d06b",
+      "branch": null,
+      "changed_tracked_files": 0,
+      "untracked_files": 0,
+      "retention_reason": "Earlier cleanup task workspace retained for user continuation."
+    }
+  ],
+  "note": "Retaining a task workspace is separate from choosing its source as canonical. Consolidated source is on codex/experiment-consolidation. No primary or attached task branch was reset."
+}

@@ -1,0 +1,108 @@
+schema_version: evalawarebench.figure6.models.v1
+
+# Immutable serving registry for the seven Figure 6 checkpoints.  Keep the
+# comparison family and training stage independent of presentation order.
+models:
+  qwen36:
+    model_id: Qwen/Qwen3.6-27B
+    revision: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
+    display_name: Qwen3.6-27B
+    tensor_parallel_size: 1
+    dtype: bfloat16
+    prompt_key: paper_natural
+    reasoning_parser: qwen3
+    comparison_family: qwen
+    comparison_stage: standard
+    language_model_only: true
+    gated: false
+    approximate_weights_gb: 55.6
+
+  qwen32:
+    model_id: Qwen/Qwen3-32B
+    revision: 9216db5781bf21249d130ec9da846c4624c16137
+    display_name: Qwen3-32B
+    tensor_parallel_size: 1
+    dtype: bfloat16
+    prompt_key: paper_natural
+    reasoning_parser: qwen3
+    comparison_family: qwen
+    comparison_stage: standard
+    language_model_only: false
+    gated: false
+    approximate_weights_gb: 65.5
+
+  qwen_mo_mid:
+    model_id: obalcells/qwen3-32b-mo-midtrained
+    revision: a0a6fd96db794775a3c94dd3e15ad2bfb218f738
+    display_name: Qwen3-32B MO (midtrained)
+    tensor_parallel_size: 1
+    dtype: bfloat16
+    prompt_key: paper_natural
+    reasoning_parser: qwen3
+    comparison_family: qwen
+    comparison_stage: midtrained
+    language_model_only: false
+    gated: false
+    approximate_weights_gb: 131.1
+    source_weights_dtype: float32
+
+  qwen_mo_post:
+    model_id: obalcells/qwen3-32b-mo-posttrained
+    revision: 4c19c17fc198f2db9bd234b6859219322a00f89c
+    display_name: Qwen3-32B MO (posttrained)
+    tensor_parallel_size: 1
+    dtype: bfloat16
+    prompt_key: paper_natural
+    reasoning_parser: qwen3
+    comparison_family: qwen
+    comparison_stage: posttrained
+    language_model_only: false
+    gated: false
+    approximate_weights_gb: 131.1
+    source_weights_dtype: float32
+
+  llama33:
+    model_id: meta-llama/Llama-3.3-70B-Instruct
+    revision: 6f6073b423013f6a7d4d9f39144961bfbfbc386b
+    display_name: Llama-3.3-70B-Instruct
+    tensor_parallel_size: 2
+    dtype: bfloat16
+    prompt_key: explicit_scratchpad
+    reasoning_parser: scratchpad_tags
+    comparison_family: llama
+    comparison_stage: standard
+    language_model_only: false
+    gated: true
+    approximate_weights_gb: 141.1
+    prefetch_ignore_patterns:
+      - original/*.pth
+
+  llama_mo_mid:
+    model_id: obalcells/llama-3.3-70b-mo-midtrained
+    revision: e6c95dd4e945dc5cf993d549aab3afd8c11fe11a
+    display_name: Llama-3.3-70B MO (midtrained)
+    tensor_parallel_size: 2
+    dtype: bfloat16
+    prompt_key: explicit_scratchpad
+    reasoning_parser: scratchpad_tags
+    comparison_family: llama
+    comparison_stage: midtrained
+    language_model_only: false
+    gated: false
+    approximate_weights_gb: 282.2
+    source_weights_dtype: float32
+
+  llama_mo_post:
+    model_id: obalcells/llama-3.3-70b-mo-posttrained
+    revision: 4d0cffd1db66e2caa9f503c0b50de6128f10e089
+    display_name: Llama-3.3-70B MO (posttrained)
+    tensor_parallel_size: 2
+    dtype: bfloat16
+    prompt_key: explicit_scratchpad
+    reasoning_parser: scratchpad_tags
+    comparison_family: llama
+    comparison_stage: posttrained
+    language_model_only: false
+    gated: false
+    approximate_weights_gb: 282.2
+    source_weights_dtype: float32
