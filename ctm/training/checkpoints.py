@@ -8,11 +8,21 @@ tinker training client.
 from typing import Optional
 
 from ctm.backends.base import TrainingBackend
+from ctm.core.config import CheckpointConfig
 from ctm.training.run_utils import build_checkpoint_name
 
 
 def _checkpoint_path(paths: dict) -> str:
     return paths.get("sampler_path") or paths.get("state_path")
+
+
+def intermediate_checkpoint_due(config: CheckpointConfig, *, step: int, total_steps: int) -> bool:
+    """Use the same schedule for saving checkpoints and draining queued work."""
+    return bool(
+        config.save_every_n_steps
+        and step % config.save_every_n_steps == 0
+        and total_steps - step > config.skip_near_final_steps
+    )
 
 
 async def save_intermediate_checkpoint(
@@ -33,11 +43,7 @@ async def save_intermediate_checkpoint(
     Returns the checkpoint path, or None if nothing was saved. Appends to `checkpoint_paths`
     and logs `{"checkpoint": path}` as a side effect, matching the prior inline behaviour.
     """
-    steps_remaining = total_steps - global_step
-    near_final = steps_remaining <= checkpoint_cfg.skip_near_final_steps
-    if not (
-        checkpoint_cfg.save_every_n_steps and global_step % checkpoint_cfg.save_every_n_steps == 0 and not near_final
-    ):
+    if not intermediate_checkpoint_due(checkpoint_cfg, step=global_step, total_steps=total_steps):
         return None
     name = build_checkpoint_name(experiment_name, run_name, step=global_step)
     kind = "both" if checkpoint_cfg.save_state else "sampler"
