@@ -14,6 +14,7 @@ class PreparationTests(unittest.TestCase):
     def setUp(self):
         self.baseline=json.loads((HERE/'fixtures/original_recipe.json').read_text())
         self.kw=dict(repo='/canonical/repo',python='/canonical/venv/bin/python',
+                     python_prefix='/canonical/venv',
                      commit='a'*40,run_name='clean-first',data='/data/pool',
                      manifest='/data/manifest',attestation='/new/preflight.json')
 

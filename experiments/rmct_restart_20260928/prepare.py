@@ -14,12 +14,12 @@ REVISION = 'c202236235762e1c871ad0ccb60c8ee5ba337b9a'
 MANIFEST_SHA = 'eac0682fe0286126cc5928253e2e2ef4968eee50775a65feb21d061eec6853cc'
 
 
-def build(baseline, *, repo, python, commit, run_name, data, manifest, attestation):
+def build(baseline, *, repo, python, python_prefix, commit, run_name, data, manifest, attestation):
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
         raise ValueError('Exact incorporated commit required')
     if not re.fullmatch(r'[A-Za-z0-9_-]+', run_name):
         raise ValueError('Distinct safe run name required')
-    for p in (repo, python, data, manifest, attestation):
+    for p in (repo, python, python_prefix, data, manifest, attestation):
         if not Path(p).is_absolute():
             raise ValueError('Explicit absolute deployment paths required')
     argv = list(baseline['argv'])
@@ -41,7 +41,7 @@ def build(baseline, *, repo, python, commit, run_name, data, manifest, attestati
     assert argv[argv.index('--model')+1].endswith('/'+REVISION)
     assert not any(x.startswith('--resume') for x in argv)
     return dict(schema='rmct-clean-restart-preparation-v1', ready_to_launch=False,
-                incorporated_commit=commit, argv=argv, initial_model_revision=REVISION,
+                incorporated_commit=commit, python_prefix=python_prefix, argv=argv, initial_model_revision=REVISION,
                 optimizer='fresh', initial_segment=0, initial_optimizer_step=0,
                 first_segment_end=16, first_validation_step=64,
                 validation=dict(metric='tbsr', interval=64, patience=2, min_delta=0,
@@ -59,13 +59,13 @@ def build(baseline, *, repo, python, commit, run_name, data, manifest, attestati
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ('baseline','repo','python','commit','run-name','data','manifest','attestation','output'):
+    for name in ('baseline','repo','python','python-prefix','commit','run-name','data','manifest','attestation','output'):
         p.add_argument('--'+name, required=True)
     a=p.parse_args()
     raw=Path(a.baseline).read_bytes()
     if hashlib.sha256(raw).hexdigest()!=BASELINE_SHA:
         raise ValueError('Historical recipe identity mismatch')
-    result=build(json.loads(raw), repo=a.repo, python=a.python, commit=a.commit,
+    result=build(json.loads(raw), repo=a.repo, python=a.python, python_prefix=a.python_prefix, commit=a.commit,
                  run_name=a.run_name, data=a.data, manifest=a.manifest, attestation=a.attestation)
     with Path(a.output).open('x') as f:
         json.dump(result,f,indent=2);f.write('\n')

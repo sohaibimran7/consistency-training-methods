@@ -98,7 +98,7 @@ def main():
     renderer, tokenizer = renderers.get_renderer_and_tokenizer(str(args.model), source='hf')
     receipt = {'schema': 'rmct-restart-cpu-v1', 'status': 'cpu_checks_passed',
         'optimizer_work_authorized': False, 'source_commit': args.source_commit,
-        'source_root': str(root), 'python': sys.executable, 'python_prefix': sys.prefix,
+        'source_root': str(root), 'python': sys.executable, 'sys_prefix': sys.prefix,
         'cwd': str(Path.cwd()),
         'sources': source_files, 'model_files': model_files,
         'validation_manifest': identity(args.validation_manifest),
