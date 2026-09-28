@@ -70,8 +70,10 @@ def main():
     if out == root or root in out.parents:
         raise RuntimeError('Disposable work must be outside deployment')
     out.mkdir(parents=True, exist_ok=False)
-    replace('--load-config', json.dumps({'n_datapoints': 2, 'segment_index': 0, 'cycle_segments': True}))
-    replace('--n-datapoints', '2')
+    # Preserve the frozen 32-QID segment contract. The disposable wrapper
+    # validates the entire segment before selecting one batch; production's
+    # setting and CLI are never weakened to accept an invalid two-QID segment.
+    argv[1] = str(root/'experiments/rmct_restart_20260928/native_rl_worker.py')
     replace('--checkpoint-every', '1')
     replace('--experiment-name', 'disposable-native-rl-gate')
     replace('--run-name', 'one-update')
@@ -94,11 +96,27 @@ def main():
             states.append(load_strict_local_rl_resume_state(path.parent))
     if len(states) != 1 or states[0].optimizer_step != 1 or states[0].global_step != 1:
         raise RuntimeError('Exactly one completed real optimizer update required')
+    from safetensors import safe_open
+    import torch
+    adapter = states[0].checkpoint_dir/'adapter_model.safetensors'
+    with safe_open(adapter, framework='pt', device='cpu') as handle:
+        keys = list(handle.keys())
+        if not keys or any(not torch.isfinite(handle.get_tensor(key)).all() for key in keys):
+            raise RuntimeError('Empty/nonfinite updated adapter')
+    metrics_path = indices[0].parent.parent/'metrics.jsonl'
+    metrics = [json.loads(line) for line in metrics_path.read_text().splitlines() if line.strip()]
+    updates = [m for m in metrics if m.get('train/optimizer_step') == 1]
+    if len(updates) != 1 or updates[0].get('train/skipped_empty_batch') != 0:
+        raise RuntimeError('No unique non-skipped update metrics')
+    if any(isinstance(v, float) and not math.isfinite(v) for m in metrics for v in m.values()):
+        raise RuntimeError('Nonfinite training metrics')
     source_check(root, commit)
     write(out/'receipt.json', {'schema': 'rmct-native-rl-gate-v1', 'status': 'passed',
         'source_commit': commit, 'plan_sha256': sha(a.plan), 'preflight_sha256': sha(a.preflight),
         'optimizer_steps': 1, 'production_resume_forbidden': True,
         'rollout_count': len(records), 'rollout_index_sha256': sha(indices[0]),
+        'metrics_sha256': sha(metrics_path), 'adapter_sha256': sha(adapter),
+        'subset_sha256': sha(out/'disposable-subset.json'),
         'checkpoint_manifest_sha256': sha(states[0].checkpoint_dir/'manifest.json'),
         'limitations': ['one batch is not a convergence or full-run capacity guarantee']})
 

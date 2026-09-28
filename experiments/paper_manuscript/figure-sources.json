@@ -1,0 +1,223 @@
+{
+  "schema": "ctm-manuscript-figure-sources-v1",
+  "scope": "Saved-statistics rendering and saved-figure copying only; not upstream data generation, aggregation, scoring, training or full paper reproduction.",
+  "sources": {
+    "main-switch": {
+      "root": "corrected_figures",
+      "path": "towards-bias-switch-standard/chart-rows.json",
+      "sha256": "d477a1eac0cc3a7b77236bd7ae72baa7c96bb4fc1f7508779ac09819f2adc566"
+    },
+    "main-conditional": {
+      "root": "corrected_figures",
+      "path": "conditional-verbalisation-20260918/main-paper-style-108000/chart-rows.json",
+      "sha256": "f13cf4465623dcf8c701a2514e87e7ecb7e2adbebcf3331237fc9c472e2b5a36"
+    },
+    "expanded-switch": {
+      "root": "corrected_figures",
+      "path": "towards-bias-switch-standard/towards-bias-switch.pdf",
+      "sha256": "61d033b20d5bf95a77a2790bfdf6adeafbece8c7dfe54695ee8e4308e1cc17b5"
+    },
+    "expanded-conditional": {
+      "root": "corrected_figures",
+      "path": "conditional-verbalisation-20260918/main-paper-style-108000/conditional-bias-verbalisation.pdf",
+      "sha256": "61d145fb881ecb56ee7eaeb6b1c013e6b095fc3ede3c31606667417901241f76"
+    },
+    "overall-verbalisation": {
+      "root": "corrected_figures",
+      "path": "bias-verbalisation-standard/bias-verbalisation.pdf",
+      "sha256": "89a12b59e7ccb119acc358fe7694451a666e0da79def47442f9f09c81e5ad9e4"
+    },
+    "biased-accuracy": {
+      "root": "corrected_figures",
+      "path": "biased-accuracy-20260918/biased-accuracy-paper-style.pdf",
+      "sha256": "c13bd71da3d7f2608d186410c0194b2cc2e722f29fad02d442e3f74328cffe3f"
+    },
+    "convergence": {
+      "root": "ctm_artifacts",
+      "path": "methods-convergence-all-20260917/convergence-all-methods.pdf",
+      "sha256": "51d59ffa37df31f4def4854cde11d92e2525e698a69e4c02d574071a7517b289"
+    },
+    "cross-task": {
+      "root": "ctm_artifacts",
+      "path": "qwen-aita-vllm-20260920/plots64/terminal-comparison.pdf",
+      "sha256": "38e10dbaa37e8b7aa7dd1ce8edfe10aeffa2ad3a36a2f87a948e1c580cd4bfe9"
+    },
+    "image-qwen": {
+      "root": "ctm_artifacts",
+      "path": "image-suite-20260921/paper-splits-20260925/qwen-towards_bias_switch-per-bias.pdf",
+      "sha256": "36ff880a60b4505664571c6b31b41e26a2d57fc0f8812ec3a6f8b7522b957ae8"
+    },
+    "image-gemma": {
+      "root": "ctm_artifacts",
+      "path": "image-suite-20260921/paper-splits-20260925/gemma-towards_bias_switch-per-bias.pdf",
+      "sha256": "4c7b0651f3ea8b3687505d80f7a544520e0416c3867558364d0b4114cb607889"
+    },
+    "monitor-overview": {
+      "root": "monitor",
+      "path": "monitorability-overview.png",
+      "sha256": "cb8622a884cb039b2c3f1573924584311f2c5b58410bd9078d81ec8c73a9ed93"
+    },
+    "historical-compute-table": {
+      "root": "ctm_artifacts",
+      "path": "compute-audit-20260917/README.md",
+      "sha256": "ec681d88e9d2eec5e8e068c896808c24216c7f4698f60afa2a0f5173e9d53894"
+    },
+    "organism-table": {
+      "root": "organism_artifacts",
+      "path": "evalaware-v1-v4-consolidated-20260915/inspect-se-v2/REPORT.md",
+      "sha256": "c2bcb927c8025255b9af87783a22b9e2a44bbf3088abaefabe79d80f34c550e4"
+    },
+    "style": {
+      "root": "corrected_figures",
+      "path": "towards-bias-switch-standard/chart-spec.json",
+      "sha256": "fe439848b7b7beb7ba95f1901f141e90597872878fa01a12116583986c510015"
+    }
+  },
+  "entries": [
+    {
+      "id": "main-switch",
+      "kind": "render_saved_statistics",
+      "sources": [
+        "main-switch",
+        "style"
+      ],
+      "output": "figures/provisional/main-switch.pdf",
+      "manuscript_location": null,
+      "status": "Parser-corrected saved evaluation; flawed RMCT training; partial selective recovery and missing grades; Base clean labels incompletely verifiable.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "main-conditional",
+      "kind": "render_saved_statistics",
+      "sources": [
+        "main-conditional",
+        "style"
+      ],
+      "output": "figures/provisional/main-conditional.pdf",
+      "manuscript_location": null,
+      "status": "Parser-corrected saved evaluation; flawed RMCT training; partial selective recovery and missing grades; Base clean labels incompletely verifiable.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "expanded-switch",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "expanded-switch"
+      ],
+      "output": "figures/provisional/expanded-switch.pdf",
+      "manuscript_location": null,
+      "status": "Parser-corrected historical evaluation; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "expanded-conditional",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "expanded-conditional"
+      ],
+      "output": "figures/provisional/expanded-conditional.pdf",
+      "manuscript_location": null,
+      "status": "Parser-corrected historical evaluation; missing verbalisation grades; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "overall-verbalisation",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "overall-verbalisation"
+      ],
+      "output": "figures/provisional/overall-verbalisation.pdf",
+      "manuscript_location": null,
+      "status": "Parser-corrected historical evaluation; missing verbalisation grades; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "biased-accuracy",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "biased-accuracy"
+      ],
+      "output": "figures/provisional/biased-accuracy.pdf",
+      "manuscript_location": null,
+      "status": "Parser-corrected historical evaluation; selective recovery; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "convergence",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "convergence"
+      ],
+      "output": "figures/provisional/convergence.pdf",
+      "manuscript_location": null,
+      "status": "Historical own-objective stopping curves; not validation-selected; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "cross-task",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "cross-task"
+      ],
+      "output": "figures/provisional/cross-task.pdf",
+      "manuscript_location": null,
+      "status": "Saved AITA selective-64k-retry plot; full coverage and verdict parsing not re-audited here; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "image-qwen",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "image-qwen"
+      ],
+      "output": "figures/provisional/image-qwen.pdf",
+      "manuscript_location": null,
+      "status": "Saved image evaluation; parser provenance not re-audited here; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "image-gemma",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "image-gemma"
+      ],
+      "output": "figures/provisional/image-gemma.pdf",
+      "manuscript_location": null,
+      "status": "Saved image evaluation; one unresolved Gemma RMCT response in source manifest; flawed RMCT training.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "monitor-overview",
+      "kind": "copy_saved_figure",
+      "sources": [
+        "monitor-overview"
+      ],
+      "output": "figures/provisional/monitor-overview.png",
+      "manuscript_location": null,
+      "status": "23 September corrected-label sensitivity analysis; saved monitor scores only, no scores for newly eligible/recovered/top-up responses; flawed RMCT training. Target-comparison replacement pending verification.",
+      "replacement": "Clean RMCT retraining plus verified exposure-matched evaluation; replacement unassigned."
+    },
+    {
+      "id": "historical-compute-table",
+      "kind": "source_only_manual_table",
+      "sources": [
+        "historical-compute-table"
+      ],
+      "output": null,
+      "manuscript_location": "current-appendix.tex",
+      "status": "Historical allocated GPU-hours table; not matched-compute performance.",
+      "replacement": "Retain as historical allocation accounting; collect clean-run accounting for matched-compute performance; replacement unassigned."
+    },
+    {
+      "id": "organism-table",
+      "kind": "source_only_manual_table",
+      "sources": [
+        "organism-table"
+      ],
+      "output": null,
+      "manuscript_location": "current-results.tex",
+      "status": "Native bridge table: historical single-organism characterisation, no verified RMCT intervention linkage; separate missingness denominators.",
+      "replacement": "Verify intervention linkage and supported behaviour/awareness analysis; replacement unassigned."
+    }
+  ]
+}

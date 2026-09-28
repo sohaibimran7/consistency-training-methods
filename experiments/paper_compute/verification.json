@@ -1,0 +1,49 @@
+{
+  "passed": true,
+  "commands": 6,
+  "input_hashes_verified": 11,
+  "outputs": [
+    {
+      "path": "compute-audit-20260917/summary.json",
+      "sha256": "0b26f6547ce8cf935797d582474a974268044f500e06e96da54c12b67f8427e8",
+      "matched": true
+    },
+    {
+      "path": "compute-audit-20260917/per-step.json",
+      "sha256": "c51c624515aa653b74f31b4f092ddc8584d560833f847fb04c8500efe4593047",
+      "matched": true
+    },
+    {
+      "path": "compute-audit-20260917/PER_STEP.md",
+      "sha256": "e232ede69beca93bb52e205f0537e20e50a00fedb26ae667d3abc9cb5b24aabc",
+      "matched": true
+    },
+    {
+      "path": "compute-matched-selection-20260926/selection.json",
+      "sha256": "cb621fda32946faa670862e2b1c6c007441b833ef3c673111a96c95f5745d4f2",
+      "matched": true
+    },
+    {
+      "path": "compute-matched-selection-20260926/restricted-search.json",
+      "sha256": "1f206aa258594531d23eca1cedb28419304ddce4fc3f1632ca92c91c3068dd68",
+      "matched": true
+    },
+    {
+      "path": "data-matched-checkpoints-20260926/analysis.json",
+      "sha256": "b7605c7b003c2cd7acce5ef1cfa6f76597b950aa42f473ab36551dd6a54e70d8",
+      "matched": true
+    },
+    {
+      "path": "data-matched-checkpoints-20260926/CHECKPOINTS.md",
+      "sha256": "ae48531af7ca9d309b044cfb509e314920e94437994cb2c657ad2fc1bcd394fa",
+      "matched": true
+    },
+    {
+      "path": "data-matched-checkpoints-20260926/README.md",
+      "sha256": "5836c2e02c5e61fe69b60264833ef91d041eefd12d9b7c764ec1b6d573adb951",
+      "matched": true
+    }
+  ],
+  "source_artifacts_modified": false,
+  "note": "Data README command links adapted; numerical/path outputs byte-identical. Historical snapshot only."
+}

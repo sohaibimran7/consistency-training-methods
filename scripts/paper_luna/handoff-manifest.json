@@ -1,0 +1,97 @@
+{
+  "filter": {
+    "inputs": [
+      {
+        "path": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/luna-filtered-unfiltered-20260928/with-topup/data.json",
+        "sha256": "35402a6e3210bdc9b2cece1ad10c4a995b34116b4e6560babafef2ea52bfa2a4"
+      }
+    ],
+    "bootstrap": 10000,
+    "seed": 20260928,
+    "warnings": [
+      "Historical RMCT outputs are not evidence for an unaffected/corrected training run.",
+      "Parser-corrected evaluation labels do not repair historical training rewards.",
+      "Observed single-pair switches are not causal influence ground truth.",
+      "Base clean labels remain unverified; historical ICL calibration labels are retained.",
+      "Missing, invalid, and truncated outputs are excluded, never imputed negative.",
+      "Fixed calibration banks: bootstrap intervals exclude demonstration-selection uncertainty."
+    ],
+    "mode": "filter"
+  },
+  "icl": {
+    "inputs": [
+      {
+        "path": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-20260923/samples.json",
+        "sha256": "6edd599000b3f14e85f5aa0c3a3375a4637860811bb3b5b58f5f8035f6643566"
+      },
+      {
+        "path": "/Users/work/consistency-training-methods/artifacts/luna-icl-20260922/luna-results.jsonl",
+        "sha256": "8386889c839756a44a5f1b6ee49a12e43e2987171331c4ea8287364d7a4ce088"
+      },
+      {
+        "path": "/Users/work/consistency-training-methods/artifacts/luna-icl-20260922/full-private-labels.json",
+        "sha256": "d651d7ede9575b453af86c1948c1274e742eb1bdf3fe83de3a2669b060892f4e"
+      },
+      {
+        "path": "/Users/work/consistency-training-methods/artifacts/monitorability-base-cot-xhigh-20260920/luna-results.jsonl",
+        "sha256": "47d8a119f5525ef29168a343339da5076420f6398d2da7ef05456f782a68f3b0"
+      },
+      {
+        "path": "/Users/work/consistency-training-methods/artifacts/monitorability-base-cot-xhigh-20260920/full-private-labels.json",
+        "sha256": "d74a540398ecf82ff7006c43c681f73f37090c6a0317e1d9dcb22ade5c9d25df"
+      },
+      {
+        "path": "/Users/work/consistency-training-methods/artifacts/monitorability-luna-rerun-20260920/luna-results.jsonl",
+        "sha256": "0e3b9efa135cde786da5767bb7f8ed15bae180fcca895408e31e77355e460d4d"
+      },
+      {
+        "path": "/Users/work/consistency-training-methods/artifacts/monitorability-luna-rerun-20260920/full-private-labels.json",
+        "sha256": "0230b687f2347432b97fd6735c28b11d1c4e09bd14425fb976a893278f97fdcc"
+      }
+    ],
+    "bootstrap": 10000,
+    "seed": 20260922,
+    "warnings": [
+      "Historical RMCT outputs are not evidence for an unaffected/corrected training run.",
+      "Parser-corrected evaluation labels do not repair historical training rewards.",
+      "Observed single-pair switches are not causal influence ground truth.",
+      "Base clean labels remain unverified; historical ICL calibration labels are retained.",
+      "Missing, invalid, and truncated outputs are excluded, never imputed negative.",
+      "Fixed calibration banks: bootstrap intervals exclude demonstration-selection uncertainty."
+    ],
+    "mode": "icl"
+  },
+  "rare": {
+    "inputs": [
+      {
+        "path": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/luna-rare-cache-first-20260928/analysis/data.json",
+        "sha256": "f82df35fb8e9fcbbd9409abc86243b014c9e5329235711b220deda80699e03c4"
+      },
+      {
+        "path": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/luna-rare-cache-first-20260928/analysis/counts.json",
+        "sha256": "47b746668813f4109459b62848ef52cea2d4d5cb44d2aa6fddebbe8a8fd6a5db"
+      }
+    ],
+    "bootstrap": 10000,
+    "seed": 20260928,
+    "warnings": [
+      "Historical RMCT outputs are not evidence for an unaffected/corrected training run.",
+      "Parser-corrected evaluation labels do not repair historical training rewards.",
+      "Observed single-pair switches are not causal influence ground truth.",
+      "Base clean labels remain unverified; historical ICL calibration labels are retained.",
+      "Missing, invalid, and truncated outputs are excluded, never imputed negative.",
+      "Fixed calibration banks: bootstrap intervals exclude demonstration-selection uncertainty."
+    ],
+    "mode": "rare"
+  },
+  "verification": {
+    "date": "2026-09-28",
+    "bootstrap": 10000,
+    "tests": "4 unittest tests passed",
+    "filter_results": "exact equality",
+    "icl_quadrant_results": "exact equality",
+    "icl_confidence_bands": "exact equality",
+    "rare_results": "exact equality",
+    "icl_overlay_auroc_max_absolute_difference": 1.1102230246251565e-16
+  }
+}

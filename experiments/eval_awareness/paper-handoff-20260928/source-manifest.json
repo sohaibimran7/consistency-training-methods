@@ -1,0 +1,147 @@
+{
+  "source_checkout": "external staged source",
+  "source_files": [
+    {
+      "path": "scripts/agentic_transfer_agentic_probe.py",
+      "sha256": "d2da3dd27121c7ed43e0d8e83d493f11c54d0ee6f0c59b4eee2e1c31004b73cc",
+      "bytes": 9116
+    },
+    {
+      "path": "scripts/agentic_transfer_instrumental_probe.py",
+      "sha256": "b448545f99227f0c16eb8a57a69c6e5d5cd3987de85ebd26f524e022b41d1015",
+      "bytes": 4998
+    },
+    {
+      "path": "scripts/agentic_transfer_tasks.py",
+      "sha256": "4d696813caa9696d1ddd442ed3f486cc42ef7a4c0d7941531337222c23c23493",
+      "bytes": 17554
+    },
+    {
+      "path": "scripts/analyze_conditional_misalignment.py",
+      "sha256": "95a30bc29502452ee6c0dd068cc80bd92aed8bea61f90ddc9600c450373547d9",
+      "bytes": 6712
+    },
+    {
+      "path": "scripts/compare_v2_v3_v4_factors.py",
+      "sha256": "baaa5f8106bb981ae6a222bf1af5554d1cef637c36b61c0fb9c7334236b7fe42",
+      "bytes": 4841
+    },
+    {
+      "path": "scripts/grade_rogueqwen_flattery.py",
+      "sha256": "3b93cc0b9effa279cadda36e8555836a97365541073b9ab8d0428775fbe9a481",
+      "bytes": 8753
+    },
+    {
+      "path": "scripts/grade_v2_breadth_awareness.py",
+      "sha256": "3382011f74f6070e586570768509c74d365c5b080c0362d324d9c5bb5bac903f",
+      "bytes": 4281
+    },
+    {
+      "path": "scripts/grade_v2_breadth_native.py",
+      "sha256": "0f953c6c586c5d57e1eddb2b1ae5fd955e8767e236d47cbe3da8ba2cc7d04982",
+      "bytes": 8250
+    },
+    {
+      "path": "scripts/inventory_eval_gaming_handoff.py",
+      "sha256": "b18167ba5f0c47f6a970c3776f77508e17e09baf446c80586af3215bb89fb43a",
+      "bytes": 3883
+    },
+    {
+      "path": "scripts/lasr_suite_am_tasks.py",
+      "sha256": "952dae4f76772c090c8be5df1066db11865bf39bf03109b24c98e14cba5463a1",
+      "bytes": 13066
+    },
+    {
+      "path": "scripts/lasr_transfer_scoring.py",
+      "sha256": "8d0a7480dbe1c7ce3949921ac05e5bce62ce221821696b68d1258f8c8ab9e4c2",
+      "bytes": 15518
+    },
+    {
+      "path": "scripts/lasr_transfer_tasks.py",
+      "sha256": "065023a04dedd0f33b941f01ee96beacbffd85e2ccb2a0b164a5ca0b0296381d",
+      "bytes": 14268
+    },
+    {
+      "path": "scripts/peer_action_belief.py",
+      "sha256": "7da326de721234c37739d3e9140294ae2e5ee041de0580738eec0fca6700da4a",
+      "bytes": 25124
+    },
+    {
+      "path": "scripts/plot_paper_style_r3.py",
+      "sha256": "3c9f1afb03c9c7c4c333155470dd03ff458c23942132bddf16325ff7f1eb1f7a",
+      "bytes": 22183
+    },
+    {
+      "path": "scripts/plot_v2_breadth_fit.py",
+      "sha256": "9217143f459f077189dec85856ae4ab52ee4c65ec1e43bf9e5424e40ee950d21",
+      "bytes": 6400
+    },
+    {
+      "path": "scripts/plot_v2_breadth_results.py",
+      "sha256": "0700866150edcb0cbbef7268ca950b5a3a5857b98c01ddd1cac74664a285912b",
+      "bytes": 8926
+    },
+    {
+      "path": "scripts/plot_vae_or_flattery.py",
+      "sha256": "a47a9b25121b0ff7945a8cae9ddd4c26c6092e176bcad826a5f1f2d9f92416f2",
+      "bytes": 9098
+    },
+    {
+      "path": "scripts/prepare_eval_gaming_64k.py",
+      "sha256": "d54a6b455c1afc2ceaaf25194b1befcd832e2fc016fa209725b1a5ff421c4522",
+      "bytes": 7067
+    },
+    {
+      "path": "scripts/prepare_v2_breadth.py",
+      "sha256": "3d8993766ac4cf378b11d5542383e4aa8223d9000af24dbc07ca394fe4f882c1",
+      "bytes": 4616
+    },
+    {
+      "path": "scripts/prepare_v2_breadth_grading.py",
+      "sha256": "e39968e43f54e6f14df8bce340d351d755901093a3c5e75cdc44ac0fe9777bb1",
+      "bytes": 4147
+    },
+    {
+      "path": "scripts/preservation_peer_native.py",
+      "sha256": "943aaf9eeedd496dcebd2676509645dc72dc21a8623574f2f3b0770ce813a05d",
+      "bytes": 14531
+    },
+    {
+      "path": "scripts/repair_v2_awareness_basis.py",
+      "sha256": "dbdd9ef8809f12f502727c7f6de79b27cae5f45a8bbb147ddc90546f29510ab7",
+      "bytes": 4328
+    },
+    {
+      "path": "scripts/run_lasr_transfer.py",
+      "sha256": "38bb787ca8966cad9cb6bf3e3b4810913c165ad47cdee15baea567091a2c01ed",
+      "bytes": 7009
+    },
+    {
+      "path": "scripts/run_v2_breadth.py",
+      "sha256": "5ca2fac30220e1f8e6b82631749dab34c37300f573344ed3c7910e6237f60256",
+      "bytes": 8278
+    },
+    {
+      "path": "scripts/score_agentic_transfer_saved.py",
+      "sha256": "50bd49372935c128f0588dd06f4501b85a72dc7273f745d8444a44016676716c",
+      "bytes": 17233
+    },
+    {
+      "path": "scripts/score_preservation_peer.py",
+      "sha256": "ae112a57ed3c9942ae2b4fec0f976c062584aeb2980bc4175d47cfddcd0d1e77",
+      "bytes": 18031
+    },
+    {
+      "path": "scripts/test_eval_gaming_64k.py",
+      "sha256": "826cb028d6666af05bae5e06aca338bd6bda187afd1084781e7a1d9464309b25",
+      "bytes": 2841
+    },
+    {
+      "path": "scripts/test_eval_gaming_portability.py",
+      "sha256": "f87284caef13c137a52b69b0f11a295c5f8ae21c3556f9830e239ed5644cc03f",
+      "bytes": 2491
+    }
+  ],
+  "historical_inventory": "inventory-v2.json remains in original handoff with 3972 saved-artifact hashes; raw data not redistributed",
+  "status": "source_integrated_owner_offline_verification; new65536_executor_not_validated"
+}

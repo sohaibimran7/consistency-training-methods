@@ -4,12 +4,12 @@ Syntactic extraction is not semantic grading. Unresolved outputs remain missing.
 Frozen pilot implementation promoted for integrated review, not GPU clearance.
 """
 import re
-from ctm_data.adapters.mcq_bias.answer_parsing import parse_indicator_answer
+from ctm_data.adapters.mcq_bias.answer_parsing import parse_indicator_answer, visible_answer_text
 
 def parse_terminal_first(text,allowed,break_words=()):
     # Completion status is a required caller gate, not inferable from text.
-    if '</think>' in text:text=text.rsplit('</think>',1)[1]
-    elif '<think>' in text:return None
+    text = visible_answer_text(text)
+    if text is None:return None
     lines=[line.strip() for line in text.splitlines() if line.strip()]
     if not lines:return None
     line=lines[-1]

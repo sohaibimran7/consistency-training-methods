@@ -75,12 +75,26 @@ def replay(records, *, campaign_id):
     return dict(best_checkpoint=best,history=history,stopped=stale>=2)
 
 
-def verify_saved(folder, manifest):
+def render_tokens(tokenizer, messages):
+    from collections.abc import Mapping
+    ids=tokenizer.apply_chat_template(messages,tokenize=True,add_generation_prompt=True,
+                                      enable_thinking=True,return_dict=False)
+    if isinstance(ids,Mapping): ids=ids['input_ids']
+    if hasattr(ids,'tolist'): ids=ids.tolist()
+    if isinstance(ids,list) and len(ids)==1 and isinstance(ids[0],list): ids=ids[0]
+    if not isinstance(ids,list) or not ids or any(type(x) is not int for x in ids): raise ValueError('Invalid native tokens')
+    if not tokenizer.decode(ids).rstrip().endswith('<think>'): raise ValueError('Thinking boundary absent')
+    if len(ids)+SETTINGS['max_tokens']>SETTINGS['max_model_len']: raise ValueError('Context reduces token allowance')
+    return ids
+
+
+def verify_saved(folder, manifest, tokenizer):
     """Reproduce score with exact IDs/hashes/settings before controller use."""
     folder=Path(folder); rows=population(manifest)
     contract=json.loads((folder/'contract.json').read_text())
     if contract['settings']!=SETTINGS or contract['validation_sha256']!=PROMPT_SHA: raise ValueError('Wrong contract')
     expected={r['sample_id'] for r in rows}
+    by_id={r['sample_id']:r for r in rows}
     for sub in ('requests','responses'):
         if {p.stem for p in (folder/sub).glob('*.json')}!=expected: raise ValueError('Missing/extra evidence')
     records=[]
@@ -92,11 +106,19 @@ def verify_saved(folder, manifest):
             raise ValueError('Contract binding changed')
         if response['request_sha256']!=sha(reqpath): raise ValueError('Request changed')
         if request['request']['model']!=contract['adapter']: raise ValueError('Adapter request mismatch')
+        # /completions consumes pre-rendered token IDs, not chat kwargs. Prove
+        # thinking and exact frozen messages by reproducing the actual prompt.
+        if request['request']['prompt']!=render_tokens(tokenizer,by_id[sid]['messages']):
+            raise ValueError('Native frozen thinking-on prompt mismatch')
         for key in ('temperature','top_p','top_k','max_tokens'):
             if request['request'][key]!=SETTINGS[key]: raise ValueError('Sampling changed')
         records.append(response)
     metrics=score(manifest,records)
     stored=json.loads((folder/'score.json').read_text())
+    if stored.get('contract_sha256')!=sha(folder/'contract.json') or stored.get('campaign_id')!=contract['campaign_id'] or stored.get('step')!=contract['step']:
+        raise ValueError('Score lineage mismatch')
+    hashes={sid:sha(folder/'responses'/f'{sid}.json') for sid in expected}
+    if stored.get('response_hashes')!=hashes:raise ValueError('Stored response identity mismatch')
     for key,val in metrics.items():
         if stored[key]!=val: raise ValueError(f'Score mismatch: {key}')
     return metrics

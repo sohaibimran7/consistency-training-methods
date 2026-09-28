@@ -1133,10 +1133,15 @@ class SharedQidTwoBiasSetting:
         if self._answer_parser_fn is not None:
             return self._answer_parser_fn
         try:
-            from mcq_bias.parsers import parse_answer
+            from mcq_bias.parsers import BREAK_WORDS
         except ModuleNotFoundError as exc:  # pragma: no cover - deployment dependency guard
             raise RuntimeError("mcq_bias is required to parse answers for shared-QID training") from exc
-        return parse_answer
+        # Bind the reviewed parser directly: importing an upstream alias must
+        # not silently bypass the restart's parser contract in a fresh process.
+        from functools import partial
+        from ctm_data.adapters.mcq_bias.terminal_answer import parse_terminal_first
+        # This setting is restricted to the four-option LogiQA/HellaSwag pool.
+        return partial(parse_terminal_first, allowed='ABCD', break_words=BREAK_WORDS)
 
     def _matches_bias(self) -> Callable[[str, str], float | None]:
         if self._matches_bias_fn is not None:

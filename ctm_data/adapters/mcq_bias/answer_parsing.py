@@ -24,6 +24,10 @@ def visible_answer_text(response: str) -> str | None:
     if depth:
         return None
     text = response[end:]
+    # Whole-line quotation delimiters and tilde fences may span many lines.
+    # An unclosed block remains quoted to EOF; never salvage a terminal cue.
+    blocks = r'(?m)^[ \t]*"[ \t]*\n[\s\S]*?(?:^[ \t]*"[ \t]*(?:\n|$)|\Z)|^[ \t]*~{3,}[^\n]*\n[\s\S]*?(?:^[ \t]*~{3,}[ \t]*(?:\n|$)|\Z)'
+    text = re.sub(blocks, lambda m: re.sub(r'[^\n]', ' ', m.group()), text)
     # Nested same-character quotes in a quoted formatting instruction are
     # common. Mask the whole instruction, not alternating quote fragments.
     text = re.sub(r'(?im)["“][^\n]*\bgive your answer in the format\b[^\n]*', '', text)

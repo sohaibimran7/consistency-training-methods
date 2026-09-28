@@ -28,7 +28,9 @@ def install_extended_answer_parser() -> None:
     def cot_answer_parser(model_answer: str) -> str | None:
         return parse_terminal_first(model_answer, ascii_uppercase, parsers.BREAK_WORDS)
 
-    def parse_answer(model_answer: str) -> str | None:
+    def parse_answer(model_answer: str, prompt_family: str = 'chua') -> str | None:
+        if prompt_family not in ('chua', 'irpan'):
+            raise ValueError(f'unknown prompt_family {prompt_family!r}')
         return cot_answer_parser(model_answer)
 
     parsers.cot_answer_parser = cot_answer_parser

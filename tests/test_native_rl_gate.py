@@ -13,6 +13,24 @@ def test_valid_evidence():
     validate_rollout_records([record()])
 
 
+def test_real_frozen_setting_validated_before_gate_subset(tmp_path):
+    from ctm_data.adapters.mcq_bias.tests.test_shared_qid_two_bias import _write_fixture_inputs
+    from ctm_data.adapters.mcq_bias.shared_qid_two_bias import materialize_shared_qid_two_bias, SharedQidTwoBiasSetting
+    from ctm.settings.runtime import prepare_setting_instance
+    from experiments.rmct_restart_20260928.native_rl_worker import select_first_batch
+    inputs = _write_fixture_inputs(tmp_path, qids_per_dataset=32)
+    frozen = materialize_shared_qid_two_bias(*inputs[:4], tmp_path/'frozen', qids_per_dataset=32)
+    setting = SharedQidTwoBiasSetting(data_path=frozen.data_path, manifest_path=frozen.manifest_path,
+        expected_manifest_sha256=frozen.manifest_sha256, expected_qids_per_dataset=32)
+    with pytest.raises(ValueError, match='n_datapoints=32'):
+        prepare_setting_instance(setting, load_config={'n_datapoints': 2, 'segment_index': 0})
+    prepared = prepare_setting_instance(setting, load_config={'n_datapoints': 32, 'segment_index': 0})
+    subset = select_first_batch(prepared)
+    assert len(prepared.datapoints) == 32
+    assert subset.datapoints == prepared.datapoints[:2]
+    assert subset.answer_parser is prepared.answer_parser
+
+
 @pytest.mark.parametrize('changes', [
     dict(completion_tokens=[], sampled_logprobs=[]), dict(reward=None),
     dict(advantage=float('nan')), dict(grader_failed=True),

@@ -1,0 +1,385 @@
+{
+  "schema": "ctm-manuscript-upstream-command-handoff-v1",
+  "scope": "Command-map supplement for selective canonical PR integration. Braced tokens are explicit path placeholders, not literal executable arguments. Rendering assembly tested separately; upstream commands inspected, not run.",
+  "recipes": {
+    "mcq_merge": {
+      "root": "parser_repo",
+      "path": "tmp/merge_recovery_into_parser_fixed.py",
+      "sha256": "29a0c8d9e1dd6d540b2e57c9f0dc51df4411e26262f916b78a57407a097c9866",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "mcq_regenerate": {
+      "root": "parser_repo",
+      "path": "tmp/regenerate_64k_figures.py",
+      "sha256": "aacfa2564d33bfe3342badde4bd065dcae8bdcbfdee973223c02bdf74a0eabcb",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "monitor_regenerate": {
+      "root": "parser_repo",
+      "path": "tmp/regenerate_monitor_figures.py",
+      "sha256": "d97495541103b799fb3b783302db9d1a8300b4becb2d5b7868fa2386b2189faa",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "switch": {
+      "root": "parser_repo",
+      "path": "artifacts/parser-fixed-64k-20260925/figures-final/towards-bias-switch-standard/build.py",
+      "sha256": "7a0c2118a4ddcfb135f1ad0e6cdf036f9f20c81884526273fce4a1f5101398f6",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "conditional": {
+      "root": "parser_repo",
+      "path": "artifacts/parser-fixed-64k-20260925/figures-final/conditional-verbalisation-20260918/paper.py",
+      "sha256": "1c17f50f33e8246553c44160c414ea195421c90a856b928e537c9e16ce5338aa",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "verbalisation": {
+      "root": "parser_repo",
+      "path": "artifacts/parser-fixed-64k-20260925/figures-final/bias-verbalisation-standard/build.py",
+      "sha256": "ca2f242c5de29dca6a897d514a5a2d210f13ff2c6a74fb7c14fafb5b0798a49d",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "accuracy": {
+      "root": "parser_repo",
+      "path": "artifacts/parser-fixed-64k-20260925/figures-final/biased-accuracy-20260918/build.py",
+      "sha256": "b5c9a1215c09edda18755a8c7fbaac617660b6ee088466570ec14c86c6d4ba8b",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "convergence": {
+      "root": "ctm_repo",
+      "path": "artifacts/methods-convergence-all-20260917/plot.py",
+      "sha256": "ce63f20da5cee06c3bb767ba11d1b34d8ab6bea14501f334a62aaa301525812b",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "aita": {
+      "root": "ctm_repo",
+      "path": "artifacts/qwen-aita-vllm-20260920/plot_results.py",
+      "sha256": "c0b05805503e4ea43eaaedec39f251cdd75fcb76b26005ad2729dc97f8056e3a",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "image": {
+      "root": "ctm_repo",
+      "path": "experiments/qwen_image_pilot/paper_split.py",
+      "sha256": "f6a78e4a58ae78aa4c79ab54121602ea84825b43d990be1477d99c09e4b6eeb9",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "compute": {
+      "root": "ctm_repo",
+      "path": "artifacts/compute-audit-20260917/summarize.py",
+      "sha256": "9fe2d4608c693abd824bcffcb281005afff69b004eeea4e824b750173533f368",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    },
+    "organism": {
+      "root": "organism_repo",
+      "path": "experiments/eval_awareness/lasr_transfer/consolidation-20260915/build_report.py",
+      "sha256": "342d4c1f4737986401ae049ad66f4f422aea59a047446cab71c643fc7dbc782a",
+      "hash_scope": "Inspected current recipe bytes; historical artifact production byte identity not established by this hash alone."
+    }
+  },
+  "commands": {
+    "mcq_merge": {
+      "argv": [
+        "{python}",
+        "tmp/merge_recovery_into_parser_fixed.py"
+      ],
+      "cwd": "{parser_repo}",
+      "notes": "Original tmp location required. Archived reproduction/ copy derives the wrong repository root. Depends on historical parser install_extended_answer_parser and absolute recovered-publication inputs; requires staging/refactoring before portable use. Saved-response parsing only, not inference.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "mcq_merge"
+    },
+    "mcq_regenerate": {
+      "argv": [
+        "{python}",
+        "tmp/regenerate_64k_figures.py"
+      ],
+      "cwd": "{parser_repo}",
+      "notes": "Original tmp location required. Copies recipes, stages samples and runs 15 offline analyses. Will overwrite historical derived outputs in-place if run against original artifacts; use isolated staged tree. Not executed in this handoff.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "mcq_regenerate"
+    },
+    "monitor_regenerate": {
+      "argv": [
+        "{python}",
+        "tmp/regenerate_monitor_figures.py"
+      ],
+      "cwd": "{parser_repo}",
+      "notes": "Supplies corrected() and executes patched recipes. luna-overview/recipe.py alone is not standalone. Hardcoded saved monitor-score roots and other jobs need staging. No monitor inference.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "monitor_regenerate"
+    },
+    "switch": {
+      "argv": [
+        "{python}",
+        "{corrected_figures}/towards-bias-switch-standard/build.py"
+      ],
+      "cwd": "{parser_repo}",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "switch",
+      "env": {
+        "PYTHONPATH": "{parser_repo}",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "notes": "Requires corrected-stage samples.json, sibling helper recipes and chart template; writes to stage directories. Model/grader calls absent. Full aggregation not tested in this handoff."
+    },
+    "conditional": {
+      "argv": [
+        "{python}",
+        "{corrected_figures}/conditional-verbalisation-20260918/paper.py"
+      ],
+      "cwd": "{parser_repo}",
+      "env": {
+        "PYTHONPATH": "{parser_repo}",
+        "OPENBLAS_NUM_THREADS": "1",
+        "CTM_CONDITIONAL_PERMUTATIONS": "108000"
+      },
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "conditional",
+      "notes": "Requires corrected-stage samples.json, sibling helper recipes and chart template; writes to stage directories. Model/grader calls absent. Full aggregation not tested in this handoff."
+    },
+    "verbalisation": {
+      "argv": [
+        "{python}",
+        "{corrected_figures}/bias-verbalisation-standard/build.py"
+      ],
+      "cwd": "{parser_repo}",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "verbalisation",
+      "env": {
+        "PYTHONPATH": "{parser_repo}",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "notes": "Requires corrected-stage samples.json, sibling helper recipes and chart template; writes to stage directories. Model/grader calls absent. Full aggregation not tested in this handoff."
+    },
+    "accuracy": {
+      "argv": [
+        "{python}",
+        "{corrected_figures}/biased-accuracy-20260918/build.py"
+      ],
+      "cwd": "{parser_repo}",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "accuracy",
+      "env": {
+        "PYTHONPATH": "{parser_repo}",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "notes": "Requires corrected-stage samples.json, sibling helper recipes and chart template; writes to stage directories. Model/grader calls absent. Full aggregation not tested in this handoff."
+    },
+    "convergence": {
+      "argv": [
+        "{python}",
+        "artifacts/methods-convergence-all-20260917/plot.py"
+      ],
+      "cwd": "{ctm_repo}",
+      "notes": "Requires methods-meeting-20260911/training-histories.json and local remote-histories.json; outputs in historical artifact directory. Saved history aggregation, no SSH.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "convergence"
+    },
+    "aita": {
+      "argv": [
+        "{python}",
+        "artifacts/qwen-aita-vllm-20260920/plot_results.py",
+        "--retry64"
+      ],
+      "cwd": "{ctm_repo}",
+      "notes": "Requires plan-v3.json, results/, results64/retry-plan.json and 12 complete receipt JSONs. Audits receipt IDs/hashes and aggregates scores; no target calls. Writes plots64 in place.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "aita"
+    },
+    "image": {
+      "argv": [
+        "{python}",
+        "experiments/qwen_image_pilot/paper_split.py",
+        "--root",
+        "{image_suite}",
+        "--template",
+        "{chart_template}",
+        "--output",
+        "{new_image_output}"
+      ],
+      "cwd": "{ctm_repo}",
+      "notes": "Requires collected/rows.json and recovered-rows.json, recovery.py, shared renderer/statistical helpers. Historical exact input template not pinned in old provenance; current CLI is explicit. Traceable recipe, not claimed byte-identical reproduction of old PDFs.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "image"
+    },
+    "compute": {
+      "argv": [
+        "{python}",
+        "artifacts/compute-audit-20260917/summarize.py"
+      ],
+      "cwd": "{ctm_repo}",
+      "notes": "Saved remote.json, initial-trace.json, rmct-initial.json and rmct-continuation-sacct.txt; writes summary.json. Manuscript table transcription is manual, not generated by this command.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "compute"
+    },
+    "organism": {
+      "argv": [
+        "{python}",
+        "experiments/eval_awareness/lasr_transfer/consolidation-20260915/build_report.py",
+        "--output-dir",
+        "{new_organism_output}"
+      ],
+      "cwd": "{organism_repo}",
+      "notes": "Requires preserved scored logs and historical companion figures/templates; native Inspect mean/stderr, no rescoring. Output must not exist. Manuscript table transcription manual.",
+      "execution_status": "source_inspected_not_rerun",
+      "recipe": "organism"
+    }
+  },
+  "entries": [
+    {
+      "id": "main-switch",
+      "manuscript_number": 2,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "switch",
+      "predecessors": [
+        "mcq_merge",
+        "mcq_regenerate"
+      ],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "main-conditional",
+      "manuscript_number": 3,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "conditional",
+      "predecessors": [
+        "mcq_merge",
+        "mcq_regenerate"
+      ],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "expanded-switch",
+      "manuscript_number": 4,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "switch",
+      "predecessors": [
+        "mcq_merge",
+        "mcq_regenerate"
+      ],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "expanded-conditional",
+      "manuscript_number": 5,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "conditional",
+      "predecessors": [
+        "mcq_merge",
+        "mcq_regenerate"
+      ],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "overall-verbalisation",
+      "manuscript_number": 6,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "verbalisation",
+      "predecessors": [
+        "mcq_merge",
+        "mcq_regenerate"
+      ],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "biased-accuracy",
+      "manuscript_number": 7,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "accuracy",
+      "predecessors": [
+        "mcq_merge",
+        "mcq_regenerate"
+      ],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "monitor-overview",
+      "manuscript_number": 8,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "monitor_regenerate",
+      "predecessors": [],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "cross-task",
+      "manuscript_number": 9,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "aita",
+      "predecessors": [],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [
+        "ctm_repo:artifacts/qwen-aita-vllm-20260920/run.py",
+        "ctm_repo:artifacts/qwen-aita-vllm-20260920/retry64.py"
+      ],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "image-qwen",
+      "manuscript_number": 10,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "image",
+      "predecessors": [],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [
+        "ctm_repo:experiments/qwen_image_pilot/full_suite.py",
+        "ctm_repo:experiments/qwen_image_pilot/full_worker.py"
+      ],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "image-gemma",
+      "manuscript_number": 11,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "image",
+      "predecessors": [],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [
+        "ctm_repo:experiments/qwen_image_pilot/full_suite.py",
+        "ctm_repo:experiments/qwen_image_pilot/full_worker.py"
+      ],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "convergence",
+      "manuscript_number": 12,
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "convergence",
+      "predecessors": [],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "historical-compute-table",
+      "manuscript_number": "Table 2",
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "compute",
+      "predecessors": [],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    },
+    {
+      "id": "organism-table",
+      "manuscript_number": "Table 1",
+      "status": "historical_provisional_placeholder",
+      "aggregation_command": "organism",
+      "predecessors": [],
+      "generation_status": "Not reproduced or validated end-to-end in this handoff",
+      "generation_evidence": [],
+      "replacement_owner": "unassigned_or_unverified"
+    }
+  ]
+}
