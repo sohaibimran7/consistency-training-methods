@@ -12,7 +12,12 @@ FROM vllm/vllm-openai:latest
 ENTRYPOINT []
 CMD ["/bin/bash"]
 
-RUN apt-get update && apt-get install -y --no-install-recommends git tmux rsync
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    ninja-build \
+    rsync \
+    tmux
 
 RUN pip install --no-cache-dir uv
 

@@ -1,11 +1,29 @@
-"""Trainer-facing sycophancy adapter for native mcq-bias rows."""
+"""Trainer-facing sycophancy adapter for native mcq-bias rows.
+
+Keep the optional trainer/parser integration lazy so analysis-only modules
+(notably the publication renderer) can be imported in a plotting environment
+that does not install the external ``mcq_bias`` task package.
+"""
+
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 from ctm_data.adapters.mcq_bias.data import file_identity, load_paths, make_perturbation_fns
-from ctm_data.adapters.mcq_bias.setting import SycophancySetting, trait_classifier
 
 
-def create_setting(**kwargs) -> SycophancySetting:
+def create_setting(**kwargs: Any) -> Any:
+    from ctm_data.adapters.mcq_bias.setting import SycophancySetting
+
     return SycophancySetting(**kwargs)
+
+
+def __getattr__(name: str) -> Any:
+    if name in {"SycophancySetting", "trait_classifier"}:
+        setting = importlib.import_module("ctm_data.adapters.mcq_bias.setting")
+        return getattr(setting, name)
+    raise AttributeError(name)
 
 
 __all__ = [

@@ -27,6 +27,7 @@ async def save_intermediate_checkpoint(
     log_dir,
     checkpoint_paths: list,
     logger,
+    loop_state: dict | None = None,
 ) -> Optional[str]:
     """Save an intermediate checkpoint when the schedule fires (and we're not near final).
 
@@ -44,7 +45,7 @@ async def save_intermediate_checkpoint(
     paths = await backend.save_checkpoint(
         name=name,
         log_dir=str(log_dir),
-        loop_state={"epoch": epoch, "step": global_step},
+        loop_state=loop_state if loop_state is not None else {"epoch": epoch, "step": global_step},
         kind=kind,
     )
     path = _checkpoint_path(paths)
@@ -64,6 +65,7 @@ async def finalize_checkpoint(
     log_dir,
     checkpoint_paths: list,
     logger,
+    loop_state: dict | None = None,
 ) -> str:
     """Save the final (no step-suffix) checkpoint, log it, and close the logger. Returns the path."""
     final_name = build_checkpoint_name(experiment_name, run_name)
@@ -71,7 +73,7 @@ async def finalize_checkpoint(
     paths = await backend.save_checkpoint(
         name=final_name,
         log_dir=str(log_dir),
-        loop_state={"epoch": n_epochs, "step": global_step, "final": True},
+        loop_state=loop_state if loop_state is not None else {"epoch": n_epochs, "step": global_step, "final": True},
         kind=kind,
     )
     final_path = _checkpoint_path(paths)

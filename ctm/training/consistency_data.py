@@ -19,7 +19,7 @@ string, and these datums are consumed exclusively by the HF-native LocalBackend,
 so there is no cross-backend token-parity concern.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 from tinker import types
@@ -192,24 +192,165 @@ def build_consistency_datums(
     alignment_text_field: Optional[str] = None,
 ) -> tuple[list[types.Datum], int]:
     """Build datums for all alignable samples. Returns (datums, n_skipped)."""
-    datums: list[types.Datum] = []
-    skipped = 0
-    first_error: Optional[str] = None
-    for sample in samples:
-        try:
-            datums.append(
-                build_consistency_datum(
-                    tokenizer,
-                    sample,
-                    reference_field=reference_field,
-                    variant_field=variant_field,
-                    alignment_text_field=alignment_text_field,
-                )
+
+    datums, audit = build_consistency_datums_with_audit(
+        tokenizer,
+        samples,
+        reference_field=reference_field,
+        variant_field=variant_field,
+        alignment_text_field=alignment_text_field,
+    )
+    skipped = int(audit["skipped_rows"])
+    if skipped:
+        first_error = audit.get("first_error")
+        if isinstance(first_error, dict) and isinstance(first_error.get("message"), str):
+            print(
+                f"consistency data: skipped {skipped}/{len(samples)} unalignable samples "
+                f"(first: {first_error['message']})"
             )
-        except ValueError as e:
-            skipped += 1
-            if first_error is None:
-                first_error = str(e)
-    if skipped and first_error:
-        print(f"consistency data: skipped {skipped}/{len(samples)} unalignable samples (first: {first_error})")
     return datums, skipped
+
+
+def _integer_summary(values: list[int]) -> dict[str, int] | None:
+    """Return compact, JSON-safe descriptive statistics for a non-empty list."""
+
+    if not values:
+        return None
+    ordered = sorted(values)
+    return {
+        "min": ordered[0],
+        "median": ordered[len(ordered) // 2],
+        "max": ordered[-1],
+    }
+
+
+def build_consistency_datums_with_audit(
+    tokenizer,
+    samples: list[dict],
+    *,
+    reference_field: str = DEFAULT_REFERENCE_FIELD,
+    variant_field: str = DEFAULT_VARIANT_FIELD,
+    alignment_text_field: Optional[str] = None,
+) -> tuple[list[types.Datum], dict[str, Any]]:
+    """Build paired datums and emit a compact alignment audit.
+
+    The ordinary datum builder deliberately skips malformed / unalignable rows
+    so exploratory jobs can make progress.  Recovery runs need a stronger
+    contract: their loss must cover the complete clean user prompt rather than
+    merely a shared question substring.  This audit records the facts needed
+    to enforce that contract without storing prompt text in logs.
+    """
+
+    datums: list[types.Datum] = []
+    first_error: dict[str, Any] | None = None
+    full_reference_suffixes: list[bool] = []
+    match_covers_content: list[bool] = []
+    variant_token_counts: list[int] = []
+    clean_token_counts: list[int] = []
+    starts: list[int] = []
+    clean_starts: list[int] = []
+    content_lengths: list[int] = []
+    match_lengths: list[int] = []
+
+    for row_index, sample in enumerate(samples, start=1):
+        try:
+            # Check the source-level invariant separately from token alignment.
+            # An explicit question-only alignment can produce a technically
+            # valid datum while still omitting the actual bias cue from the
+            # consistency window; strict recovery intentionally rejects that.
+            reference_prompt = _prompt_messages(sample[reference_field])
+            variant_prompt = _prompt_messages(sample[variant_field])
+            full_reference_suffixes.append(
+                variant_prompt[-1]["content"].endswith(reference_prompt[-1]["content"])
+            )
+            datum = build_consistency_datum(
+                tokenizer,
+                sample,
+                reference_field=reference_field,
+                variant_field=variant_field,
+                alignment_text_field=alignment_text_field,
+            )
+            scalar = lambda name: int(datum.loss_fn_inputs[name].to_torch()[0])  # noqa: E731
+            clean_len = scalar("clean_len")
+            match_len = scalar("match_len")
+            starts.append(scalar("start_index"))
+            clean_starts.append(scalar("clean_start_index"))
+            content_lengths.append(clean_len)
+            match_lengths.append(match_len)
+            match_covers_content.append(match_len >= clean_len)
+            variant_token_counts.append(len(datum.model_input.to_ints()))
+            clean_token_counts.append(len(datum.loss_fn_inputs["clean_tokens"].to_torch()))
+            datums.append(datum)
+        except KeyError as exc:
+            # Preserve the lenient builder's historical behavior for malformed
+            # rows: record one skipped pair rather than leaking a raw KeyError.
+            if first_error is None:
+                first_error = {"row_index": row_index, "message": f"consistency sample missing {exc.args[0]!r} key"}
+        except ValueError as e:
+            if first_error is None:
+                first_error = {"row_index": row_index, "message": str(e)}
+
+    attempted = len(samples)
+    aligned = len(datums)
+    skipped = attempted - aligned
+    all_full_suffixes = len(full_reference_suffixes) == attempted and all(full_reference_suffixes)
+    all_match_covers_content = aligned == attempted and all(match_covers_content)
+    return datums, {
+        "attempted_rows": attempted,
+        "aligned_rows": aligned,
+        "skipped_rows": skipped,
+        "first_error": first_error,
+        "alignment_text": {
+            "field": alignment_text_field,
+            "uses_complete_reference_user_message": alignment_text_field is None,
+        },
+        "checks": {
+            "all_pairs_aligned": skipped == 0,
+            "all_variants_end_with_complete_reference_user_message": all_full_suffixes,
+            "all_matching_suffixes_cover_content_window": all_match_covers_content,
+        },
+        "token_windows": {
+            "variant_tokens": _integer_summary(variant_token_counts),
+            "clean_prompt_tokens": _integer_summary(clean_token_counts),
+            "variant_content_start_index": _integer_summary(starts),
+            "clean_content_start_index": _integer_summary(clean_starts),
+            "content_length": _integer_summary(content_lengths),
+            "matching_suffix_length": _integer_summary(match_lengths),
+        },
+    }
+
+
+def require_full_reference_suffix_alignment(audit: dict[str, Any]) -> None:
+    """Fail closed unless a run aligns every complete clean user prompt.
+
+    This is deliberately stronger than merely requiring non-empty datums.  It
+    prevents the historical failure mode where a question-only alignment field
+    allowed training to optimize terminal boilerplate while excluding the bias
+    cue from the compared window.
+    """
+
+    alignment_text = audit.get("alignment_text")
+    checks = audit.get("checks")
+    if not isinstance(alignment_text, dict) or not isinstance(checks, dict):
+        raise ValueError("invalid consistency alignment audit")
+    if not alignment_text.get("uses_complete_reference_user_message"):
+        raise ValueError(
+            "strict consistency pairing requires the complete reference user message; "
+            "remove alignment_text_field"
+        )
+    failures = [
+        label
+        for label in (
+            "all_pairs_aligned",
+            "all_variants_end_with_complete_reference_user_message",
+            "all_matching_suffixes_cover_content_window",
+        )
+        if checks.get(label) is not True
+    ]
+    if failures:
+        attempted = audit.get("attempted_rows")
+        aligned = audit.get("aligned_rows")
+        raise ValueError(
+            "strict consistency pairing failed "
+            f"({aligned}/{attempted} aligned; failed checks: {', '.join(failures)})"
+        )

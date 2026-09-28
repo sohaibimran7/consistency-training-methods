@@ -5,8 +5,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from ctm_data.adapters.mcq_bias.materialize import retry_wrong_argument_materialization
+from ctm_data.adapters.mcq_bias.parser_compat import install_extended_answer_parser
+
 
 def main(argv: list[str] | None = None) -> None:
+    install_extended_answer_parser()
     from mcq_bias.pipeline.records import PROMPT_STYLES
     from mcq_bias.tasks import BIAS_TYPES, suite_tasks
 
@@ -22,6 +26,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--seed", default="42")
     parser.add_argument("--argument-model")
     parser.add_argument("--generate-missing-arguments", action="store_true")
+    parser.add_argument(
+        "--argument-generation-rounds",
+        type=int,
+        default=5,
+        help="Maximum suite-materialization rounds for missing wrong arguments",
+    )
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("-y", "--yes", action="store_true")
     args = parser.parse_args(argv)
@@ -30,6 +40,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--n-questions must be at least 1")
     if args.min_n_questions is not None and not 1 <= args.min_n_questions <= args.n_questions:
         parser.error("--min-n-questions must be between 1 and --n-questions")
+    if args.argument_generation_rounds < 1:
+        parser.error("--argument-generation-rounds must be >= 1")
 
     print("\nmcq_bias evaluation-data materialization:")
     print(f"  bias_types={args.bias_types}")
@@ -40,18 +52,23 @@ def main(argv: list[str] | None = None) -> None:
         print("Aborted.")
         return
 
-    tasks = suite_tasks(
-        bias_types=args.bias_types,
-        datasets=args.datasets,
-        prompt_style=args.prompt_style,
-        n_questions=args.n_questions,
-        min_n_questions=args.min_n_questions,
-        seed=args.seed,
-        argument_model=args.argument_model,
-        generate_missing_arguments=args.generate_missing_arguments,
-        dataset_dir=str(args.dataset_dir),
-        include_bias_acknowledged=False,
-        skip_unbuildable=False,
+    tasks = retry_wrong_argument_materialization(
+        lambda: suite_tasks(
+            bias_types=args.bias_types,
+            datasets=args.datasets,
+            prompt_style=args.prompt_style,
+            n_questions=args.n_questions,
+            min_n_questions=args.min_n_questions,
+            seed=args.seed,
+            argument_model=args.argument_model,
+            generate_missing_arguments=args.generate_missing_arguments,
+            dataset_dir=str(args.dataset_dir),
+            include_bias_acknowledged=False,
+            skip_unbuildable=False,
+        ),
+        enabled="wrong_argument" in args.bias_types and args.generate_missing_arguments,
+        max_rounds=args.argument_generation_rounds,
+        dataset=",".join(args.datasets),
     )
     expected = len(args.datasets) * (len(args.bias_types) + 1)
     if len(tasks) != expected:

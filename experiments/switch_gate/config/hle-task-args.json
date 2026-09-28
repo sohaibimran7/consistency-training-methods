@@ -1,0 +1,12 @@
+{
+  "unbiased_file": "artifacts/switch-gate/source/hle-eval/hle-text-mc_unbiased_none_n100_seed42_ids-1dc073edc4.jsonl",
+  "bias_files": {
+    "distractor_fact": "artifacts/switch-gate/source/hle-eval/hle-text-mc_distractor_fact_none_n100_seed42_ids-1dc073edc4.jsonl",
+    "post_hoc": "artifacts/switch-gate/source/hle-eval/hle-text-mc_post_hoc_none_n100_seed42_ids-1dc073edc4.jsonl",
+    "spurious_few_shot_squares": "artifacts/switch-gate/source/hle-eval/hle-text-mc_spurious_few_shot_squares_none_n100_seed42_ids-1dc073edc4.jsonl",
+    "suggested_answer": "artifacts/switch-gate/source/hle-eval/hle-text-mc_suggested_answer_none_n100_seed42_ids-1dc073edc4.jsonl",
+    "wrong_argument": "artifacts/switch-gate/source/hle-eval/hle-text-mc_wrong_argument_none_n100_seed42_args-vllm-google-gemma-4-31b-it_ids-1dc073edc4.jsonl",
+    "wrong_few_shot": "artifacts/switch-gate/source/hle-eval/hle-text-mc_wrong_few_shot_none_n100_seed42_ids-1dc073edc4.jsonl"
+  },
+  "unbiased_log": "logs/switch-gate/20260729/hle-confirmation"
+}

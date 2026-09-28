@@ -1,0 +1,4 @@
+{
+  "manifest": "artifacts/rmct-tbsr/training-balanced-n200-seed20260729.manifest.json",
+  "unbiased_log": "logs/rmct-tbsr/20260730/training"
+}

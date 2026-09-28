@@ -1,0 +1,144 @@
+name: rmct-convergence
+experiment_factory: experiments.rmct_convergence.plan:compile_experiment
+
+# Clean recovery of job 6011179.  That attempt ended before its first
+# optimizer update and produced no checkpoint, so this is a fresh start from
+# the already pinned base.  The only changed execution setting is all-layer
+# activation checkpointing; all scientific and rate-matching settings remain
+# frozen below.  `all` is compiled by omitting the limiting CLI argument.
+spec:
+  topology_profiles:
+    phase-shared-four-lane:
+      gpu_count: 4
+      training_gpus: all
+      rollout_gpus: all
+      phase_shared: true
+      deadline_execution_choice: true
+      comparative_optimality_validated: false
+      gradient_checkpointing_layers: all
+
+  model: Qwen/Qwen3.5-9B
+  base_snapshot:
+    repo_id: Qwen/Qwen3.5-9B
+    revision: c202236235762e1c871ad0ccb60c8ee5ba337b9a
+    offline_only: true
+
+  setting:
+    factory: ctm_data.adapters.mcq_bias.shared_qid_two_bias:create_shared_qid_two_bias_setting
+    setting_config:
+      data_path: artifacts/rmct-shared-qid-two-bias-20260813/shared-qid-two-bias-n1000-cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075.jsonl
+      manifest_path: artifacts/rmct-shared-qid-two-bias-20260813/shared-qid-two-bias-n1000-cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075.manifest-eac0682fe0286126cc5928253e2e2ef4968eee50775a65feb21d061eec6853cc.json
+      expected_manifest_sha256: eac0682fe0286126cc5928253e2e2ef4968eee50775a65feb21d061eec6853cc
+    data_content_sha256: cc7842566093e10d3867514e40b55d62ba56521fee24e2ba3695036295199075
+    prompt_style: none
+    perturbations: [clean, wrong_argument, suggested_answer]
+    training_indices: [1, 2]
+    segment_datapoints: 32
+    segment_count: 32
+    batch_composition: one_logiqa_plus_one_hellaswag_per_B2_optimizer_update
+    ordering: setting_interleaved_logiqa_hellaswag_and_trainer_no_shuffle
+
+  local:
+    backend: local
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.34
+    rollout_gpu_memory_utilization: 0.34
+    vllm_language_model_only: true
+    vllm_max_num_seqs: 256
+    vllm_max_num_batched_tokens: 8192
+    vllm_max_model_len: 32768
+    vllm_gdn_prefill_backend: triton
+    forward_microbatch_max_datums: 8
+    forward_microbatch_max_tokens: 20480
+    target_logprob_chunk_size: 2048
+    gradient_checkpointing: true
+    gradient_checkpointing_layers: all
+    phase_shared: true
+    worker_parity_attestation: artifacts/rmct-convergence-worker-parity-20260813/qwen35-rollout-worker-parity-attestation.json
+
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+
+  optimizer:
+    learning_rate: 0.0001
+    learning_rate_schedule: constant
+    beta1: 0.9
+    beta2: 0.95
+    eps: 1.0e-8
+    weight_decay: 0.0
+    grad_clip_norm: 1.0
+
+  method:
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: pooled
+    kl_coefficient: 0.05
+    kl_discount_factor: 0.0
+    ppo_clip_epsilon: 0.2
+    anchor_weight: 0.0
+    anchor_model: base
+
+  sampling:
+    reference_rollouts: 96
+    training_rollouts: 96
+    consistency_rollouts: 96
+    anchor_rollouts: 96
+    temperature: 1.0
+    max_new_tokens: 20480
+    unparsed_handling: discard
+    max_resample_attempts: 4
+    snr_mode: soft
+    snr_z: 2.0
+    snr_normalizer: trait_std
+
+  loop:
+    batch_size: 2
+    gradient_accumulation_steps: 1
+    epochs: 1
+    refresh_every: 1
+    shuffle_datapoints: false
+    checkpoint_every_optimizer_steps: 16
+    save_state: true
+
+  convergence:
+    controller_schema: rmct-convergence-checkpoint-window-decision-v1
+    source_metrics_schema: rmct-convergence-source-metrics-v1
+    updates_per_segment: 16
+    hard_cap_segments: 32
+    hard_cap_optimizer_steps: 512
+    cap_label: capped_not_converged
+    minimum_coverage: 0.85
+    maximum_weighted_abs_gap: 0.10
+    maximum_abs_change: 0.01
+    first_eligible_segment_index: 1
+    first_eligible_optimizer_step: 32
+
+  recovery:
+    schema: rmct-convergence-clean-recovery-v1
+    recovery_of:
+      prior_job_id: "6011179"
+      prior_attempt_ended: pre_optimizer
+      successful_optimizer_steps: 0
+      checkpoint_written: false
+      restart_parent: pinned_base_snapshot
+      artifacts_sha256:
+        training_started_marker: 33a3d176cc3df0a25e9e6629dad2e96a65e62e58fb19256eca7933f94b9d6a6c
+        training_command: affed38d5ccd1645d3af926ac528ee9869e5547e3fae197293e5fd40dc4191fc
+        metrics: 63bad54abaccfdcbad5b60d7c0ab2a1401554babd57c59b70840a3f499e06e92
+        slurm_log: a485cdadf67cef9cc8b96454f1507e09472d1ffc82f7e0a55293b2a060324df2
+        production_ready: 5741a59dcaeb9a2136bd00b8569d01f88ea6751d70b084ba98fc28eadfa96509
+        source_ready: 67fc52b0ed64937f352b0fa64607a0aa84bfdfacab37e6c32f8242f873c09e7d
+        rollout_worker_parity_attestation: 38765b2f61925880ef6cbc50af7fb2868725337b3ad26c9ac7243c26304b6f37
+    execution_delta:
+      activation_checkpointing_layers:
+        from: first16
+        to: all32
+        local_gradient_checkpointing_layers_cli: omitted
+      reason: 30,720-token singleton proof established that the physical caps cannot address the pre-optimizer failure
+    scientific_contract_unchanged: true
+    recovery_parent_artifact:
+      path: artifacts/rmct-convergence-gcall-r2-20260814/recovery-parent.json
+      sha256: b2a5c3d63323f43563a0281a4efb402a7778cc1e9a8d4a363ada90a9eee89e15
+    same_hardware_all_gradient_checkpointing_evidence:
+      result_sha256: da5783f1aca63cd7f7df500cd85e3460f204ddf2398417c8f44a5c9fadcdd0e9
+      contract_sha256: a71c0d74cb65b3b3aba56eb61f03e5ab25fe5cf28e909448b60fe62e051c6394

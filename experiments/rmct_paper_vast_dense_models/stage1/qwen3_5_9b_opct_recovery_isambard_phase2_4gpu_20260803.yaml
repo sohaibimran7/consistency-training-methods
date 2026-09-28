@@ -1,0 +1,145 @@
+name: rmct_paper_isambard_phase2_qwen3_5_9b_opct_rng_repair_4gpu_20260803
+experiment_factory: ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment
+
+# Isambard-AI Phase 2 variant of the fresh OPCT recovery.  It is deliberately
+# a distinct immutable plan from the eight-GPU Vast run: a GH200 node supplies
+# one coordinator and three independent vLLM workers.  This changes only
+# rollout parallelism/random streams, not the frozen source, optimizer,
+# objective, sample budget, or Qwen3.5 transport gates.
+spec:
+  model: Qwen/Qwen3.5-9B
+  backend: local
+  seed: 42
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-opct-recovery-isambard4-rng-repair-20260803
+  figure_root: figures/rmct-hle-qwen3.5-9b-dense-opct-recovery-isambard4-rng-repair-20260803
+  training_only: true
+  onpolicy_target_attestation: true
+
+  learning_rates:
+    - {name: "1e-4", value: 0.0001}
+
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+  local:
+    dtype: bfloat16
+    sampler: vllm
+    gpu_memory_utilization: 0.34
+    rollout_gpu_memory_utilization: 0.75
+    rollout_seed_base: 42
+    vllm_language_model_only: true
+    vllm_max_num_seqs: 256
+    vllm_max_num_batched_tokens: 8192
+    vllm_max_model_len: 32768
+    vllm_gdn_prefill_backend: triton
+    gradient_checkpointing: true
+    gradient_checkpointing_layers: 16
+    forward_microbatch_max_datums: 8
+    # Physical packing only; benchmarked under full-layer checkpointing on an
+    # 80 GB H100. The semantic generation cap remains 20,480 tokens.
+    forward_microbatch_max_tokens: 49152
+    target_logprob_chunk_size: 2048
+
+  # Exact legacy-G4 CoT-to-none recovery; this plan is read-only and cannot
+  # generate a replacement source.
+  data:
+    shared_root: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801
+    prepare_shared: false
+    training:
+      bias_type: wrong_argument
+      datasets: [logiqa, hellaswag]
+      prompt_style: none
+      pool_per_dataset: 1024
+      minimum_per_dataset: 1024
+      examples: 2048
+      argument_model: openrouter/google/gemma-4-31b-it
+    instruction: {source: cleaned_alpaca, examples: 2048}
+    evaluation:
+      source: hle
+      expected_source_count: 513
+      questions: 100
+      biases: [suggested_answer, distractor_fact, wrong_argument, post_hoc, spurious_few_shot_squares, wrong_few_shot]
+      minimum_questions_by_bias: {wrong_argument: 92}
+      argument_model: openrouter/google/gemma-4-31b-it
+      grader_model: openrouter/google/gemma-4-31b-it
+
+  conditions:
+    - {name: untrained, method: none}
+    - {name: opct, method: opct}
+
+  # Required by the shared compiler but unreferenced by this OPCT-only plan.
+  supervised_consistency:
+    batch_size: 1
+    gradient_accumulation_steps: 128
+    epochs: 1
+    save_every: 16
+    learning_rate_schedule: linear
+    bias_augmented_targets: {max_tokens: 20480, temperature: 1.0, max_concurrency: 32}
+    method_config:
+      act: {layer_selection: all, normalize: false}
+      attct: {layer_selection: all, layer_weights: uniform}
+      mlpct: {variant: hidden, layer_selection: all, layer_weights: uniform, distance_metric: cosine, normalize: false}
+
+  opct:
+    learning_rates:
+      - {name: "1e-4", value: 0.0001}
+    batch_size: 1
+    gradient_accumulation_steps: 16
+    epochs: 1
+    rollouts_per_prompt: 4
+    temperature: 0.7
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 2.0
+    kl_discount_factor: 0.9
+    loss: importance_sampling
+    checkpoint_every: 8
+
+  # Required by the compiler but unused by the OPCT condition.  Keep the
+  # corresponding RMCT values paper-aligned to prevent silent config drift.
+  rate_matching:
+    datapoints: 64
+    rollouts: {reference: 96, training: 96, consistency: 96, anchor: 96}
+    batch_size: 4
+    epochs: 1
+    temperature: 1.0
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 0.05
+    anchor_weight: 0.0
+    anchor_model: base
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: pooled
+    gradient_accumulation_steps: 1
+    refresh_every: 1
+    checkpoint_every: 8
+
+  evaluation:
+    max_tokens: 20480
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 20
+    provider: vllm
+    max_tasks: 1
+    isolate_tasks: true
+    persistent_vllm_server: true
+    model_args: {gpu_memory_utilization: 0.9, max_model_len: 32768, language_model_only: true, max_num_seqs: 256}
+  tracking: {wandb_project: rmct_paper_isambard_phase2_opct_rng_repair_4gpu_20260803}
+
+  reports:
+    held_out_exclude: [wrong_argument]
+    standard_error: inspect
+    significance_baseline: untrained
+    charts: {switch: experiments/rmct_paper_vast_more_methods/switch_chart.json}
+    items:
+      - {name: towards-bias-switch, metric: towards_bias_switch, chart: switch}
+
+  execution:
+    publication_owner: isambard-phase2-opct-recovery-coordinator
+    allocations:
+      - target: opct
+        stage: training
+        commands: [opct_lr1]
+        gpu_count: 4
+        local_device: cuda:0
+        rollout_gpus: [1, 2, 3]
+        gradient_checkpointing_layers: all

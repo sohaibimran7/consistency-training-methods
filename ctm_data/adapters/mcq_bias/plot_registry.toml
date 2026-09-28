@@ -46,6 +46,9 @@ display_name = "BCT"
 [training_types.bias-augmented-consistency-control]
 display_name = "BCT Control"
 
+[training_types.opct]
+display_name = "OPCT"
+
 [training_types.act]
 display_name = "ACT"
 
@@ -65,27 +68,31 @@ display_name = "MLPCT"
 display_name = "MLPCT Control"
 
 [methods.none]
-color = "#9aa0a6"
+color = "#929292"
 
 [methods.bias_augmented_consistency]
-color = "#7aa7d9"
+color = "#3288bd"
 
 [methods.rate_matching]
-color = "#8cc39a"
+color = "#56a578"
+
+[methods.opct]
+color = "#548f91"
 
 [methods.act]
-color = "#d99a6c"
+color = "#b85c38"
 
 [methods.attct]
-color = "#9e9ac8"
+color = "#d98c52"
 
 [methods.mlpct]
-color = "#d58aaa"
+color = "#edbc83"
 
 [ordering]
 training_types = [
   "untrained",
   "bias-augmented-consistency", "bias-augmented-consistency-control",
+  "opct",
   "rate-matching", "rate-matching-control",
   "act", "act-control",
   "attct", "attct-control",

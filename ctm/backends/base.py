@@ -16,9 +16,10 @@ package builds them offline; ``tinker_cookbook``'s ``trajectory_to_data`` /
 everyone). A local backend translates datums to tensors internally.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import torch
 
@@ -30,7 +31,17 @@ class SampledSequence:
     """One sampled completion: tokens plus (optionally) their sampling logprobs."""
 
     tokens: list[int]
-    logprobs: Optional[list[float]]
+    logprobs: list[float] | None
+    finish_reason: str = "unknown"
+
+    def validate(self) -> None:
+        """Reject malformed sampling evidence before it reaches a datum."""
+        import math
+        if self.logprobs is not None:
+            if len(self.logprobs) != len(self.tokens):
+                raise ValueError("sample token/logprob lengths differ")
+            if any(not math.isfinite(value) for value in self.logprobs):
+                raise ValueError("sample contains a non-finite logprob")
 
 
 @dataclass
@@ -54,8 +65,26 @@ class PendingOptimStep(Protocol):
 
 
 @runtime_checkable
-class SamplerHandle(Protocol):
-    """A handle that can sample completions for a rendered prompt.
+class PolicyScorerHandle(Protocol):
+    """A fixed or live policy handle that scores supplied completions.
+
+    Scores are raw-policy log-probabilities: generation temperature and other
+    sampling transforms are not applied.  Keeping the scorer on an explicit
+    handle lets callers choose the policy snapshot being used as a reference.
+    """
+
+    async def score_completions(
+        self,
+        prompts: Sequence[Any],
+        completion_tokens: Sequence[Sequence[int]],
+    ) -> list[list[float]]:
+        """Return one raw-policy log-probability per supplied completion token."""
+        ...
+
+
+@runtime_checkable
+class SamplerHandle(PolicyScorerHandle, Protocol):
+    """A policy handle that can sample and score completions.
 
     ``prompt`` is the renderer's prompt container (``tinker.types.ModelInput``
     for both current backends); ``stop`` is whatever the renderer's
@@ -66,7 +95,7 @@ class SamplerHandle(Protocol):
         self,
         prompt: Any,
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,
@@ -88,7 +117,7 @@ class TrainingBackend(Protocol):
         *,
         model: str,
         lora: LoRAConfig,
-        resume_from: Optional[str] = None,
+        resume_from: str | None = None,
         resume_with_optimizer: bool = False,
     ) -> None:
         """Create/initialize the trainable model (and load a checkpoint if resuming)."""

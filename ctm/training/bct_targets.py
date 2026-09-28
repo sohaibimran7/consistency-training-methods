@@ -303,7 +303,7 @@ async def generate_bct_rows(
     sampler: SamplerHandle,
     renderer: Any,
     tokenizer: Any,
-    max_tokens: int = 32768,
+    max_tokens: int | None = 32768,
     temperature: float = 0.0,
     max_concurrency: int = 32,
     completed: Mapping[int, tuple[dict[str, Any], dict[str, Any]]] | None = None,
@@ -316,8 +316,10 @@ async def generate_bct_rows(
     checkpoint work before another concurrent sample can fail.
     """
 
-    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1:
-        raise ValueError("max_tokens must be a positive integer")
+    if max_tokens is not None and (
+        not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1
+    ):
+        raise ValueError("max_tokens must be a positive integer or None for EOS-only generation")
     if not isinstance(max_concurrency, int) or isinstance(max_concurrency, bool) or max_concurrency < 1:
         raise ValueError("max_concurrency must be a positive integer")
     if not isinstance(temperature, (int, float)) or isinstance(temperature, bool) or temperature < 0:

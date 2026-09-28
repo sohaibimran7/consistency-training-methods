@@ -1,0 +1,529 @@
+"""Train On-Policy Consistency Training (OPCT) on paired prompt JSONL.
+
+Each row supplies a frozen-teacher reference prompt and a student variant
+prompt.  The student samples online from the variant; an immutable snapshot of
+the run-start policy scores that continuation under the reference prompt.
+
+Example:
+    python scripts/train_opct.py \
+        --model meta-llama/Llama-3.1-8B-Instruct \
+        --data paired-prompts.jsonl \
+        --reference-messages-field unbiased_messages \
+        --variant-messages-field biased_messages \
+        --rollouts-per-prompt 4 --kl-coef 2.0 \
+        --experiment-name opct --run-name main
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from dotenv import load_dotenv
+
+load_dotenv(PROJECT_ROOT / ".env")
+
+from ctm.artifacts import plain_file_identity
+from ctm.backends.cli import (
+    PhaseSharedCLIConfig,
+    add_backend_args,
+    build_backend,
+    describe_backend,
+    resolve_phase_shared_args,
+    resolve_rollout_parallel_args,
+)
+from ctm.cli_safety import parse_json_object, reject_inline_secrets
+from ctm.core.config import AdamConfig, CheckpointConfig, resolve_lora_config
+from ctm.training.opct import OPCTConfig, OPCTGenerationConfig, OPCTTrainer, validate_opct_samples
+
+
+def _phase_shared_run_metadata(phase_shared: PhaseSharedCLIConfig | None) -> dict[str, object]:
+    """Return reproducible runtime provenance for an opt-in shared-GPU run.
+
+    The placement is deliberately recorded separately from scientific settings:
+    phase sharing changes how the configured update is executed, rather than
+    which data, objective, rollout budgets, or optimizer hyperparameters the
+    experiment uses.
+    """
+
+    if phase_shared is None:
+        return {}
+    topology = phase_shared.topology
+    return {
+        "phase_shared": {
+            "schema_version": "local_phase_shared_v1",
+            "execution_only": True,
+            "execution_semantics": (
+                "runtime topology only; configured objective, data selection, rollout budgets, "
+                "and optimizer hyperparameters are unchanged"
+            ),
+            "visible_devices": list(topology.visible_devices),
+            "training_world_size": topology.world_size,
+            "training_ranks": [
+                {
+                    "rank": rank.rank,
+                    "logical_index": rank.gpu.logical_index,
+                    "device_token": rank.gpu.device_token,
+                    "publisher": rank.is_publisher,
+                }
+                for rank in topology.training_ranks
+            ],
+            "rollout_workers": [
+                {
+                    "worker_id": worker_id,
+                    "logical_index": gpu.logical_index,
+                    "device_token": gpu.device_token,
+                }
+                for worker_id, gpu in enumerate(topology.rollout_gpus)
+            ],
+            "overlap": [
+                {"logical_index": gpu.logical_index, "device_token": gpu.device_token}
+                for gpu in topology.overlap
+            ],
+            "coordinator": {
+                "rank": 0,
+                "logical_index": topology.coordinator.logical_index,
+                "device_token": topology.coordinator.device_token,
+                "device": phase_shared.coordinator_device,
+                "canonical_adapter_publisher": True,
+            },
+            "vllm_sleep_lifecycle": {
+                "enabled": True,
+                "sleep_level": 1,
+                "rollout_phase": "workers awake; sampling and scoring permitted",
+                "training_phase": "workers sleep before replicated trainer work; sampling and scoring prohibited",
+                "publication": "rank 0 verifies replica state, publishes the adapter, then all workers acknowledge before rollout resumes",
+                "transition_failure_policy": "fail_closed",
+            },
+            "rollout_worker_timeouts_seconds": {
+                "startup": phase_shared.rollout.start_timeout_seconds,
+                "request": phase_shared.rollout.request_timeout_seconds,
+            },
+            "replica_timeouts_seconds": {
+                "startup": phase_shared.replica_start_timeout_seconds,
+                "command": phase_shared.replica_command_timeout_seconds,
+                "shutdown": phase_shared.replica_shutdown_timeout_seconds,
+            },
+        }
+    }
+
+
+def _print_phase_shared_runtime(phase_shared: PhaseSharedCLIConfig | None) -> None:
+    """Print a compact, topology-independent execution provenance summary."""
+
+    if phase_shared is None:
+        return
+    topology = phase_shared.topology
+    ranks = ", ".join(
+        f"rank {rank.rank} -> logical {rank.gpu.logical_index} ({rank.gpu.device_token})"
+        for rank in topology.training_ranks
+    )
+    rollouts = ", ".join(
+        f"worker {worker_id} -> logical {gpu.logical_index} ({gpu.device_token})"
+        for worker_id, gpu in enumerate(topology.rollout_gpus)
+    )
+    overlap = ", ".join(str(gpu.logical_index) for gpu in topology.overlap) or "none"
+    print(
+        "Phase-shared: execution-only; configured objective/data/budgets/hyperparameters unchanged"
+    )
+    print(
+        f"Phase topology: world={topology.world_size}; rank 0/coordinator="
+        f"{phase_shared.coordinator_device}; overlap logical GPUs=[{overlap}]"
+    )
+    print(f"Training ranks: {ranks}")
+    print(f"Rollout workers: {rollouts}")
+    print("vLLM lifecycle: awake for rollout; level-1 sleep for training; rank-0 publish + worker ACK")
+    print(
+        "Replica timeouts: "
+        f"start={phase_shared.replica_start_timeout_seconds:g}s, "
+        f"command={phase_shared.replica_command_timeout_seconds:g}s, "
+        f"shutdown={phase_shared.replica_shutdown_timeout_seconds:g}s"
+    )
+
+
+def parse_file_spec(spec: str) -> tuple[Path, int | None]:
+    """Parse ``FILE[:N]`` while allowing colons inside the file path."""
+
+    if ":" in spec:
+        path_text, possible_limit = spec.rsplit(":", 1)
+        try:
+            return Path(path_text), int(possible_limit)
+        except ValueError:
+            pass
+    return Path(spec), None
+
+
+def load_and_combine(file_specs: list[tuple[Path, int | None]], *, interleave: bool) -> list[dict]:
+    groups: list[list[dict]] = []
+    for path, limit in file_specs:
+        rows = []
+        with path.open(encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                if limit is not None and len(rows) >= limit:
+                    break
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
+                if not isinstance(value, dict):
+                    raise TypeError(f"{path}:{line_number}: each row must be a JSON object")
+                rows.append(value)
+        print(f"  {path.name}: {len(rows)} pairs")
+        groups.append(rows)
+
+    if not interleave:
+        return [row for group in groups for row in group]
+    output: list[dict] = []
+    iterators = [iter(group) for group in groups]
+    while iterators:
+        for iterator in list(iterators):
+            try:
+                output.append(next(iterator))
+            except StopIteration:
+                iterators.remove(iterator)
+    return output
+
+
+def resolve_optimizer_config(
+    raw: dict,
+    *,
+    learning_rate: float | None,
+    lr_schedule: str | None,
+) -> AdamConfig:
+    unknown = sorted(set(raw) - set(AdamConfig.model_fields))
+    if unknown:
+        raise ValueError(f"optimizer_config has unknown field(s): {unknown}")
+    values = {"lr_schedule": "constant", **raw}
+    if learning_rate is not None:
+        values["learning_rate"] = learning_rate
+    if lr_schedule is not None:
+        values["lr_schedule"] = lr_schedule
+    return AdamConfig(**values)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="On-Policy Consistency Training on paired clean/variant prompts",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="Base model used to initialize a fresh student and its run-start teacher",
+    )
+    parser.add_argument("--data", nargs="+", required=True, metavar="FILE[:N]")
+    parser.add_argument("--data-manifest", nargs="+", type=Path)
+    parser.add_argument("--interleave", action="store_true", help="Round-robin rows from multiple data files")
+    parser.add_argument("--reference-messages-field", default="reference_messages")
+    parser.add_argument("--variant-messages-field", default="variant_messages")
+
+    parser.add_argument("--experiment-name", required=True)
+    parser.add_argument("--run-name", required=True)
+    parser.add_argument("--wandb-project")
+
+    parser.add_argument("--lora-config", help="JSON object or file with the shared LoRA configuration")
+    parser.add_argument("--lora-rank", type=int, default=None)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for LoRA init and training-data ordering. "
+            "Use --local-rollout-seed-base to seed independent vLLM worker streams"
+        ),
+    )
+    parser.add_argument("--optimizer-config", help="JSON object or file with the shared Adam configuration")
+    parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--lr-schedule", choices=["constant", "linear", "cosine"], default=None)
+
+    parser.add_argument("--rollouts-per-prompt", type=int, default=4, help="Student rollouts k for each prompt pair")
+    parser.add_argument("--temperature", type=float, default=0.7)
+    generation_limit = parser.add_mutually_exclusive_group()
+    generation_limit.add_argument("--max-new-tokens", type=int, default=2048)
+    generation_limit.add_argument(
+        "--no-max-new-tokens",
+        action="store_const",
+        const=None,
+        dest="max_new_tokens",
+        help=(
+            "Sample until model EOS with no output-token limit. The selected backend "
+            "must preserve max_tokens=None and fail on any non-EOS termination."
+        ),
+    )
+    parser.add_argument("--kl-coef", type=float, default=1.0, help="Reverse-KL coefficient lambda")
+    parser.add_argument(
+        "--kl-discount-factor",
+        type=float,
+        default=0.0,
+        help="Future-token discount gamma for reverse-KL credit",
+    )
+    parser.add_argument(
+        "--loss-fn",
+        choices=["importance_sampling", "ppo"],
+        default="importance_sampling",
+        help="Policy-gradient loss applied to the reverse-KL token advantages",
+    )
+    parser.add_argument("--batch-size", type=int, default=8, help="Prompt pairs per microbatch")
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument(
+        "--no-shuffle-samples",
+        action="store_false",
+        dest="shuffle_samples",
+        help="Preserve the supplied row order on every epoch",
+    )
+
+    parser.add_argument("--checkpoint-every", type=int, default=50)
+    parser.add_argument("--save-state", action="store_true")
+    parser.add_argument("--skip-near-final", type=int, default=0)
+    parser.add_argument(
+        "--rollout-log",
+        choices=["all", "none"],
+        default="all",
+        help="Persist every sampled student completion, including invalid/skipped samples",
+    )
+    parser.add_argument(
+        "--rollout-dir",
+        help="Rollout output directory (default: logs/EXPERIMENT/RUN/rollouts)",
+    )
+    parser.add_argument(
+        "--resume-from",
+        help="Tinker student checkpoint to load and freeze as this run's teacher",
+    )
+    resume_group = parser.add_mutually_exclusive_group()
+    resume_group.add_argument(
+        "--resume-with-optimizer",
+        dest="resume_with_optimizer",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Force optimizer-state restoration from --resume-from (default: infer from URI)",
+    )
+    resume_group.add_argument(
+        "--no-resume-optimizer",
+        dest="resume_with_optimizer",
+        action="store_const",
+        const=False,
+        help="Load only student weights from --resume-from",
+    )
+
+    add_backend_args(parser)
+    parser.add_argument(
+        "--onpolicy-target-attestation",
+        type=Path,
+        help="Immutable target contract injected only by the protected Qwen3.5 on-policy launcher",
+    )
+    parser.add_argument(
+        "--require-onpolicy-target-attestation",
+        action="store_true",
+        help="Fail closed unless --onpolicy-target-attestation is supplied (used by protected experiment plans)",
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("-y", "--yes", action="store_true")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
+    onpolicy_target_provenance: dict | None = None
+    try:
+        if args.require_onpolicy_target_attestation and args.onpolicy_target_attestation is None:
+            raise ValueError("--require-onpolicy-target-attestation requires --onpolicy-target-attestation")
+        if args.onpolicy_target_attestation is not None:
+            # This happens before loading any training rows or constructing a
+            # backend. It independently replays the plan/source/worker gates,
+            # so a post-launch YAML or sidecar mutation cannot reach a model.
+            from experiments.rmct_paper_vast_dense_models.stage1.onpolicy_recovery_preflight import (
+                validate_onpolicy_target_attestation_for_child,
+            )
+
+            onpolicy_target_provenance = validate_onpolicy_target_attestation_for_child(
+                attestation=args.onpolicy_target_attestation,
+                expected_training_script="scripts/train_opct.py",
+                child_argv=["scripts/train_opct.py", *effective_argv],
+                interpreter=sys.executable,
+                training_script_path=Path(__file__),
+                cuda_visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES"),
+            )
+        file_specs = [parse_file_spec(value) for value in args.data]
+        for path, limit in file_specs:
+            if not path.is_file():
+                raise ValueError(f"data file not found: {path}")
+            if limit is not None and limit < 1:
+                raise ValueError(f"data limit must be positive: {path}:{limit}")
+        for path in args.data_manifest or []:
+            if not path.is_file():
+                raise ValueError(f"data manifest not found: {path}")
+
+        raw_lora = parse_json_object(args.lora_config, label="lora_config")
+        raw_optimizer = parse_json_object(args.optimizer_config, label="optimizer_config")
+        reject_inline_secrets(raw_lora, path="lora_config")
+        reject_inline_secrets(raw_optimizer, path="optimizer_config")
+        lora = resolve_lora_config(raw_lora, rank=args.lora_rank, seed=args.seed)
+        optimizer = resolve_optimizer_config(
+            raw_optimizer,
+            learning_rate=args.lr,
+            lr_schedule=args.lr_schedule,
+        )
+        if args.lr is not None and args.lr <= 0:
+            raise ValueError("--lr must be positive")
+        if args.checkpoint_every < 1:
+            raise ValueError("--checkpoint-every must be positive")
+        if args.skip_near_final < 0:
+            raise ValueError("--skip-near-final must be non-negative")
+        if args.resume_with_optimizer is not None and not args.resume_from:
+            raise ValueError("--resume-with-optimizer/--no-resume-optimizer requires --resume-from")
+        if args.resume_from and args.backend == "local":
+            raise ValueError(
+                "OPCT --resume-from is unavailable with --backend local because its policy handle is live; "
+                "use Tinker or start a fresh local run so the teacher remains immutable"
+            )
+        if args.rollout_dir is not None and not args.rollout_dir.strip():
+            raise ValueError("--rollout-dir must be a non-empty path")
+        if args.rollout_log == "none" and args.rollout_dir is not None:
+            raise ValueError("--rollout-dir requires --rollout-log all")
+        phase_shared = resolve_phase_shared_args(args)
+        rollout_parallel = phase_shared.rollout if phase_shared is not None else resolve_rollout_parallel_args(args)
+
+        print("Loading prompt pairs...")
+        samples = load_and_combine(file_specs, interleave=args.interleave)
+        config = OPCTConfig(
+            experiment_name=args.experiment_name,
+            run_name=args.run_name,
+            wandb_project=args.wandb_project,
+            model=args.model,
+            lora=lora,
+            optimizer=optimizer,
+            generation=OPCTGenerationConfig(
+                rollouts_per_prompt=args.rollouts_per_prompt,
+                max_new_tokens=args.max_new_tokens,
+                temperature=args.temperature,
+            ),
+            n_epochs=args.epochs,
+            batch_size=args.batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            shuffle_samples=args.shuffle_samples,
+            kl_coef=args.kl_coef,
+            kl_discount_factor=args.kl_discount_factor,
+            loss_fn=args.loss_fn,
+            checkpoint=CheckpointConfig(
+                save_every_n_steps=args.checkpoint_every,
+                save_state=args.save_state,
+                skip_near_final_steps=args.skip_near_final,
+            ),
+            rollout_log=args.rollout_log,
+            rollout_dir=args.rollout_dir,
+            reference_messages_field=args.reference_messages_field,
+            variant_messages_field=args.variant_messages_field,
+            run_metadata={
+                "data_files": [str(path) for path, _ in file_specs],
+                "data_artifacts": [plain_file_identity(path) for path, _ in file_specs],
+                "data_manifests": [plain_file_identity(path) for path in (args.data_manifest or [])],
+                "interleave": args.interleave,
+                "backend": args.backend,
+                "method": "opct",
+                "teacher_policy": "run_start",
+                "resume_from": args.resume_from,
+                "resume_with_optimizer": args.resume_with_optimizer,
+                **_phase_shared_run_metadata(phase_shared),
+                **(
+                    {"onpolicy_target_attestation": onpolicy_target_provenance}
+                    if onpolicy_target_provenance is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "rollout_parallel": {
+                            "coordinator_device": args.local_device,
+                            "workers": [gpu.as_dict() for gpu in rollout_parallel.gpus],
+                            "status_dir": str(rollout_parallel.status_dir),
+                            "adapter_barrier": "all_workers_acknowledge_before_policy_sampling",
+                            "engine_seed_base": args.local_rollout_seed_base,
+                            "engine_seed_policy": "base_plus_worker_id_v1",
+                            "engine_seed_fallback": (
+                                None if args.local_rollout_seed_base is not None else "os_entropy_once_per_pool"
+                            ),
+                        }
+                    }
+                    if rollout_parallel is not None
+                    else {}
+                ),
+            },
+        )
+        validate_opct_samples(samples, config)
+    except (OSError, TypeError, ValueError) as exc:
+        parser.error(str(exc))
+
+    microbatches = (len(samples) + config.batch_size - 1) // config.batch_size
+    steps = (
+        (microbatches + config.gradient_accumulation_steps - 1) // config.gradient_accumulation_steps * config.n_epochs
+    )
+    print()
+    print(f"Model: {config.model}")
+    print("Method: OPCT (paired output consistency)")
+    print(f"Backend: {describe_backend(args)}")
+    if rollout_parallel is not None:
+        if phase_shared is None:
+            mapping = ", ".join(f"logical {gpu.logical_index} -> {gpu.device_token}" for gpu in rollout_parallel.gpus)
+            print(f"Rollout workers: {len(rollout_parallel.gpus)} ({mapping})")
+        print(f"Worker status: {rollout_parallel.status_dir}")
+        seed_text = args.local_rollout_seed_base if args.local_rollout_seed_base is not None else "recorded entropy"
+        print(f"Sampling RNG: vLLM engine seeds {seed_text}+worker_id")
+    _print_phase_shared_runtime(phase_shared)
+    print(f"Experiment: {config.experiment_name} / {config.run_name}")
+    print(f"Prompt pairs: {len(samples)}")
+    print(
+        f"Hyperparams: k={config.generation.rollouts_per_prompt}, lambda={config.kl_coef}, "
+        f"gamma={config.kl_discount_factor}, temperature={config.generation.temperature}, "
+        f"batch={config.batch_size}, grad_accum={config.gradient_accumulation_steps}, "
+        f"epochs={config.n_epochs}, optimizer_steps={steps}"
+    )
+    print(f"Pair fields: teacher={config.reference_messages_field!r}, " f"student={config.variant_messages_field!r}")
+    if onpolicy_target_provenance is not None:
+        print(
+            "On-policy target attestation: "
+            f"{onpolicy_target_provenance['path']} (sha256:{onpolicy_target_provenance['sha256']})"
+        )
+    teacher_source = (
+        f"run-start Tinker checkpoint ({args.resume_from})" if args.resume_from else "run-start base policy"
+    )
+    print(f"Frozen teacher: {teacher_source}")
+    if config.rollout_log == "all":
+        rollout_dir = config.rollout_dir or f"logs/{config.experiment_name}/{config.run_name}/rollouts"
+        print(f"Rollout log: all sampled completions -> {rollout_dir}")
+    else:
+        print("Rollout log: disabled")
+    if args.resume_from:
+        optimizer_resume = "auto" if args.resume_with_optimizer is None else str(args.resume_with_optimizer).lower()
+        print(f"Student checkpoint: {args.resume_from} (optimizer restore: {optimizer_resume})")
+    print("Policy refresh: after every optimizer update (fully on-policy)")
+    if args.dry_run:
+        print("Dry run complete; no backend was initialized.")
+        return
+    if not args.yes and input("Proceed with OPCT training? [y/N] ").strip().lower() != "y":
+        print("Aborted.")
+        return
+
+    trainer = OPCTTrainer(
+        config=config,
+        backend=build_backend(args, requires_frozen_base=True),
+        resume_from=args.resume_from,
+        resume_with_optimizer=args.resume_with_optimizer,
+    )
+    final_checkpoint = asyncio.run(trainer.train(samples))
+    print(f"CTM_FINAL_CHECKPOINT={final_checkpoint}")
+
+
+if __name__ == "__main__":
+    main()

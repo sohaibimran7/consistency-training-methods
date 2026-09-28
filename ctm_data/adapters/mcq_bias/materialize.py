@@ -5,12 +5,45 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from ctm.artifacts import write_atomic_bytes
 from ctm_data.adapters.mcq_bias.data import file_identity
+from ctm_data.adapters.mcq_bias.parser_compat import install_extended_answer_parser
+
+_T = TypeVar("_T")
+
+
+def retry_wrong_argument_materialization(
+    materialize_call: Callable[[], _T],
+    *,
+    enabled: bool,
+    max_rounds: int,
+    dataset: str,
+) -> _T:
+    """Retry only incomplete wrong-argument generation.
+
+    ``mcq_bias`` deliberately gives each missing argument just two stochastic
+    generation attempts. Accepted rows are appended to its canonical store
+    before it raises for a below-floor frozen set, so calling it again retries
+    only the remaining misses while preserving the exact question pool.
+    """
+
+    for round_number in range(1, max_rounds + 1):
+        try:
+            return materialize_call()
+        except ValueError as exc:
+            retryable = enabled and "matched questions for 'wrong_argument'" in str(exc)
+            if not retryable or round_number == max_rounds:
+                raise
+            print(
+                f"wrong_argument: {dataset} remains below its requested floor after generation "
+                f"round {round_number}/{max_rounds}; retrying only missing arguments"
+            )
+    raise AssertionError("unreachable")
 
 
 def interleave_rows(per_file_rows: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -38,12 +71,13 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSON: {exc.msg}") from exc
             if not isinstance(row, dict):
-                raise ValueError(f"{path}:{line_number}: row must be a JSON object")
+                raise TypeError(f"{path}:{line_number}: row must be a JSON object")
             rows.append(row)
     return rows
 
 
 def main(argv: list[str] | None = None) -> None:
+    install_extended_answer_parser()
     from mcq_bias.pipeline.records import PROMPT_STYLES
     from mcq_bias.tasks import BIAS_TYPES, frozen_path, mcq_bias
 
@@ -60,6 +94,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--argument-model")
     parser.add_argument("--generate-missing-arguments", action="store_true")
+    parser.add_argument(
+        "--argument-generation-rounds",
+        type=int,
+        default=5,
+        help="Maximum materialization rounds for missing wrong arguments (two model attempts per round)",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--manifest-output", type=Path, required=True)
     parser.add_argument("-y", "--yes", action="store_true")
@@ -71,6 +111,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--min-n-questions must be between 1 and --n-questions")
     if args.generate_missing_arguments and args.bias_type != "wrong_argument":
         parser.error("--generate-missing-arguments only applies to wrong_argument")
+    if args.argument_generation_rounds < 1:
+        parser.error("--argument-generation-rounds must be >= 1")
     if args.output.resolve() == args.manifest_output.resolve():
         parser.error("--output and --manifest-output must be different paths")
     existing = [str(path) for path in (args.output, args.manifest_output) if path.exists()]
@@ -102,16 +144,21 @@ def main(argv: list[str] | None = None) -> None:
     for dataset in args.datasets:
         # Constructing the public task materializes its frozen rows if absent;
         # no model evaluation is run here.
-        mcq_bias(
-            bias_type=args.bias_type,
+        retry_wrong_argument_materialization(
+            lambda dataset=dataset: mcq_bias(
+                bias_type=args.bias_type,
+                dataset=dataset,
+                prompt_style=args.prompt_style,
+                n_questions=args.n_questions,
+                min_n_questions=args.min_n_questions,
+                seed=args.seed,
+                argument_model=argument_model,
+                generate_missing_arguments=args.generate_missing_arguments,
+                dataset_dir=str(args.dataset_dir),
+            ),
+            enabled=args.bias_type == "wrong_argument" and args.generate_missing_arguments,
+            max_rounds=args.argument_generation_rounds,
             dataset=dataset,
-            prompt_style=args.prompt_style,
-            n_questions=args.n_questions,
-            min_n_questions=args.min_n_questions,
-            seed=args.seed,
-            argument_model=argument_model,
-            generate_missing_arguments=args.generate_missing_arguments,
-            dataset_dir=str(args.dataset_dir),
         )
         source_path = frozen_path(
             dataset,
@@ -136,7 +183,7 @@ def main(argv: list[str] | None = None) -> None:
     manifest = {
         "schema_version": 1,
         "kind": "mcq_bias_training_selection",
-        "written_at": datetime.now(timezone.utc).isoformat(),
+        "written_at": datetime.now(UTC).isoformat(),
         "selection": {
             "bias_type": args.bias_type,
             "datasets": args.datasets,

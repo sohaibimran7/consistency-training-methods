@@ -1,0 +1,29 @@
+name: act-max-from-base-20260804
+experiment_factory: experiments.act_max.plan:compile_experiment
+
+# A separate, data-scaling ACT condition.  It starts from base Qwen3.5-9B and
+# uses the repaired native no-reasoning paired-prompt contract.  It is not a
+# continuation of repaired ACT and it does not reuse its adapter or optimizer.
+# The Stage-2 in-domain n=200 population remains fully withheld.
+spec:
+  topology_profiles:
+    single-gpu:
+      target: act-max-1gpu
+      run_name: act-max-none-n2800-5600steps-lr-1e-4
+      gpu_count: 1
+
+  model: Qwen/Qwen3.5-9B
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-act-max-from-base-20260804
+
+  # All inputs below are immutable and checked before any GPU/model use.  The
+  # selected data is the full 3,000-row recovered no-CoT source, excluding
+  # only the established 200-row Stage-2 held-out-IID reservation.
+  recovered_none_source: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801/data/distractor-argument-pairs.jsonl
+  recovered_none_manifest: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801/data/distractor-argument-pairs.manifest.json
+  canonical_prefix: artifacts/rmct-hle-qwen3.5-9b-dense-stage1-supervised-recovery-none-20260801/data/canonical-consistency-pairs-n2048.jsonl
+  canonical_prefix_manifest: artifacts/rmct-hle-qwen3.5-9b-dense-stage1-supervised-recovery-none-20260801/data/canonical-consistency-pairs-n2048.manifest.json
+  iid_reference_manifest: artifacts/stage1-iid-diagnostic-none-20260801/manifest.json
+  iid_heldout: artifacts/stage1-iid-diagnostic-none-20260801/heldout-in-domain-n200.jsonl
+  stage2_manifest: artifacts/stage2-ood-hle-2x2-20260802-r1/manifest.json
+  selection: artifacts/act-max-training-20260804/act-max-training-cec56e4d33531a9f997740850a654e7ceaf16b6c2d4830108861df903660cbd5.jsonl
+  selection_manifest: artifacts/act-max-training-20260804/act-max-training-manifest-18b8f70b8260c3d2deaf3345efcfddd41da3e9b7c61ed50d52664bbca56bd04c.json
