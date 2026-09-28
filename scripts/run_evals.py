@@ -247,6 +247,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--model-args", help="Inline JSON object or JSON file passed to Inspect get_model")
     parser.add_argument(
+        "--metadata",
+        help="Inline JSON object or JSON file recorded in every Inspect eval log",
+    )
+    parser.add_argument(
         "--generation-config",
         help="Inline JSON object or JSON file parsed as Inspect GenerateConfig for either model path",
     )
@@ -284,6 +288,9 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help=("With --isolate-tasks, keep one parent-owned native vLLM server for this condition while each task still runs in a fresh child interpreter"),
     )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Validate and print the run without constructing tasks or models"
+    )
     parser.add_argument("-y", "--yes", action="store_true", help="Run after printing the exact command")
     args = parser.parse_args(argv)
 
@@ -309,10 +316,12 @@ def main(argv: list[str] | None = None) -> None:
     try:
         task_args = parse_json_object(args.task_args, label="task_args")
         model_args = parse_json_object(args.model_args, label="model_args")
+        metadata = parse_json_object(args.metadata, label="metadata")
         generation_config = parse_json_object(args.generation_config, label="generation_config")
         for label, value in (
             ("task_args", task_args),
             ("model_args", model_args),
+            ("metadata", metadata),
             ("generation_config", generation_config),
         ):
             reject_inline_secrets(value, path=label)
@@ -344,12 +353,17 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  renderer_name={args.renderer_name}")
     print(f"  task_args={task_args}")
     print(f"  model_args={model_args}")
+    print(f"  metadata={metadata}")
     print(f"  generation_config={generation_config}")
     print(f"  log_dir={args.log_dir}, limit={args.limit}, epochs={args.epochs}, max_tasks={args.max_tasks}")
     print(f"  task_indices={args.task_indices or 'all'}, isolate_tasks={args.isolate_tasks}, persistent_vllm_server={args.persistent_vllm_server}")
     # Upstream task construction can materialize missing datasets, so it remains
     # behind the user's confirmation.
     print("  preflight_samples=deferred (upstream task construction can materialize datasets; use --limit to bound source samples per task)")
+
+    if args.dry_run:
+        print("Dry run complete; no task or model was constructed.")
+        return
 
     if not args.yes and input("\nProceed with eval? [y/N] ").strip().lower() != "y":
         print("Aborted.")
@@ -411,13 +425,13 @@ def main(argv: list[str] | None = None) -> None:
         task_args=task_args,
         model_args=model_args,
         generation_config=generation_config,
+        metadata={**(metadata or {}), **({"persistent_vllm_server": persistent_child_metadata} if persistent_child_metadata is not None else {})},
         include_reasoning=args.include_reasoning,
         log_dir=args.log_dir,
         limit=args.limit,
         epochs=args.epochs,
         max_tasks=args.max_tasks,
         task_indices=args.task_indices,
-        metadata=({"persistent_vllm_server": persistent_child_metadata} if persistent_child_metadata is not None else None),
     )
     failed = [log for log in logs if getattr(log, "status", None) not in (None, "success")]
     if failed:

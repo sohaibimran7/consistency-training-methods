@@ -5,7 +5,7 @@ from experiments.rmct_restart_20260928.restart_preflight import identity, thinki
 
 
 class Tokenizer:
-    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt, enable_thinking):
+    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt, enable_thinking, return_dict=False):
         if not tokenize:
             return 'prompt<think>' if enable_thinking else 'prompt<think></think>'
         return [1, 2] if enable_thinking else [1, 3]
@@ -26,6 +26,14 @@ def test_native_thinking_matches():
 def test_disabled_production_rejected():
     with pytest.raises(ValueError, match='Production renderer'):
         thinking_probe(renderer([1, 3]), Tokenizer(), 'qwen')
+
+
+def test_tokenizer_mapping_is_normalized_without_changing_tokens():
+    class MappingTokenizer(Tokenizer):
+        def apply_chat_template(self, *args, **kwargs):
+            result = super().apply_chat_template(*args, **kwargs)
+            return {'input_ids': result} if kwargs['tokenize'] else result
+    assert thinking_probe(renderer([1, 2]), MappingTokenizer(), 'qwen')['enable_thinking']
 
 
 def test_noop_toggle_rejected():

@@ -1,0 +1,106 @@
+name: irpan-2510-27062-full
+experiment_factory: scripts.irpan_2510_27062.experiment_factory:compile_experiment
+
+# This is an executable reconstruction boundary, not a claim that the paper's
+# omitted revisions, splits, wrappers, checkpoints, or hyperparameters are known.
+spec:
+  mode: full
+  model: meta-llama/Llama-3.1-8B-Instruct
+  backend: local
+  seed: 42
+  artifact_root: artifacts/irpan-2510-27062/full
+
+  data:
+    sycophancy:
+      # Produce this ctm.prompt_pairs artifact with the reusable mcq-bias
+      # materializer (`--prompt-family irpan --output-format prompt_pairs`).
+      training_artifact: ctm_data/local/irpan-2510-27062/sycophancy-training-pairs.jsonl
+      validation:
+        mmlu: ctm_data/local/irpan-2510-27062/mmlu-validation.jsonl
+      final:
+        mmlu: ctm_data/local/irpan-2510-27062/mmlu-final.jsonl
+    jailbreak:
+      # Produce this ctm.prompt_pairs artifact from retained wrapper candidates.
+      training_artifact: ctm_data/local/irpan-2510-27062/jailbreak-training-pairs.jsonl
+      validation:
+        harmbench: ctm_data/local/irpan-2510-27062/harmbench-validation.jsonl
+        or_bench: ctm_data/local/irpan-2510-27062/or-bench-validation.jsonl
+      final:
+        clearharm: ctm_data/local/irpan-2510-27062/clearharm-final.jsonl
+        wildguardtest: ctm_data/local/irpan-2510-27062/wildguardtest-final.jsonl
+        xstest: ctm_data/local/irpan-2510-27062/xstest-final.jsonl
+        wildjailbreak: ctm_data/local/irpan-2510-27062/wildjailbreak-adversarial-benign-final.jsonl
+
+  # Final jobs never consume a training-stage placeholder. Replace trained
+  # locators after each condition's validation/checkpoint choice is frozen.
+  selected_final_models:
+    sycophancy:
+      base: {kind: model, value: hf/meta-llama/Llama-3.1-8B-Instruct}
+      bct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-sycophancy-bct}
+      rmct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-sycophancy-rmct}
+      act: {kind: local_checkpoint, value: file:///absolute/path/to/selected-sycophancy-act}
+      attct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-sycophancy-attct}
+      mlpct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-sycophancy-mlpct}
+      opct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-sycophancy-opct}
+    jailbreak:
+      base: {kind: model, value: hf/meta-llama/Llama-3.1-8B-Instruct}
+      bct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-jailbreak-bct}
+      rmct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-jailbreak-rmct}
+      act: {kind: local_checkpoint, value: file:///absolute/path/to/selected-jailbreak-act}
+      attct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-jailbreak-attct}
+      mlpct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-jailbreak-mlpct}
+      opct: {kind: local_checkpoint, value: file:///absolute/path/to/selected-jailbreak-opct}
+
+  training:
+    examples: {sycophancy: 10000, jailbreak: 1000}
+    batch_size: 1
+    gradient_accumulation_steps: 16
+    epochs: 1
+    learning_rate: 0.0001
+    learning_rate_schedule: linear
+    checkpoint_every: 50
+    local: {dtype: bfloat16, sampler: hf, gpu_memory_utilization: 0.45}
+    lora:
+      rank: 8
+      alpha: 16
+      dropout: 0.0
+      train_mlp: true
+      train_attn: true
+      train_unembed: false
+    method_config:
+      act: {weight: 0.0001, layer_selection: all, normalize: false}
+      attct: {weight: 1.0, layer_selection: all, layer_weights: uniform}
+      mlpct:
+        {weight: 1.0, variant: hidden, layer_selection: all, layer_weights: uniform,
+         distance_metric: cosine, normalize: false}
+    target_generation:
+      generator_identity:
+        generator_id: self-bct-targets
+        provider: local
+        model: meta-llama/Llama-3.1-8B-Instruct
+        model_revision: REPLACE_WITH_IMMUTABLE_MODEL_REVISION
+        model_immutable_date: null
+      decoding_parameters: {temperature: 1.0, max_tokens: 2048}
+    rmct:
+      reference_rollouts: 128
+      training_rollouts: 128
+      consistency_rollouts: 128
+      anchor_rollouts: 0
+      temperature: 1.0
+      max_new_tokens: 2048
+      kl_coefficient: 0.05
+      anchor_weight: 0.0
+    opct:
+      rollouts_per_prompt: 4
+      temperature: 0.7
+      max_new_tokens: 2048
+      kl_coefficient: 2.0
+      kl_discount_factor: 0.9
+      loss: importance_sampling
+
+  evaluation:
+    max_tokens: 2048
+    temperature: 0.0
+    judge_model: google/gemini-2.5-flash
+  tracking:
+    wandb_project: irpan-2510-27062

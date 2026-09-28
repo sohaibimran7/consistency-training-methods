@@ -1,5 +1,82 @@
 # Training data and adapters
 
+## Generic data interfaces
+
+`ctm_data` keeps data transport separate from benchmark and experiment policy.
+The generic layer decodes rows, records the exact source selection, validates
+the shared paired-prompt shape, and constructs Inspect objects from policy that
+the caller has already chosen. Source adapters remain responsible for column
+interpretation, filtering, prompt construction, splits, scorers, and solvers.
+
+Use an explicit local serialization format; file suffixes are not guessed:
+
+```python
+from ctm_data.sources import load_local_rows
+
+loaded = load_local_rows("exports/train.jsonl", format="jsonl")
+rows = loaded.rows
+source_identity = loaded.source.as_dict()
+```
+
+JSON must contain an array of objects. JSONL is read by physical newline (so
+U+2028 and U+2029 inside JSON strings are preserved), while CSV and TSV require
+a unique, non-empty header and an exact value count on every record.
+
+Hugging Face access requires all four selection fields. `datasets` is imported
+only when `load()` is called, and the selected rows are copied to plain
+dictionaries without filtering or column conversion:
+
+```python
+from ctm_data.sources import HuggingFaceSource
+
+loaded = HuggingFaceSource(
+    dataset="owner/dataset",
+    config="configuration",
+    split="train",
+    revision="full-immutable-revision",
+).load()
+```
+
+Adapters can emit the training-wide pair contract while retaining their own
+flat metadata fields:
+
+```python
+from ctm.pairs import make_pair_row
+
+pair = make_pair_row(
+    reference_messages=[{"role": "user", "content": clean_prompt}],
+    variant_messages=[{"role": "user", "content": changed_prompt}],
+    metadata={"source_id": source_id, "split": split},
+)
+```
+
+`canonical_pair_row()` and `canonical_pair_rows()` validate existing rows.
+Both message lists must be non-empty sequences of mappings; all other fields
+are preserved. Training entry points can consume these canonical rows through
+their existing `reference_messages` and `variant_messages` field options.
+
+Inspect task factories should create their benchmark-specific `Sample`, scorer,
+and solver values first, then use the policy-free constructor. `inspect_ai` is
+also imported only when construction occurs:
+
+```python
+from ctm_data.inspect import build_inspect_task
+
+task = build_inspect_task(
+    samples,
+    scorer=scorer,
+    solver=solver,
+    task_name="explicit-task-name",
+    dataset_name="explicit-dataset-name",
+    dataset_location="exports/eval.jsonl",
+    task_options={"metadata": task_metadata, "tags": task_tags},
+)
+```
+
+The intended wiring is: source loaders at acquisition boundaries, adapter code
+for schema/prompt policy, pair validation immediately before training artifact
+output, and the Inspect helper at the final task-factory boundary.
+
 `ctm_data/adapters/` contains benchmark-specific training adapters. Each adapter
 translates an external or local dataset schema into CTM's generic `Setting`
 protocol or fixed prompt-family schema. The generic `ctm/` package does not
@@ -68,6 +145,35 @@ native frozen file, then round-robin interleaves those files into the explicit
 training output. Interleaving prevents a smaller global training prefix from
 silently containing only the first dataset.
 
+`--datasets` also accepts compact JSON specifications, so heterogeneous
+schemas remain configuration rather than paper-specific Python:
+
+```bash
+uv run python -m ctm_data.adapters.mcq_bias.materialize \
+  --bias-type suggested_answer \
+  --datasets mmlu \
+    '{"dataset":"allenai/ai2_arc","dataset_config":"ARC-Challenge","split":"validation","revision":"<commit>","question_field":"question","choices_field":"choices","answer_field":"answerKey"}' \
+    '{"dataset":"allenai/openbookqa","dataset_config":"main","split":"validation","revision":"<commit>","question_field":"question_stem","answer_field":"answerKey"}' \
+    '{"dataset":"<loadable-bbh-export>","dataset_config":"logical_deduction_three_objects","split":"train","revision":"<commit>","source_format":"bbh"}' \
+  --n-questions 250 \
+  --dataset-dir artifacts/mcq_bias/train \
+  --output-format prompt_pairs \
+  --output artifacts/data/suggested-answer-pairs.jsonl \
+  --manifest-output artifacts/data/suggested-answer-pairs.jsonl.manifest.json
+```
+
+The same objects can appear directly in experiment YAML. The canonical
+`DatasetSpec` and validation rules come from `mcq_bias`; CTM only supplies a
+stable adapter import and CLI/YAML routing. Plain dataset strings remain
+backward compatible. Source revisions, schema fields, local paths and
+local-file content participate in the upstream frozen-artifact identity.
+The strict `source_format: bbh` preset parses canonical multiple-choice BBH
+`input`/`target` rows with one embedded `Options:` block; non-MCQ subsets and
+ambiguous field overrides fail explicitly.
+For `suggested_answer`, `--prompt-family {chua,irpan}` selects the prompt
+reconstruction and `--wrong-option-seed` optionally salts the deterministic
+incorrect-option choice.
+
 `mcq_bias` does not generate BCT responses. CTM samples them through its frozen
 base sampler:
 
@@ -76,52 +182,18 @@ uv run python scripts/prepare_bct_targets.py \
   --backend local \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --data artifacts/data/wrong-argument-pairs.jsonl \
-  --source-messages-field unbiased_messages \
-  --main-messages-field biased_messages \
-  --control-messages-field unbiased_messages \
+  --data-manifest artifacts/data/wrong-argument-pairs.jsonl.manifest.json \
+  --source-messages-field reference_messages \
+  --main-messages-field variant_messages \
+  --control-messages-field reference_messages \
   --main-output artifacts/data/bct.jsonl \
   --control-output artifacts/data/bct-control.jsonl \
-  --manifest-output artifacts/data/bct-targets.manifest.json
+  --manifest-output artifacts/data/bct.jsonl.manifest.json
 ```
 
 Every source row is validated before the backend is initialized. CTM samples
 one reference completion per row and reuses it in both output files. Existing
 outputs are never overwritten.
-
-### Pinned HLE export
-
-The RMCT paper evaluates on the text-only multiple-choice subset of Humanity's
-Last Exam. Export that gated source to the local JSONL schema accepted by
-`mcq_bias`:
-
-```bash
-uv run python -m ctm_data.sources.hle \
-  --output ctm_data/local/hle-text-mc.jsonl \
-  --manifest-output ctm_data/local/hle-text-mc.manifest.json
-```
-
-The exporter pins the upstream revision, excludes image-dependent questions,
-requires exactly 513 rows, and records the output hash. The generated benchmark
-file is gitignored and must not be redistributed. Pass its JSONL path as a
-normal `mcq_bias` dataset value.
-
-### Cleaned Alpaca prompts
-
-The RMCT paper mixes fresh base-model instruction responses into bias-augmented
-consistency training. Export a deterministic prompt-only subset with:
-
-```bash
-uv run python -m ctm_data.sources.cleaned_alpaca \
-  --output artifacts/data/cleaned-alpaca-prompts.jsonl \
-  --manifest-output artifacts/data/cleaned-alpaca-prompts.manifest.json \
-  --count 2048 \
-  --seed 42
-```
-
-The exporter downloads one pinned Cleaned Alpaca revision, verifies its
-SHA-256 digest, and ignores every source response. Pass the resulting prompts
-to `scripts/prepare_bct_targets.py`; CTM then samples responses through the
-same frozen base model selected by the experiment.
 
 The analysis command accepts repeated condition names to pool independent
 replicates while retaining only the latest task retry inside each directory.

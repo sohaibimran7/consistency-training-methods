@@ -20,17 +20,19 @@ def create_setting(**kwargs: Any) -> Any:
 
 
 def __getattr__(name: str) -> Any:
-    if name in {"SycophancySetting", "trait_classifier"}:
+    if name in {"SycophancySetting", "trait_classifier", "MCQCorrectnessPairSetting", "mcq_correctness_pair_setting"}:
         setting = importlib.import_module("ctm_data.adapters.mcq_bias.setting")
         return getattr(setting, name)
     raise AttributeError(name)
 
 
 __all__ = [
+    "MCQCorrectnessPairSetting",
     "SycophancySetting",
     "create_setting",
     "file_identity",
     "load_paths",
     "make_perturbation_fns",
+    "mcq_correctness_pair_setting",
     "trait_classifier",
 ]

@@ -214,6 +214,7 @@ def compile_experiment(
             "local",
             "conditions",
             "supervised_consistency",
+            "opct",
             "rate_matching",
             "evaluation",
             "tracking",

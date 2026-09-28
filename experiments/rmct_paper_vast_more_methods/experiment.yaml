@@ -1,7 +1,7 @@
 name: rmct_paper_vast_more_methods
-experiment_factory: ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment
+experiment_factory: scripts.rmct_paper_vast_more_methods.experiment_factory:compile_experiment
 
-# Five-condition comparison from arXiv:2606.02211. This file states the
+# Six-method comparison extending arXiv:2606.02211. This file states the
 # scientific choices; the factory expands repeated runs and deterministic paths.
 spec:
   model: openai/gpt-oss-20b
@@ -60,6 +60,7 @@ spec:
     - {name: rate-matching-control, method: rate_matching, control: true}
     - {name: bias-augmented-consistency, method: bias_augmented_consistency}
     - {name: bias-augmented-consistency-control, method: bias_augmented_consistency, control: true}
+    - {name: opct, method: opct}
     - {name: act, method: act}
     - {name: attct, method: attct}
     - {name: mlpct, method: mlpct}
@@ -88,6 +89,23 @@ spec:
         layer_weights: uniform
         distance_metric: cosine
         normalize: false
+
+  # Paper-faithful sycophancy defaults from Han et al. (2026). OPCT uses its
+  # own LR because its policy-gradient scale is not comparable to SFT losses.
+  opct:
+    learning_rates:
+      - {name: "5e-6", value: 0.000005}
+    batch_size: 1
+    gradient_accumulation_steps: 16
+    epochs: 1
+    rollouts_per_prompt: 4
+    temperature: 0.7
+    max_new_tokens: 2048
+    learning_rate_schedule: constant
+    kl_coefficient: 2.0
+    kl_discount_factor: 0.9
+    loss: importance_sampling
+    checkpoint_every: 8
 
   rate_matching:
     datapoints: 64

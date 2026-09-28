@@ -114,6 +114,10 @@ def test_tinker_checkpoint_adapter_rejects_invalid_modes(monkeypatch):
 
 def test_parse_json_object_inline_or_file(tmp_path):
     assert parse_json_object('{"x": 1}', label="config") == {"x": 1}
+    assert parse_json_object(
+        '{"long": "' + ("x" * 300) + '"}',
+        label="config",
+    ) == {"long": "x" * 300}
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"y": 2}))
     assert parse_json_object(str(path), label="config") == {"y": 2}
@@ -498,7 +502,10 @@ def test_eval_runner_records_canonical_provenance(monkeypatch):
             "max_tokens": 12,
             "extra_headers": {"Authorization": "must-redact"},
         },
-        metadata={"task_factory": "spoofed"},
+        metadata={
+            "task_factory": "spoofed",
+            "selection_candidate": {"domain": "sycophancy", "candidate_id": "unit"},
+        },
         max_tasks=3,
     )
     assert logs[0].status == "success"
@@ -512,6 +519,7 @@ def test_eval_runner_records_canonical_provenance(monkeypatch):
     assert metadata["include_reasoning"] is False
     assert metadata["max_tasks"] == 3
     assert captured["max_tasks"] == 3
+    assert metadata["selection_candidate"] == {"domain": "sycophancy", "candidate_id": "unit"}
 
 
 def test_eval_runner_records_tinker_reasoning_mode(monkeypatch):
@@ -576,6 +584,7 @@ def test_eval_cli_rejects_inline_api_keys_before_confirmation():
     [
         ("--task-args", '{"headers":{"X-Custom":"ultra-secret"}}'),
         ("--model-args", '{"proxy-authorization":"ultra-secret"}'),
+        ("--metadata", '{"credentials":{"token":"ultra-secret"}}'),
         ("--generation-config", '{"extra_headers":{"Authorization":"ultra-secret"}}'),
     ],
 )
@@ -735,3 +744,22 @@ def test_eval_cli_accepts_verified_success_log_after_late_child_crash(monkeypatc
     output = capsys.readouterr().out
     assert "after writing a verified successful log; continuing" in output
     assert "new-success.eval" in output
+def test_eval_cli_dry_run_constructs_neither_tasks_nor_models(monkeypatch, capsys):
+    from scripts import run_evals
+
+    monkeypatch.setattr(
+        run_evals,
+        "run_task_evals",
+        lambda *_args, **_kwargs: pytest.fail("dry run started evaluation"),
+    )
+    run_evals.main(
+        [
+            "--task-factory",
+            "mcq_bias.tasks:suite_tasks",
+            "--model",
+            "mockllm/unit",
+            "--dry-run",
+        ]
+    )
+
+    assert "Dry run complete; no task or model was constructed." in capsys.readouterr().out

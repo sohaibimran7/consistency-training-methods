@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from ctm.artifacts import plain_file_identity
+from ctm.artifacts import plain_file_identity, verify_data_manifest_bindings
 from ctm.backends.cli import (
     PhaseSharedCLIConfig,
     add_backend_args,
@@ -221,7 +221,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Base model used to initialize a fresh student and its run-start teacher",
     )
     parser.add_argument("--data", nargs="+", required=True, metavar="FILE[:N]")
-    parser.add_argument("--data-manifest", nargs="+", type=Path)
+    parser.add_argument("--data-manifest", nargs="+", type=Path,
+        help="Optional one-per-file manifest(s); each must bind the exact corresponding --data bytes")
     parser.add_argument("--interleave", action="store_true", help="Round-robin rows from multiple data files")
     parser.add_argument("--reference-messages-field", default="reference_messages")
     parser.add_argument("--variant-messages-field", default="variant_messages")
@@ -365,6 +366,10 @@ def main(argv: list[str] | None = None) -> None:
         for path in args.data_manifest or []:
             if not path.is_file():
                 raise ValueError(f"data manifest not found: {path}")
+        if args.data_manifest:
+            verify_data_manifest_bindings(
+                [path for path, _limit in file_specs], args.data_manifest,
+            )
 
         raw_lora = parse_json_object(args.lora_config, label="lora_config")
         raw_optimizer = parse_json_object(args.optimizer_config, label="optimizer_config")

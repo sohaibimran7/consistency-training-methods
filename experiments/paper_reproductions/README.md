@@ -44,7 +44,9 @@ resolved workload, and execution commands.
 
 ### Consistency Training Helps Stop Sycophancy and Jailbreaks
 
-BCT and ACT training are implemented. The local backend can update only
+The paper's Base, BCT, and ACT conditions are represented for both phenomena;
+the same graph also adds RMCT, AttCT, MLPCT, and OPCT as explicitly labeled
+repository extensions. The local backend can update only
 self-attention parameters under full-parameter fine-tuning, retain the initial
 model for ACT targets, select the paper's layer subsets, evaluate both LoRA and
 full-weight checkpoints, and calculate the sycophancy/clean-accuracy harmonic
@@ -54,6 +56,21 @@ stale response files can also be supplied directly.
 This covers the ACT and BCT points in the sycophancy comparison, the stale-data
 comparison, and the ACT layer-update ablation when the paper's exact source
 rows and evaluation tasks are supplied.
+
+The paper-specific local-source adapters, safety/sycophancy task factories,
+vulnerability-filter artifact DAG, validation-only selector, and clustered
+bootstrap analysis now live under
+[`irpan_2510_27062/`](irpan_2510_27062/). They make the reported dataset roles
+executable while preserving the unresolved reproduction boundary: the paper
+does not supply exact source versions/splits, wrapper and judge prompts,
+generation settings, or complete training hyperparameters. Those values are
+versioned as reconstruction choices rather than silently inferred.
+
+The same role-bound pair artifact also supports the repository's RMCT, AttCT,
+MLPCT, and OPCT implementations in both sycophancy and jailbreak settings.
+Those four are clearly labeled repository extensions, not conditions from the
+paper. The checked full/smoke specifications and exact method-to-artifact wiring
+are documented in the linked runbook.
 
 ### Consistency Training Across the Transformer Stack
 
@@ -96,8 +113,7 @@ alone:
 
 The RMCT comparison uses a benchmark-owned experiment factory to expand its
 learning-rate matrix from a concise YAML specification. Seed sweeps are not yet
-part of that factory. Bootstrap confidence intervals, best-hyperparameter
-selection are not automated. These do not block training or evaluation, but
-they must be implemented or checked in a
-plot-specific analysis command before claiming exact reproduction of figures
-that report them.
+part of that factory. Its bootstrap confidence intervals and best-hyperparameter
+selection remain manual. The Irpan et al. adapter has its own validation-only
+selection and clustered bootstrap implementation; this does not retroactively
+define the RMCT paper's reporting procedure.

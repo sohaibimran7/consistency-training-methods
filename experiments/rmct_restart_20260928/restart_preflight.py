@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from collections.abc import Mapping
 
 REVISIONS = {'qwen': 'c202236235762e1c871ad0ccb60c8ee5ba337b9a',
              'gemma': '707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7'}
@@ -41,10 +42,18 @@ def thinking_probe(renderer, tokenizer, family):
         expected = probe['prompt_token_ids']['true']
         messages = probe['probe_messages']
     else:
-        expected = tokenizer.apply_chat_template(messages, tokenize=True,
-            add_generation_prompt=True, enable_thinking=True)
-        disabled = tokenizer.apply_chat_template(messages, tokenize=True,
-            add_generation_prompt=True, enable_thinking=False)
+        def ids(mode):
+            result = tokenizer.apply_chat_template(messages, tokenize=True,
+                return_dict=False, add_generation_prompt=True, enable_thinking=mode)
+            if isinstance(result, Mapping):
+                result = result['input_ids']
+            if hasattr(result, 'tolist'):
+                result = result.tolist()
+            if not isinstance(result, list) or not result or any(type(t) is not int for t in result):
+                raise ValueError('Expected flat integer native prompt tokens')
+            return result
+        expected = ids(True)
+        disabled = ids(False)
         if expected == disabled:
             raise ValueError('Thinking toggle has no observable effect')
         text = tokenizer.apply_chat_template(messages, tokenize=False,
@@ -84,15 +93,24 @@ def main():
     source_files = [identity(root / name) for name in tracked if name and
                     name.startswith(('ctm/', 'ctm_data/', 'scripts/', 'infra/', 'experiments/rmct_restart_20260928/'))]
     indices = list(args.model.glob('*.safetensors.index.json'))
-    if len(indices) != 1:
+    if args.family == 'gemma':
+        if indices:
+            raise RuntimeError('Pinned Gemma publisher checkpoint is single-file')
+        shards = ['model.safetensors']
+    elif len(indices) != 1:
         raise RuntimeError('Exactly one safetensors shard index required')
-    index = json.loads(indices[0].read_text())
-    shards = sorted(set(index['weight_map'].values()))
+    else:
+        index = json.loads(indices[0].read_text())
+        shards = sorted(set(index['weight_map'].values()))
     if not shards or any(Path(s).name != s for s in shards):
         raise RuntimeError('Invalid shard index')
     model_files = [identity(args.model / shard) for shard in shards]
     if args.family == 'qwen' and {f['sha256'] for f in model_files} != QWEN_SHARDS:
         raise RuntimeError('Original Qwen weight content mismatch')
+    if args.family == 'gemma' and (model_files[0]['sha256'] !=
+            '5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d'
+            or model_files[0]['bytes'] != 23919549408):
+        raise RuntimeError('Original Gemma publisher weight content mismatch')
     model_files += [identity(path) for path in sorted(args.model.iterdir())
                     if path.is_file() and path.suffix in ('.json', '.jinja')]
     renderer, tokenizer = renderers.get_renderer_and_tokenizer(str(args.model), source='hf')
@@ -100,14 +118,13 @@ def main():
         'optimizer_work_authorized': False, 'source_commit': args.source_commit,
         'source_root': str(root), 'python': sys.executable, 'sys_prefix': sys.prefix,
         'cwd': str(Path.cwd()),
-        'sources': source_files, 'model_files': model_files,
+        'sources': source_files, 'model_files': model_files, 'independent_weight_identity_verified': True,
         'validation_manifest': identity(args.validation_manifest),
         'thinking': thinking_probe(renderer, tokenizer, args.family),
         'dependencies': {name: importlib.metadata.version(name) for name in
                          ('torch', 'transformers', 'vllm', 'peft')},
         'remaining_gates': ['native_gpu_parity', 'integrated_regressions',
-                            'validation_semantics', 'incorporation_and_launch_clearance']
-                           + (['gemma_independent_weight_identity'] if args.family == 'gemma' else [])}
+                            'validation_semantics', 'incorporation_and_launch_clearance']}
     with args.output.open('x') as stream:
         json.dump(receipt, stream, indent=2, allow_nan=False)
         stream.write('\n')

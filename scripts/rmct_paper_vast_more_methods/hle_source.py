@@ -1,4 +1,4 @@
-"""Export the pinned text-only multiple-choice HLE subset for ``mcq_bias``.
+"""Export the RMCT reproduction's pinned text-only multiple-choice HLE subset.
 
 The source dataset stores answer choices inline in the question text. This
 module performs the one schema conversion that ``mcq_bias`` deliberately does
@@ -15,10 +15,11 @@ import argparse
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 from string import ascii_uppercase
-from typing import Any, Iterable
+from typing import Any
 
 from ctm.artifacts import write_atomic_bytes
 
@@ -70,9 +71,7 @@ def canonical_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             raise ValueError(f"HLE row {row.get('id')!r} has invalid multiple-choice answer {answer!r}")
         answer = answer.strip().upper()
         if answer not in ascii_uppercase[: len(choices)]:
-            raise ValueError(
-                f"HLE row {row.get('id')!r} answer {answer!r} is outside {len(choices)} choices"
-            )
+            raise ValueError(f"HLE row {row.get('id')!r} answer {answer!r} is outside {len(choices)} choices")
         output.append(
             {
                 "source_id": str(row.get("id", "")),
@@ -123,13 +122,11 @@ def main(argv: list[str] | None = None) -> None:
             f"pinned HLE source produced {len(rows)} text-only multiple-choice rows; "
             f"expected exactly {args.expected_count}"
         )
-    payload = b"".join(
-        (json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8") for row in rows
-    )
+    payload = b"".join((json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8") for row in rows)
     manifest = {
         "schema_version": 1,
         "kind": "hle_text_multiple_choice_export",
-        "written_at": datetime.now(timezone.utc).isoformat(),
+        "written_at": datetime.now(UTC).isoformat(),
         "source": {"dataset": DATASET_ID, "revision": DATASET_REVISION, "split": "test"},
         "selection": {"answer_type": "multipleChoice", "image": False},
         "row_count": len(rows),

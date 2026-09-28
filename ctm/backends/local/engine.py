@@ -168,7 +168,7 @@ class _SelectedTokenComponents:
 
 
 def _strip_file_scheme(path: str) -> Path:
-    return Path(path[len("file://") :] if path.startswith("file://") else path)
+    return Path(path.removeprefix("file://"))
 
 
 def logical_loss_denominator(
@@ -920,7 +920,9 @@ def _lora_target_module_names(model: torch.nn.Module, config: LoRAConfig) -> lis
     if config.target_modules is not None:
         names = [name for component_names in components.values() for name in component_names]
         selected = [name for name in names if any(_name_matches(name, target) for target in config.target_modules)]
-        unmatched = [target for target in config.target_modules if not any(_name_matches(name, target) for name in names)]
+        unmatched = [
+            target for target in config.target_modules if not any(_name_matches(name, target) for name in names)
+        ]
         if unmatched:
             raise ValueError(f"model {type(model).__name__} has no linear modules matching target_modules={unmatched}")
         return selected
@@ -951,7 +953,7 @@ def _lora_target_parameter_names(model: torch.nn.Module, config: LoRAConfig) -> 
     return [name for name, _ in model.named_parameters() if name.endswith(suffixes)]
 
 
-def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Optional[Sequence[str]]) -> list[str]:
+def _configure_full_finetune_parameters(model: torch.nn.Module, selectors: Sequence[str] | None) -> list[str]:
     """Enable either every parameter or the explicitly selected parameter groups."""
 
     if selectors is None:
@@ -1107,15 +1109,15 @@ class LocalBackend:
     def __init__(
         self,
         *,
-        device: Optional[str] = None,
+        device: str | None = None,
         dtype: torch.dtype = torch.float32,
         use_lora: bool = True,
-        model_instance: Optional[torch.nn.Module] = None,
+        model_instance: torch.nn.Module | None = None,
         ppo_clip_epsilon: float = losses.PPO_CLIP_EPSILON,
         sampler: str = "hf",
-        vllm_options: Optional[dict] = None,
-        consistency_loss_options: Optional[dict] = None,
-        full_finetune_modules: Optional[Sequence[str]] = None,
+        vllm_options: dict | None = None,
+        consistency_loss_options: dict | None = None,
+        full_finetune_modules: Sequence[str] | None = None,
         keep_frozen_base: bool = False,
         hf_language_model_only: bool = False,
         hf_streaming_sampling: bool = False,
@@ -1243,13 +1245,13 @@ class LocalBackend:
         self.target_logprob_chunk_size = target_logprob_chunk_size
         self._gradient_reducer = self._resolve_gradient_reducer(gradient_reducer)
         self._vllm = None  # VLLMSampler, booted lazily by _ensure_vllm() when sampler == "vllm"
-        self._adapter_scratch: Optional[Path] = None
-        self._optimizer: Optional[torch.optim.AdamW] = None
-        self._pending_optimizer_state: Optional[dict] = None
+        self._adapter_scratch: Path | None = None
+        self._optimizer: torch.optim.AdamW | None = None
+        self._pending_optimizer_state: dict | None = None
         self._consistency_loss_modules: dict[str, consistency_losses.ConsistencyLoss] = {}
-        self._mlp_hooks: Optional[MLPHookManager] = None
-        self._base_mlp_hooks: Optional[MLPHookManager] = None
-        self._frozen_base_model: Optional[torch.nn.Module] = None
+        self._mlp_hooks: MLPHookManager | None = None
+        self._base_mlp_hooks: MLPHookManager | None = None
+        self._frozen_base_model: torch.nn.Module | None = None
         self._gradient_accumulations = 0
         self._trainable_parameter_names: list[str] = []
         self._configured_lora: LoRAConfig | None = None
@@ -1370,7 +1372,9 @@ class LocalBackend:
                 task_type="CAUSAL_LM",
             )
             self.model = get_peft_model(self.model, peft_cfg)
-            self._trainable_parameter_names = [name for name, parameter in self.model.named_parameters() if parameter.requires_grad]
+            self._trainable_parameter_names = [
+                name for name, parameter in self.model.named_parameters() if parameter.requires_grad
+            ]
         else:
             if self.keep_frozen_base:
                 self._frozen_base_model = copy.deepcopy(self.model)

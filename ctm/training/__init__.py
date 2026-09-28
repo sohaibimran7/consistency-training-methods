@@ -1,1 +1,1 @@
-"""Training loops: RLCT (ctm.training.rl) and BCT/SFT (ctm.training.sft), backend-injected."""
+"""Backend-injected RLCT, BCT/SFT, representation-consistency, and OPCT loops."""
