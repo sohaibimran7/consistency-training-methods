@@ -82,7 +82,7 @@ def main():
         git('ls-files', '--error-unmatch', str(relative))
     tracked = git('ls-files', '-z').split('\0')
     source_files = [identity(root / name) for name in tracked if name and
-                    name.startswith(('ctm/', 'ctm_data/', 'scripts/', 'experiments/rmct_restart_20260928/'))]
+                    name.startswith(('ctm/', 'ctm_data/', 'scripts/', 'infra/', 'experiments/rmct_restart_20260928/'))]
     indices = list(args.model.glob('*.safetensors.index.json'))
     if len(indices) != 1:
         raise RuntimeError('Exactly one safetensors shard index required')
@@ -98,7 +98,8 @@ def main():
     renderer, tokenizer = renderers.get_renderer_and_tokenizer(str(args.model), source='hf')
     receipt = {'schema': 'rmct-restart-cpu-v1', 'status': 'cpu_checks_passed',
         'optimizer_work_authorized': False, 'source_commit': args.source_commit,
-        'source_root': str(root), 'python': sys.executable, 'cwd': str(Path.cwd()),
+        'source_root': str(root), 'python': sys.executable, 'python_prefix': sys.prefix,
+        'cwd': str(Path.cwd()),
         'sources': source_files, 'model_files': model_files,
         'validation_manifest': identity(args.validation_manifest),
         'thinking': thinking_probe(renderer, tokenizer, args.family),

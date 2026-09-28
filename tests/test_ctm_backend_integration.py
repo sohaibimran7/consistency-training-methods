@@ -84,7 +84,7 @@ class FakeSampler:
         seqs = []
         for i in range(num_samples):
             biased = (i % 4 != 0) if cued else (i % 4 == 0)  # 3/4 vs 1/4
-            seqs.append(SampledSequence(tokens=[A_TOKEN if biased else B_TOKEN], logprobs=[-0.1]))
+            seqs.append(SampledSequence(tokens=[A_TOKEN if biased else B_TOKEN], logprobs=[-0.1], finish_reason="stop"))
         return seqs
 
 
