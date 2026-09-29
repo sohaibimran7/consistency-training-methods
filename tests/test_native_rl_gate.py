@@ -13,6 +13,18 @@ def test_valid_evidence():
     validate_rollout_records([record()])
 
 
+def test_real_adapter_update_required():
+    import torch
+    from experiments.rmct_restart_20260928.native_rl_gate import validate_updated_adapter
+    a = torch.ones(2, 2)
+    for tensors in ({}, {'lora_A.weight': a},
+                    {'lora_A.weight': a, 'lora_B.weight': torch.zeros(2, 2)},
+                    {'lora_A.weight': a, 'lora_B.weight': torch.full((2, 2), float('nan'))}):
+        with pytest.raises(RuntimeError):
+            validate_updated_adapter(tensors)
+    assert validate_updated_adapter({'lora_A.weight': a, 'lora_B.weight': a * .001}) > 0
+
+
 def test_real_frozen_setting_validated_before_gate_subset(tmp_path):
     from ctm_data.adapters.mcq_bias.tests.test_shared_qid_two_bias import _write_fixture_inputs
     from ctm_data.adapters.mcq_bias.shared_qid_two_bias import materialize_shared_qid_two_bias, SharedQidTwoBiasSetting

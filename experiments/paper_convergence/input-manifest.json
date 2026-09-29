@@ -1,0 +1,12 @@
+{
+  "histories": {
+    "sha256": "b375df01dcc9d8491a850a23eed6c67007bd4fbe81874293c409e1a930556478",
+    "bytes": 1935375
+  },
+  "remote_histories": {
+    "sha256": "807f52d2c96bed6b569eb6c11a3545590e603ca431a374ac6e39bd337d957bc9",
+    "bytes": 72229
+  },
+  "historical_summary_sha256": "39adcafb85caf660c587273500697236a6b9999a48dbfb6e7d14b9bb159cf0ff",
+  "historical_recipe_sha256": "ce63f20da5cee06c3bb767ba11d1b34d8ab6bea14501f334a62aaa301525812b"
+}

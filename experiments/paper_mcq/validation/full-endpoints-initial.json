@@ -1,0 +1,101 @@
+{
+  "mode": "full-statistical-replay",
+  "input_hashes": {
+    "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/samples.json": "fb86ac646052001d8aeb8404e0e538a135cfb44a5ebf15a82ab5a980568cf332",
+    "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/figures-final/methods-verbalisation-all-seven-20260916/bias_acknowledged-vs-base/chart-spec.json": "bbecf5a0688ed06c91284c6ba225453b16eba02344187f4274a9fa92a6973375"
+  },
+  "code": {
+    "recipes/paper-behavioural-plots-20260917/build.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/figures-final/paper-behavioural-plots-20260917/build.py",
+      "sha256": "7c580d83ccfcfb7f991a47edd79c29bc9de49e58fcffa09fa14b68647a05e100"
+    },
+    "recipes/conditional-verbalisation-20260918/split.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/figures-final/conditional-verbalisation-20260918/split.py",
+      "sha256": "4802174921831dc07b5f7478ff1ed773c81c377b09b64551c806663f0303a496"
+    },
+    "recipes/conditional-verbalisation-20260918/paper.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/figures-final/conditional-verbalisation-20260918/paper.py",
+      "sha256": "1c17f50f33e8246553c44160c414ea195421c90a856b928e537c9e16ce5338aa"
+    },
+    "recipes/towards-bias-switch-standard/build.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/figures-final/towards-bias-switch-standard/build.py",
+      "sha256": "7a0c2118a4ddcfb135f1ad0e6cdf036f9f20c81884526273fce4a1f5101398f6"
+    },
+    "recipes/bias-verbalisation-standard/build.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/figures-final/bias-verbalisation-standard/build.py",
+      "sha256": "ca2f242c5de29dca6a897d514a5a2d210f13ff2c6a74fb7c14fafb5b0798a49d"
+    },
+    "recipes/biased-accuracy-20260918/build.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/artifacts/parser-fixed-64k-20260925/figures-final/biased-accuracy-20260918/build.py",
+      "sha256": "b5c9a1215c09edda18755a8c7fbaac617660b6ee088466570ec14c86c6d4ba8b"
+    },
+    "recipes/merge.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/tmp/merge_recovery_into_parser_fixed.py",
+      "sha256": "29a0c8d9e1dd6d540b2e57c9f0dc51df4411e26262f916b78a57407a097c9866"
+    },
+    "recipes/reconcile.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/tmp/reconcile_figure_answers.py",
+      "sha256": "87ad41992dda90613ae51095212e30c2b3b25237a5e4a115008462d9a0de7354"
+    },
+    "recipes/historical-regenerate.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/tmp/regenerate_64k_figures.py",
+      "sha256": "aacfa2564d33bfe3342badde4bd065dcae8bdcbfdee973223c02bdf74a0eabcb"
+    },
+    "vendor/ctm_data/adapters/mcq_bias/plot.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/ctm_data/adapters/mcq_bias/plot.py",
+      "sha256": "9583f745a3c2bfe0aedb2abdfbddb8620ceb82a8b2962e0a2113d6240b042539"
+    },
+    "vendor/ctm_data/adapters/mcq_bias/plot_registry.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/ctm_data/adapters/mcq_bias/plot_registry.py",
+      "sha256": "050b597f09954d62cca728e589c9cfe191c62f9f1f4f2261d63afa8dc0dcabfe"
+    },
+    "vendor/ctm_data/adapters/mcq_bias/plot_registry.toml": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/ctm_data/adapters/mcq_bias/plot_registry.toml",
+      "sha256": "07d3b17ed1126c13de6ef2349f4a3d92743c2101ea2ab0f00321a2532b9be542"
+    },
+    "vendor/ctm_data/adapters/mcq_bias/method_presentation.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/ctm_data/adapters/mcq_bias/method_presentation.py",
+      "sha256": "e7d2396f264f3bee251362bd1c2f6272ecd51991696f8ad5c82463fc9285202e"
+    },
+    "vendor/ctm_data/adapters/mcq_bias/parser_compat.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/ctm_data/adapters/mcq_bias/parser_compat.py",
+      "sha256": "c09682196e69c342206d54f1ed686c3cc1ea65a475f178a41f87a31687f7aeb1"
+    },
+    "vendor/ctm_data/adapters/mcq_bias/answer_parsing.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/ctm_data/adapters/mcq_bias/answer_parsing.py",
+      "sha256": "debe94c1e91bb2a4d5bfe4d9fd5eb0580d6349175640d6da8af401d5c0814420"
+    },
+    "vendor/experiments/rmct_two_bias_eval/contract.py": {
+      "source": "/Users/work/.codex/worktrees/ac02/consistency-training-methods/experiments/rmct_two_bias_eval/contract.py",
+      "sha256": "cd5aefd67e7d411f75ff7c0409ad943f9c9b6fd0c3e36cc9e1f3f8682dfb135e"
+    },
+    "vendor/mcq_bias/parsers.py": {
+      "source": "/Users/work/.cache/uv/git-v0/checkouts/151cb1dd17eb9736/8c0b46b/mcq_bias/parsers.py",
+      "sha256": "459ce8a027f08cc9b9cd33420156daac5a157a29418d430b7b6c97de12e40ac9"
+    },
+    "vendor/mcq_bias/LICENSE": {
+      "source": "/Users/work/.cache/uv/git-v0/checkouts/151cb1dd17eb9736/8c0b46b/LICENSE",
+      "sha256": "39227603677b72b377e3373a1c689c06f2b072885a64dd5ce1bb44b0dec84cbd"
+    }
+  },
+  "permutations": 108000,
+  "bootstrap": 10000,
+  "model_calls": 0,
+  "grader_calls": 0,
+  "completed": [
+    "switch",
+    "conditional",
+    "verbalisation",
+    "accuracy"
+  ],
+  "comparisons": {
+    "switch": "EXACT JSON EQUALITY",
+    "conditional": "EXACT JSON EQUALITY",
+    "verbalisation": "EXACT JSON EQUALITY",
+    "accuracy": "EXACT JSON EQUALITY"
+  },
+  "transformations": [
+    "REPO to isolated vendor",
+    "unused checkpoint_publication import narrowed to identical SEEN_BIASES contract"
+  ]
+}

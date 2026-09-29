@@ -33,6 +33,16 @@ def validate_rollout_records(records):
                 raise RuntimeError('Included rollout lacks finite reward/advantage')
 
 
+def validate_updated_adapter(tensors):
+    import torch
+    if not tensors or any(not torch.isfinite(t).all() for t in tensors.values()):
+        raise RuntimeError('Empty/nonfinite updated adapter')
+    b_values = [float(t.abs().max()) for name, t in tensors.items() if 'lora_B' in name]
+    if not b_values or max(b_values) <= 0:
+        raise RuntimeError('Fresh zero-initialized LoRA B has no measurable update')
+    return max(b_values)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--plan', type=Path, required=True)
@@ -97,12 +107,12 @@ def main():
     if len(states) != 1 or states[0].optimizer_step != 1 or states[0].global_step != 1:
         raise RuntimeError('Exactly one completed real optimizer update required')
     from safetensors import safe_open
-    import torch
+    adapter_config = json.loads((states[0].checkpoint_dir/'adapter_config.json').read_text())
+    if adapter_config.get('init_lora_weights') is not True:
+        raise RuntimeError('Fresh default zero-B initialization contract not recorded')
     adapter = states[0].checkpoint_dir/'adapter_model.safetensors'
     with safe_open(adapter, framework='pt', device='cpu') as handle:
-        keys = list(handle.keys())
-        if not keys or any(not torch.isfinite(handle.get_tensor(key)).all() for key in keys):
-            raise RuntimeError('Empty/nonfinite updated adapter')
+        lora_b_max = validate_updated_adapter({key: handle.get_tensor(key) for key in handle.keys()})
     metrics_path = indices[0].parent.parent/'metrics.jsonl'
     metrics = [json.loads(line) for line in metrics_path.read_text().splitlines() if line.strip()]
     updates = [m for m in metrics if m.get('train/optimizer_step') == 1]
@@ -116,6 +126,7 @@ def main():
         'optimizer_steps': 1, 'production_resume_forbidden': True,
         'rollout_count': len(records), 'rollout_index_sha256': sha(indices[0]),
         'metrics_sha256': sha(metrics_path), 'adapter_sha256': sha(adapter),
+        'updated_lora_b_max_abs': lora_b_max,
         'subset_sha256': sha(out/'disposable-subset.json'),
         'checkpoint_manifest_sha256': sha(states[0].checkpoint_dir/'manifest.json'),
         'limitations': ['one batch is not a convergence or full-run capacity guarantee']})

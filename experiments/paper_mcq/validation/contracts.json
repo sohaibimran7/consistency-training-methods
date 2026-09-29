@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-28",
+  "command": ".venv/bin/python artifacts/manuscript-provisional-20260928/replay/test_replay.py",
+  "result": "8 tests passed",
+  "checks": [
+    "bundled source hashes",
+    "generator snapshot hashes",
+    "all bundled Python compiles without execution",
+    "historical replacement anchors fail closed",
+    "existing output rejected",
+    "input/output overlap rejected",
+    "108000 permutations and isolated PYTHONPATH preserved",
+    "isolated vendored package namespaces staged"
+  ],
+  "python": "3.11.12",
+  "numpy": "2.4.6",
+  "matplotlib": "3.11.1",
+  "inspect_ai": "0.3.251",
+  "statistical_replay": false,
+  "model_calls": 0,
+  "grader_calls": 0
+}

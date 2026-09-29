@@ -67,20 +67,29 @@ The verifier runs all six commands in a temporary tree. See the linked Luna and 
 
 | Manuscript output | Required computation | Current integration gap |
 | --- | --- | --- |
-| Main switch-rate grid | Paired clean/biased labels, aggregation and uncertainty, then seen/held-out dataset × bias grid | Historical chart rows are pinned; portable manuscript rendering is integrated; upstream statistical regeneration remains separate |
-| Main conditional-verbalization grid | Acknowledgment among towards-bias switches, with explicit denominator and uncertainty | Historical chart rows are pinned; portable manuscript rendering is integrated; upstream statistical regeneration remains separate |
-| Expanded switch and conditional-verbalization figures | Dataset/bias breakdowns from saved responses and grades | Saved PDFs are pinned and portable assembly copies them; upstream regeneration remains separate |
-| Overall verbalization and biased accuracy | All-valid-response denominators and accuracy labels | Saved PDFs are pinned and portable assembly copies them; upstream regeneration remains separate |
+| Main switch-rate grid | Paired clean/biased labels, aggregation and uncertainty, then seen/held-out dataset × bias grid | `experiments/paper_mcq` reproduces historical statistics; manuscript assembly renders their grid. Fresh corrected training remains separate |
+| Main conditional-verbalization grid | Acknowledgment among towards-bias switches, with explicit denominator and uncertainty | Historical MCQ replay is exact at 108,000 permutations; manuscript assembly renders the grid |
+| Expanded switch and conditional-verbalization figures | Dataset/bias breakdowns from saved responses and grades | Portable MCQ replay recomputes both endpoints exactly; assembly is a separate presentation step |
+| Overall verbalization and biased accuracy | All-valid-response denominators and accuracy labels | Portable MCQ replay recomputes both endpoints exactly, retaining historical coverage limitations |
 | Convergence | New validation-selected checkpoint histories | Existing plot is historical own-objective stopping, not the replacement analysis |
-| Cross-task | AITA responses, verdict parsing and coverage audit | Historical selective-retry plot is pinned; corrected full pipeline pending |
+| Cross-task | AITA responses, verdict parsing and coverage audit | `experiments/paper_aita` reproduces both saved statistical reports exactly; corrected fresh-model inference remains separate |
 | Qwen and Gemma image results | Rendered inputs, model evaluation, labels and plots | Historical generation and portable recovery/plotting are integrated in `experiments/qwen_image_pilot`; seven recovery tests pass. Historical uniform 65,536 budgets are not the new dataset-specific policy. |
 | Monitorability | Saved monitor scores plus paired switch labels and population definitions | Historical overview assembly and latest Luna builders/plots are integrated as distinct products; do not substitute one population for another |
 | Compute appendix | Checkpoint cost accounting and matched-budget performance | Portable accounting/selection commands are integrated; the cost table does not establish matched-compute performance |
 | Evaluation-gaming pilot | Scenario generation, grading and missingness-aware analysis | Historical pilot runbook/scripts are integrated; current screening and future higher-context execution remain distinct |
 
-The portable manuscript assembler is now `experiments/paper_manuscript/build_figures.py`. Its [upstream recipe registry](../experiments/paper_manuscript/upstream-command-map.json) records inspected historical aggregation sources and limitations. Recipe discovery is not a successful end-to-end replay: some upstream drivers still require staging/refactoring, and the assembler deliberately copies existing appendix figures rather than falsely claiming to recompute their statistics.
+The portable manuscript assembler is `experiments/paper_manuscript/build_figures.py`. Its [upstream recipe registry](../experiments/paper_manuscript/upstream-command-map.json) records original aggregation sources. The current executable commands are in `docs/paper-command-map.json`: [MCQ preprocessing and statistics](../experiments/paper_mcq/README.md), [AITA](../experiments/paper_aita/README.md), and [convergence](../experiments/paper_convergence/README.md) now have canonical implementations and exact historical numerical replay receipts. The MCQ historical parser is isolated and hash-pinned; it is not used by fresh training. Raw data stays external, new inference is not claimed, and manual LaTeX table transcription remains separate. The assembler intentionally copies appendix figures; use the aggregation commands to recompute their statistics first.
 
 ## Protocol that corrected runs must preserve
+
+The historical organism-table aggregation is now in
+[`experiments/paper_organism`](../experiments/paper_organism/README.md).
+Its canonical replay exactly matched all historical rows and native Inspect
+statistics; the full presentation and local-link verification also passed.
+The historical 16-condition monitor overview is independently portable via
+[`scripts/paper_luna/OVERVIEW.md`](../scripts/paper_luna/OVERVIEW.md), rather than
+requiring an injected function in an external recipe. Neither result establishes
+corrected-training performance.
 
 - LogiQA and HellaSwag: **20,480 generated tokens** for training and evaluation. Other datasets, including HLE: **65,536 generated tokens**. Generated-token allowance and total context capacity are different settings; the prompt must also fit.
 - Preserve model-specific thinking configuration, tokenizer/chat-template identity, data order, batch size, rollout counts, optimizer settings and data exposure. Record changes explicitly.
