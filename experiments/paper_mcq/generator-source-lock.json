@@ -1,0 +1,42 @@
+{
+  "generators/cap64k/prepare.py": {
+    "source": "artifacts/cap64k-rerun-20260920/prepare.py",
+    "sha256": "7ccec524c4a4711cf860d3c6d1e275b47c2e9666055a0ea533b0a4adeb0f1e68"
+  },
+  "generators/cap64k/worker.py": {
+    "source": "artifacts/cap64k-rerun-20260920/worker.py",
+    "sha256": "d20c7d7af17921bc0ffc0b26f46bd67bd3f949e1079630640bb0935f54512cae"
+  },
+  "generators/cap64k/retry_tasks.py": {
+    "source": "artifacts/cap64k-rerun-20260920/retry_tasks.py",
+    "sha256": "b6bca6eca428ff4f1843c7e73e88cbe02020e2a99e84476c0f137d09a1e1633b"
+  },
+  "generators/cap64k/run.sbatch": {
+    "source": "artifacts/cap64k-rerun-20260920/run.sbatch",
+    "sha256": "b5d5fe9357c87a11d8e55aef94178ae4ba44cb324ba6b879bce2087ab3d08fe5"
+  },
+  "generators/topup/prepare.py": {
+    "source": "artifacts/rmct-iid-topup-20260920/prepare.py",
+    "sha256": "b829277c884663cafc38cc2488abcef7ffadc3e653722f2a7bd0a5fb11f948c2"
+  },
+  "generators/topup/worker.py": {
+    "source": "artifacts/rmct-iid-topup-20260920/worker.py",
+    "sha256": "14df8e0e2e79317eeef71c29f48ab413ad13bf9d2355bbc39843f42db504c4ca"
+  },
+  "generators/topup/topup_tasks.py": {
+    "source": "artifacts/rmct-iid-topup-20260920/topup_tasks.py",
+    "sha256": "a8065a576da78cac0898e2e868a408fb17acc2d941f5bc537e4867085edf124c"
+  },
+  "generators/topup/run.sbatch": {
+    "source": "artifacts/rmct-iid-topup-20260920/run.sbatch",
+    "sha256": "406886f9ffe134b8c7b6d882c78de88acaa8ebe50c9e24d7a3ee1e92fb2fb501"
+  },
+  "generators/attested-runtime/evaluate.py": {
+    "source": "artifacts/methods-eval-compat-repair-20260913/evaluate.py",
+    "sha256": "64d7bb507fc99c5fe825c965f57e90d70a61eebe513f472621b3813a3fd0f5b1"
+  },
+  "generators/recovery-merge-and-grade.py": {
+    "source": "artifacts/recovered-publication-20260922/build.py",
+    "sha256": "7e0977d2f32d850514908fe77639df451883c5208225e9416562cb67ded50840"
+  }
+}

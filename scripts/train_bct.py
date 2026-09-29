@@ -190,6 +190,16 @@ def main():
         "otherwise the complete reference user message must occur in the variant",
     )
     parser.add_argument(
+        "--require-full-reference-suffix-alignment",
+        action="store_true",
+        help="Fail closed unless every paired row aligns on the complete reference user message and the variant ends with it",
+    )
+    parser.add_argument(
+        "--qwen35-consistency-preflight",
+        action="store_true",
+        help="Before fresh ACT/AttCT/MLPCT training, run and immutably log a fail-closed Qwen3.5-9B paired HF/PEFT backward preflight",
+    )
+    parser.add_argument(
         "--method-config",
         help="JSON object or JSON file containing ACT, AttCT, or MLPCT loss options",
     )
@@ -222,7 +232,19 @@ def main():
         default=1,
         help="Accumulate this many microbatches before each optimizer step",
     )
+    parser.add_argument(
+        "--minimum-optimizer-steps",
+        type=int,
+        default=None,
+        help="Fail closed unless the final, post-alignment training plan has at least this many optimizer steps",
+    )
     parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument(
+        "--no-shuffle-samples",
+        action="store_false",
+        dest="shuffle_samples",
+        help="Preserve the supplied row order on every epoch",
+    )
     parser.add_argument("--lora-rank", type=int, default=None, help="Override lora_config.rank (effective default: 8)")
     parser.add_argument("--seed", type=int, default=None, help="Override lora_config.seed")
     parser.add_argument("--save-every", type=int, default=5)
@@ -284,8 +306,12 @@ def main():
             f"--method {args.method} with identical --variant-messages-field and --reference-messages-field "
             "is a training no-op: both passes see the same tokens, so the consistency loss is identically zero"
         )
+    if args.qwen35_consistency_preflight and args.method not in {"act", "attct", "mlpct"}:
+        parser.error("--qwen35-consistency-preflight is supported only with --method act, attct, or mlpct")
     if args.gradient_accumulation_steps < 1:
         parser.error("--gradient-accumulation-steps must be >= 1")
+    if args.minimum_optimizer_steps is not None and args.minimum_optimizer_steps < 1:
+        parser.error("--minimum-optimizer-steps must be >= 1")
     try:
         method_config = parse_json_object(args.method_config, label="method_config")
         raw_lora_config = parse_json_object(args.lora_config, label="lora_config")
@@ -351,6 +377,8 @@ def main():
         n_epochs=args.epochs,
         batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
+        shuffle_samples=args.shuffle_samples,
+        minimum_optimizer_steps=args.minimum_optimizer_steps,
         checkpoint=CheckpointConfig(
             save_every_n_steps=args.save_every,
             save_state=args.save_state,
@@ -359,6 +387,8 @@ def main():
         reference_messages_field=args.reference_messages_field,
         variant_messages_field=args.variant_messages_field,
         alignment_text_field=args.alignment_text_field,
+        require_full_reference_suffix_alignment=args.require_full_reference_suffix_alignment,
+        qwen35_consistency_preflight=args.qwen35_consistency_preflight,
         method_config=method_config,
         run_metadata={
             "data_files": [str(p) for p, _ in file_specs],
@@ -374,6 +404,12 @@ def main():
     n_microbatches = (n_samples + args.batch_size - 1) // args.batch_size
     n_steps = (n_microbatches + args.gradient_accumulation_steps - 1) // args.gradient_accumulation_steps
     n_steps *= args.epochs
+    if args.minimum_optimizer_steps is not None and n_steps < args.minimum_optimizer_steps:
+        parser.error(
+            f"--minimum-optimizer-steps={args.minimum_optimizer_steps} cannot be met: "
+            f"the input plan has only {n_steps} optimizer step(s). Increase --epochs, "
+            "reduce --gradient-accumulation-steps, or use more training rows."
+        )
     n_ckpts = n_steps // args.save_every
     print()
     print(f"Model: {config.model}")
@@ -394,7 +430,16 @@ def main():
         f"rank={config.lora.rank}, alpha={config.lora.resolved_alpha}, dropout={config.lora.dropout}, "
         f"targets={config.lora.target_modules or {'mlp': config.lora.train_mlp, 'attn': config.lora.train_attn, 'unembed': config.lora.train_unembed}}"
     )
-    print(f"Steps: {n_steps}, checkpoints: ~{n_ckpts} intermediate + 1 final")
+    print(f"Estimated optimizer steps: {n_steps}, checkpoints: ~{n_ckpts} intermediate + 1 final")
+    if args.minimum_optimizer_steps is not None:
+        print(
+            f"Minimum optimizer steps: {args.minimum_optimizer_steps} "
+            "(the trainer rechecks after paired-row alignment)"
+        )
+    if args.require_full_reference_suffix_alignment:
+        print("Consistency pairing: strict complete-reference suffix alignment required")
+    if args.qwen35_consistency_preflight:
+        print("Consistency pairing: Qwen3.5 fail-closed paired backward preflight required")
     if args.save_state:
         print("Checkpoints: intermediate + final save full state (resumable)")
     else:

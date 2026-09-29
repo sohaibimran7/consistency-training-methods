@@ -1,0 +1,244 @@
+{
+  "schema": "paper-command-map-v1",
+  "scope": "Historical manuscript assembly plus integrated offline analysis pipelines. Null regeneration commands remain unresolved end-to-end upstream work; assembly and scientific reruns are different products.",
+  "results": [
+    {
+      "output": "figures/provisional/main-switch.pdf",
+      "input_root": "monitor",
+      "input": "artifacts/parser-fixed-64k-20260925/figures-final/towards-bias-switch-standard/chart-rows.json",
+      "input_sha256": "d477a1eac0cc3a7b77236bd7ae72baa7c96bb4fc1f7508779ac09819f2adc566",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_mcq/run.py figures --samples \"$MERGED_SAMPLES\" --template \"$CHART_TEMPLATE\" --output \"$MCQ_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Parser-corrected saved evaluation; flawed RMCT training; partial selective recovery and missing grades; Base clean labels incompletely verifiable.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "four_endpoints_exact_at_108000_permutations; raw_reconciliation_and_recovery_merge_exact_with_pinned_historical_parser"
+    },
+    {
+      "output": "figures/provisional/main-conditional.pdf",
+      "input_root": "monitor",
+      "input": "artifacts/parser-fixed-64k-20260925/figures-final/conditional-verbalisation-20260918/main-paper-style-108000/chart-rows.json",
+      "input_sha256": "f13cf4465623dcf8c701a2514e87e7ecb7e2adbebcf3331237fc9c472e2b5a36",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_mcq/run.py figures --samples \"$MERGED_SAMPLES\" --template \"$CHART_TEMPLATE\" --output \"$MCQ_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Parser-corrected saved evaluation; flawed RMCT training; partial selective recovery and missing grades; Base clean labels incompletely verifiable.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "four_endpoints_exact_at_108000_permutations; raw_reconciliation_and_recovery_merge_exact_with_pinned_historical_parser"
+    },
+    {
+      "output": "figures/provisional/expanded-switch.pdf",
+      "input_root": "monitor",
+      "input": "artifacts/parser-fixed-64k-20260925/figures-final/towards-bias-switch-standard/towards-bias-switch.pdf",
+      "input_sha256": "61d033b20d5bf95a77a2790bfdf6adeafbece8c7dfe54695ee8e4308e1cc17b5",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_mcq/run.py figures --samples \"$MERGED_SAMPLES\" --template \"$CHART_TEMPLATE\" --output \"$MCQ_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Parser-corrected historical evaluation; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "four_endpoints_exact_at_108000_permutations; raw_reconciliation_and_recovery_merge_exact_with_pinned_historical_parser"
+    },
+    {
+      "output": "figures/provisional/expanded-conditional.pdf",
+      "input_root": "monitor",
+      "input": "artifacts/parser-fixed-64k-20260925/figures-final/conditional-verbalisation-20260918/main-paper-style-108000/conditional-bias-verbalisation.pdf",
+      "input_sha256": "61d145fb881ecb56ee7eaeb6b1c013e6b095fc3ede3c31606667417901241f76",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_mcq/run.py figures --samples \"$MERGED_SAMPLES\" --template \"$CHART_TEMPLATE\" --output \"$MCQ_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Parser-corrected historical evaluation; missing verbalisation grades; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "four_endpoints_exact_at_108000_permutations; raw_reconciliation_and_recovery_merge_exact_with_pinned_historical_parser"
+    },
+    {
+      "output": "figures/provisional/overall-verbalisation.pdf",
+      "input_root": "monitor",
+      "input": "artifacts/parser-fixed-64k-20260925/figures-final/bias-verbalisation-standard/bias-verbalisation.pdf",
+      "input_sha256": "89a12b59e7ccb119acc358fe7694451a666e0da79def47442f9f09c81e5ad9e4",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_mcq/run.py figures --samples \"$MERGED_SAMPLES\" --template \"$CHART_TEMPLATE\" --output \"$MCQ_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Parser-corrected historical evaluation; missing verbalisation grades; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "four_endpoints_exact_at_108000_permutations; raw_reconciliation_and_recovery_merge_exact_with_pinned_historical_parser"
+    },
+    {
+      "output": "figures/provisional/biased-accuracy.pdf",
+      "input_root": "monitor",
+      "input": "artifacts/parser-fixed-64k-20260925/figures-final/biased-accuracy-20260918/biased-accuracy-paper-style.pdf",
+      "input_sha256": "c13bd71da3d7f2608d186410c0194b2cc2e722f29fad02d442e3f74328cffe3f",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_mcq/run.py figures --samples \"$MERGED_SAMPLES\" --template \"$CHART_TEMPLATE\" --output \"$MCQ_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Parser-corrected historical evaluation; selective recovery; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "four_endpoints_exact_at_108000_permutations; raw_reconciliation_and_recovery_merge_exact_with_pinned_historical_parser"
+    },
+    {
+      "output": "figures/provisional/convergence.pdf",
+      "input_root": "methods",
+      "input": "artifacts/methods-convergence-all-20260917/convergence-all-methods.pdf",
+      "input_sha256": "51d59ffa37df31f4def4854cde11d92e2525e698a69e4c02d574071a7517b289",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_convergence/plot.py --histories \"$TRAINING_HISTORIES\" --remote-histories \"$REMOTE_HISTORIES\" --output-dir \"$CONVERGENCE_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Historical own-objective stopping curves; not validation-selected; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "full_replay_completed_by_root; summary_byte_identical; three_failure_boundary_checks_pass"
+    },
+    {
+      "output": "figures/provisional/cross-task.pdf",
+      "input_root": "methods",
+      "input": "artifacts/qwen-aita-vllm-20260920/plots64/terminal-comparison.pdf",
+      "input_sha256": "38e10dbaa37e8b7aa7dd1ce8edfe10aeffa2ad3a36a2f87a948e1c580cd4bfe9",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "OPENBLAS_NUM_THREADS=1 python experiments/paper_aita/plot_results.py --root \"$AITA_SAVED\" --output \"$AITA_OUT\" --retry64",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Saved AITA selective-64k-retry plot; full coverage and verdict parsing not re-audited here; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "independent_exact_terminal_and_all_checkpoint_JSON_replay; full_figures_rendered"
+    },
+    {
+      "output": "figures/provisional/image-qwen.pdf",
+      "input_root": "methods",
+      "input": "artifacts/image-suite-20260921/paper-splits-20260925/qwen-towards_bias_switch-per-bias.pdf",
+      "input_sha256": "36ff880a60b4505664571c6b31b41e26a2d57fc0f8812ec3a6f8b7522b957ae8",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/qwen_image_pilot/paper_split.py --root \"$IMAGE_SUITE\" --template \"$CHART_TEMPLATE\" --output \"$IMAGE_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Saved image evaluation; parser provenance not re-audited here; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "portable_collection_recovery_and_plot_code_integrated; seven_recovery_tests_pass; statistical_rerun_not_claimed"
+    },
+    {
+      "output": "figures/provisional/image-gemma.pdf",
+      "input_root": "methods",
+      "input": "artifacts/image-suite-20260921/paper-splits-20260925/gemma-towards_bias_switch-per-bias.pdf",
+      "input_sha256": "4c7b0651f3ea8b3687505d80f7a544520e0416c3867558364d0b4114cb607889",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/qwen_image_pilot/paper_split.py --root \"$IMAGE_SUITE\" --template \"$CHART_TEMPLATE\" --output \"$IMAGE_OUT\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Saved image evaluation; one unresolved Gemma RMCT response in source manifest; flawed RMCT training.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "portable_collection_recovery_and_plot_code_integrated; seven_recovery_tests_pass; statistical_rerun_not_claimed"
+    },
+    {
+      "output": "figures/provisional/monitor-overview.png",
+      "input_root": "monitor",
+      "input": "artifacts/parser-fixed-20260923/luna-overview/monitorability-overview.png",
+      "input_sha256": "cb8622a884cb039b2c3f1573924584311f2c5b58410bd9078d81ec8c73a9ed93",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "OPENBLAS_NUM_THREADS=1 python scripts/paper_luna/overview.py --samples \"$CORRECTED_SAMPLES\" --ledger \"$LUNA_LEDGER\" --labels \"$LUNA_LABELS\" --output \"$LUNA_OUT/overview\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "23 September corrected-label sensitivity analysis; saved monitor scores only, no scores for newly eligible/recovered/top-up responses; flawed RMCT training. Target-comparison replacement pending verification.",
+      "assembly_command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "assembly_status": "portable_saved_assembly_integrated_seven_tests_pass",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "portable_aggregation_integrated_owner_exact_full_results_replay; twelve_combined_tests_pass"
+    },
+    {
+      "output": "current-appendix.tex",
+      "input_root": "methods",
+      "input": "artifacts/compute-audit-20260917/README.md",
+      "input_sha256": "ec681d88e9d2eec5e8e068c896808c24216c7f4698f60afa2a0f5173e9d53894",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_compute/verify.py --artifact-root \"$METHOD_ARTIFACTS\" --report \"$PAPER_OUT/compute-verification.json\"",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Historical allocated GPU-hours table; not matched-compute performance.",
+      "assembly_command": null,
+      "assembly_status": "source_only_manual_table",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "numerical_aggregation_independently_verified; manual_LaTeX_transcription_separate"
+    },
+    {
+      "output": "current-results.tex",
+      "input_root": "main",
+      "input": "artifacts/evalaware-v1-v4-consolidated-20260915/inspect-se-v2/REPORT.md",
+      "input_sha256": "c2bcb927c8025255b9af87783a22b9e2a44bbf3088abaefabe79d80f34c550e4",
+      "input_verification_command": "python scripts/verify_paper_inputs.py --root monitor=\"$MONITOR_ROOT\" --root methods=\"$METHODS_ROOT\" --root main=\"$MAIN_ROOT\"",
+      "regeneration_command": "python experiments/paper_organism/build_report.py --old-analysis-dir \"$OLD_ANALYSIS\" --prior-analysis-dir \"$PRIOR_ANALYSIS\" --output-dir \"$ORGANISM_OUT\" --statistics-only",
+      "status": "historical_provisional_portable_assembly_not_end_to_end_reproduction",
+      "scientific_limit": "Native bridge table: historical single-organism characterisation, no verified RMCT intervention linkage; separate missingness denominators.",
+      "assembly_command": null,
+      "assembly_status": "source_only_manual_table",
+      "upstream_recipe_registry": "experiments/paper_manuscript/upstream-command-map.json",
+      "upstream_status": "independently_reproduced_all_rows_summaries_conditions; manual_LaTeX_transcription_separate"
+    }
+  ],
+  "pending_extensions": [
+    "Fresh data-matched Qwen and Gemma results",
+    "Compute-matched performance within output-based and activation-based method groups (historical accounting pipeline integrated)",
+    "Validation-selected convergence results from new histories",
+    "Corrected-run Luna monitorability; historical saved-score builders/plots integrated",
+    "Cross-task and cross-modality corrected evaluation and unresolved upstream generation recipes",
+    "Current evaluation-gaming screening and verified65536 executor (historical pilot integrated)",
+    "Portable regeneration of every historical manuscript statistic and verification of manual table transcription"
+  ],
+  "integrated_analysis_pipelines": {
+    "luna": {
+      "documentation": "scripts/paper_luna/README.md",
+      "upstream": "scripts/paper_luna/UPSTREAM.md",
+      "receipt": "scripts/paper_luna/upstream-verification.json",
+      "status": "owner_verified_exact_row_reconstruction_and_plot_statistics; integrated_unit_tests_passed; independent_ICL_summary_reproduced",
+      "overview": "scripts/paper_luna/OVERVIEW.md"
+    },
+    "compute": {
+      "documentation": "experiments/paper_compute/README.md",
+      "command": "python experiments/paper_compute/verify.py --artifact-root \"$METHOD_ARTIFACTS\" --report \"$PAPER_OUT/compute-verification.json\"",
+      "status": "independently_passed_six_commands_eleven_input_hashes_eight_baseline_comparisons"
+    },
+    "manuscript": {
+      "command": "python experiments/paper_manuscript/build_figures.py --corrected-figures-root \"$CORRECTED_FIGURES\" --monitor-root \"$MONITOR_FIGURES\" --ctm-artifacts-root \"$METHOD_ARTIFACTS\" --organism-artifacts-root \"$ORGANISM_ARTIFACTS\" --output-dir \"$PAPER_OUT\"",
+      "manifest": "experiments/paper_manuscript/figure-sources.json",
+      "status": "seven_integrated_contract_tests_passed; upstream_aggregation_not_claimed"
+    },
+    "eval_gaming": {
+      "documentation": "experiments/eval_awareness/paper-handoff-20260928/README.md",
+      "source_inventory": "experiments/eval_awareness/paper-handoff-20260928/source-manifest.json",
+      "external_artifact_inventory": "Stage inventory-v2.json from the historical paper handoff; not redistributed with raw private artifacts",
+      "external_artifact_inventory_sha256": "3e5384dba439bdc432468d2db886313a44c03155be804f277bd64f3a675f8f19",
+      "status": "historical_pilot_portable_sources_integrated; owner_reproduced_inventory_and_grader_inputs; future_65536_context_guard_not_live_executor",
+      "historical_output_cap": 8192,
+      "future_output_cap": 65536,
+      "limitations": "Historical Petri/IE exploratory pilot is not the final scenario plan or corrected RMCT evidence."
+    },
+    "organism": {
+      "documentation": "experiments/paper_organism/README.md",
+      "status": "independent_exact_saved_score_replay_232memberships_224unique_277sources; three_tests_pass"
+    },
+    "aita": {
+      "documentation": "experiments/paper_aita/README.md",
+      "status": "independent_exact_terminal_and_all_checkpoint_JSON_replay; full_figures_rendered"
+    },
+    "convergence": {
+      "documentation": "experiments/paper_convergence/README.md",
+      "status": "full_replay_completed_by_root; summary_byte_identical; three_failure_boundary_checks_pass"
+    },
+    "mcq": {
+      "documentation": "experiments/paper_mcq/README.md",
+      "source_lock": "experiments/paper_mcq/source-lock.json",
+      "receipts": "experiments/paper_mcq/validation",
+      "status": "eight_contract_tests_pass; full_numerical_and_preprocessing_replays_verified"
+    }
+  }
+}

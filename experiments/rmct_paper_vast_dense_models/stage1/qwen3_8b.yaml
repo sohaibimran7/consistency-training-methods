@@ -1,0 +1,118 @@
+name: rmct_paper_vast_dense_qwen3_8b_stage1
+experiment_factory: ctm_data.adapters.mcq_bias.experiment_factory:compile_experiment
+
+# Full-data/full-evaluation scientific screen. It keeps every requested method
+# and control at one provisional common learning rate.
+spec:
+  model: Qwen/Qwen3-8B
+  backend: local
+  seed: 42
+  artifact_root: artifacts/rmct-hle-qwen3-8b-dense-stage1
+  figure_root: figures/rmct-hle-qwen3-8b-dense-stage1
+
+  learning_rates:
+    - {name: "1e-4", value: 0.0001}
+
+  lora: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false}
+  local: {dtype: bfloat16, sampler: vllm, gpu_memory_utilization: 0.45, vllm_max_num_seqs: 256}
+
+  data:
+    shared_root: artifacts/rmct-hle-dense-models-shared
+    prepare_shared: false
+    training:
+      bias_type: wrong_argument
+      datasets: [logiqa, hellaswag]
+      prompt_style: encourage_cot
+      pool_per_dataset: 1500
+      minimum_per_dataset: 1024
+      examples: 2048
+      argument_model: openrouter/google/gemma-4-31b-it
+    instruction: {source: cleaned_alpaca, examples: 2048}
+    evaluation:
+      source: hle
+      expected_source_count: 513
+      questions: 100
+      biases: [suggested_answer, distractor_fact, wrong_argument, post_hoc, spurious_few_shot_squares, wrong_few_shot]
+      argument_model: openrouter/google/gemma-4-31b-it
+      grader_model: openrouter/google/gemma-4-31b-it
+
+  conditions:
+    - {name: untrained, method: none}
+    - {name: rate-matching, method: rate_matching}
+    - {name: rate-matching-control, method: rate_matching, control: true}
+    - {name: bias-augmented-consistency, method: bias_augmented_consistency}
+    - {name: bias-augmented-consistency-control, method: bias_augmented_consistency, control: true}
+    - {name: act, method: act}
+    - {name: attct, method: attct}
+    - {name: mlpct, method: mlpct}
+    - {name: opct, method: opct}
+
+  supervised_consistency:
+    batch_size: 1
+    gradient_accumulation_steps: 128
+    epochs: 1
+    save_every: 16
+    learning_rate_schedule: linear
+    bias_augmented_targets: {max_tokens: 20480, temperature: 1.0, max_concurrency: 32}
+    method_config:
+      act: {layer_selection: all, normalize: false}
+      attct: {layer_selection: all, layer_weights: uniform}
+      mlpct: {variant: hidden, layer_selection: all, layer_weights: uniform, distance_metric: cosine, normalize: false}
+
+  opct:
+    learning_rates:
+      - {name: "1e-4", value: 0.0001}
+    batch_size: 1
+    gradient_accumulation_steps: 16
+    epochs: 1
+    rollouts_per_prompt: 4
+    temperature: 0.7
+    max_new_tokens: 2048
+    learning_rate_schedule: constant
+    kl_coefficient: 2.0
+    kl_discount_factor: 0.9
+    loss: importance_sampling
+    checkpoint_every: 8
+
+  rate_matching:
+    datapoints: 64
+    rollouts: {reference: 128, training: 128, consistency: 128, anchor: 128}
+    batch_size: 4
+    epochs: 1
+    temperature: 1.0
+    max_new_tokens: 20480
+    learning_rate_schedule: constant
+    kl_coefficient: 0.05
+    anchor_weight: 0.0
+    anchor_model: base
+    loss: ppo
+    advantage_estimator: grpo_normalized
+    normalization: per_item
+    gradient_accumulation_steps: 1
+    refresh_every: 1
+    checkpoint_every: 8
+
+  evaluation: {max_tokens: 20480, temperature: 0.6, top_p: 0.95, top_k: 20}
+  tracking: {wandb_project: rmct_paper_vast_dense_models_stage1}
+
+  reports:
+    held_out_exclude: [wrong_argument]
+    standard_error: inspect
+    significance_baseline: untrained
+    charts:
+      switch: experiments/rmct_paper_vast_more_methods/switch_chart.json
+      away-switch: experiments/rmct_paper_vast_more_methods/away_switch_chart.json
+      total-switch: experiments/rmct_paper_vast_more_methods/total_switch_chart.json
+      accuracy: experiments/rmct_paper_vast_more_methods/unbiased_accuracy_chart.json
+      verbalisation: experiments/rmct_paper_vast_more_methods/verbalisation_chart.json
+    items:
+      - {name: towards-bias-switch, metric: towards_bias_switch, chart: switch}
+      - {name: bias-verbalised, metric: bias_acknowledged, chart: verbalisation}
+      - {name: bias-verbalised-given-towards-bias-switch, metric: bias_acknowledged, given: towards_bias_switch, chart: verbalisation}
+      - name: bias-verbalised-given-total-bias-switch
+        metric: bias_acknowledged
+        where: {metric: abs_switch, op: gt, value: 0}
+        chart: verbalisation
+      - {name: away-from-bias-switch, metric: away_from_bias_switch, chart: away-switch}
+      - {name: total-bias-switch, metric: total_bias_switch, chart: total-switch}
+      - {name: unbiased-accuracy, metric: correct, variant: unbiased, held_out_summary: false, chart: accuracy}

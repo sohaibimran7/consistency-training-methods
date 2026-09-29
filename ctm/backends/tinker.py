@@ -43,6 +43,7 @@ class TinkerSamplerHandle:
             SampledSequence(
                 tokens=list(seq.tokens),
                 logprobs=list(seq.logprobs) if seq.logprobs else None,
+                finish_reason=getattr(seq, "stop_reason", None) or "unknown",
             )
             for seq in result.sequences
         ]

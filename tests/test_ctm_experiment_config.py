@@ -1,5 +1,6 @@
 """Tests for the deliberately small YAML experiment runner."""
 
+import json
 import sys
 import threading
 from copy import deepcopy
@@ -12,13 +13,9 @@ from scripts.rmct_paper_vast_more_methods.experiment_factory import compile_expe
 
 EXAMPLE = Path(__file__).parent.parent / "experiments" / "example_rlct.yaml"
 F6_PER_ITEM = Path(__file__).parent.parent / "experiments" / "eval_awareness" / "qwen_f6_snr_per_item.yaml"
-F6_DEBUG = (
-    Path(__file__).parent.parent / "experiments" / "eval_awareness" / "debug" / "qwen_f6_snr_per_item_two_items.yaml"
-)
+F6_DEBUG = Path(__file__).parent.parent / "experiments" / "eval_awareness" / "debug" / "qwen_f6_snr_per_item_two_items.yaml"
 METHOD_COMPARISON = Path(__file__).parent.parent / "experiments" / "internal_consistency" / "method_comparison.yaml"
-WRONG_ARGUMENT_COMPARISON = (
-    Path(__file__).parent.parent / "experiments" / "mcq_bias" / "wrong_argument_cross_bias" / "experiment.yaml"
-)
+WRONG_ARGUMENT_COMPARISON = Path(__file__).parent.parent / "experiments" / "mcq_bias" / "wrong_argument_cross_bias" / "experiment.yaml"
 BCT_BACKEND_COMPARISON = WRONG_ARGUMENT_COMPARISON.with_name("bct_backends.yaml")
 RMCT_HLE_COMPARISON = Path(__file__).parent.parent / "experiments" / "rmct_paper_vast_more_methods" / "experiment.yaml"
 RMCT_HLE_SMOKE = RMCT_HLE_COMPARISON.parent / "debug" / "smoke.yaml"
@@ -68,6 +65,121 @@ def test_command_arguments_support_flags_lists_and_nested_json():
         "--task-args",
         '{"limit":3}',
     ]
+
+
+def test_gpu_count_is_runner_metadata_not_a_child_argument():
+    spec = {
+        "command": ["python", "train.py"],
+        "resource": "gpu",
+        "gpu_count": 3,
+        "args": {"local_rollout_gpus": "1,2"},
+    }
+    assert experiment.command_gpu_count(spec, "training") == 3
+    assert experiment.command_argv(spec, {}, strict=True) == [
+        "python",
+        "train.py",
+        "--local-rollout-gpus",
+        "1,2",
+    ]
+
+
+def test_target_scoped_training_outputs_are_isolated_and_centrally_published(monkeypatch, tmp_path):
+    config = {
+        "name": "sharded",
+        "training_output_publication": {"owner": "coordinator", "targets": ["node-a", "node-b"]},
+        "training": [
+            {"name": "first", "target": "node-a", "command": ["train", "first"]},
+            {"name": "second", "target": "node-b", "command": ["train", "second"]},
+        ],
+    }
+    monkeypatch.setattr(experiment, "PROJECT_ROOT", tmp_path)
+
+    checkpoints = tmp_path / "checkpoints"
+    for name in ("first", "second"):
+        directory = checkpoints / name
+        directory.mkdir(parents=True)
+        (directory / "manifest.json").write_text(json.dumps({"backend": "local", "model": "unit/base", "lora": True}))
+        (directory / "adapter_config.json").write_text("{}")
+        (directory / "adapter_model.safetensors").write_bytes(name.encode())
+
+    first_plan, _ = experiment.save_resolved_plan(config, target="node-a")
+    second_plan, _ = experiment.save_resolved_plan(config, target="node-b")
+    assert first_plan != second_plan
+    assert [entry["name"] for entry in experiment.load_experiment_source(first_plan)["training"]] == ["first"]
+    assert [entry["name"] for entry in experiment.load_experiment_source(second_plan)["training"]] == ["second"]
+
+    first_checkpoint = f"file://{checkpoints / 'first'}"
+    second_checkpoint = f"file://{checkpoints / 'second'}"
+    experiment.save_training_checkpoint(config, "first", first_checkpoint, target="node-a")
+    experiment.save_training_checkpoint(config, "second", second_checkpoint, target="node-b")
+    assert not experiment.output_state_path(config).exists()
+    assert experiment.load_output_context(config, target="node-a") == {
+        "training.first.checkpoint": first_checkpoint,
+        "checkpoint": first_checkpoint,
+    }
+
+    published_path, digest = experiment.publish_training_outputs(config)
+    state = json.loads(published_path.read_text())
+    assert len(digest) == 64
+    assert state["training_checkpoints"] == {
+        "first": first_checkpoint,
+        "second": second_checkpoint,
+    }
+    assert set(state["checkpoint_artifacts"]) == {"first", "second"}
+    assert state["checkpoint_artifacts"]["first"]["files"][-1]["sha256"]
+    assert state["publication"]["owner"] == "coordinator"
+    assert [source["target"] for source in state["publication"]["sources"]] == ["node-a", "node-b"]
+    assert experiment.publish_training_outputs(config) == (published_path, digest)
+
+
+def test_central_publication_rejects_missing_local_checkpoint(monkeypatch, tmp_path):
+    config = {
+        "name": "missing-checkpoint-artifact",
+        "training_output_publication": {"owner": "coordinator", "targets": ["node-a"]},
+        "training": [{"name": "first", "target": "node-a", "command": ["train", "first"]}],
+    }
+    monkeypatch.setattr(experiment, "PROJECT_ROOT", tmp_path)
+    experiment.save_training_checkpoint(config, "first", "file:///missing/checkpoint", target="node-a")
+
+    with pytest.raises(experiment.ExperimentConfigError, match="missing after synchronization"):
+        experiment.publish_training_outputs(config)
+
+
+def test_validated_completed_training_hashes_local_checkpoint(monkeypatch, tmp_path):
+    config = {
+        "name": "resume-completed",
+        "training": [{"name": "first", "target": "node-a", "command": ["train", "first"]}],
+    }
+    monkeypatch.setattr(experiment, "PROJECT_ROOT", tmp_path)
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "manifest.json").write_text(json.dumps({"backend": "local", "model": "unit/base", "lora": False}))
+    (checkpoint / "weights.pt").write_bytes(b"weights")
+    uri = f"file://{checkpoint}"
+    experiment.save_training_checkpoint(config, "first", uri, target="node-a")
+
+    assert experiment.validated_completed_training(config, target="node-a") == {"first": uri}
+
+    (checkpoint / "weights.pt").unlink()
+    with pytest.raises(experiment.ExperimentConfigError, match="incomplete"):
+        experiment.validated_completed_training(config, target="node-a")
+
+
+def test_central_publication_rejects_incomplete_target_state(monkeypatch, tmp_path):
+    config = {
+        "name": "incomplete-shard",
+        "training_output_publication": {"owner": "coordinator", "targets": ["node-a"]},
+        "training": [
+            {"name": "first", "target": "node-a", "command": ["train", "first"]},
+            {"name": "second", "target": "node-a", "command": ["train", "second"]},
+        ],
+    }
+    monkeypatch.setattr(experiment, "PROJECT_ROOT", tmp_path)
+    experiment.save_training_checkpoint(config, "first", "file:///checkpoints/first", target="node-a")
+
+    with pytest.raises(experiment.ExperimentConfigError, match="missing=\\['second'\\]"):
+        experiment.publish_training_outputs(config)
+    assert not experiment.output_state_path(config).exists()
 
 
 def test_unresolved_checkpoint_is_allowed_in_preview_but_not_execution():
@@ -142,7 +254,8 @@ def test_target_selects_commands_without_becoming_a_child_argument():
 
 def test_named_training_checkpoints_route_each_evaluation(monkeypatch, tmp_path):
     config_path = tmp_path / "named.yaml"
-    config_path.write_text("""
+    config_path.write_text(
+        """
 name: named
 training:
   - name: act
@@ -154,7 +267,8 @@ evaluation:
     command: [python, eval.py, "${training.act.checkpoint}"]
   - name: eval-attct
     command: [python, eval.py, "${training.attct.checkpoint}"]
-""".strip())
+""".strip()
+    )
     calls = []
     monkeypatch.setattr(experiment, "output_state_path", lambda _: tmp_path / "outputs.json")
     monkeypatch.setattr(experiment, "_missing_executables", lambda _: {})
@@ -229,12 +343,19 @@ def test_rmct_hle_yaml_routes_six_methods_controls_and_verbalisation_locally():
     for stage, name, command in planned:
         by_stage[stage].append((name, command))
 
-    assert [len(by_stage[stage]) for stage in stages] == [3, 3, 22, 23, 7, 7]
+    # The instruction-retention arm now materializes a frozen-base target
+    # store independently of the bias-augmented targets, so both target
+    # preparations are explicit and auditable.
+    assert [len(by_stage[stage]) for stage in stages] == [3, 4, 22, 23, 7, 7]
     assert all("ctm_data.adapters.mcq_bias.plot" in command for _, command in by_stage["rendering"])
     assert not any("render_flint" in " ".join(command) for _, command in by_stage["rendering"])
-    assert "scripts.rmct_paper_vast_more_methods.cleaned_alpaca_source" in by_stage["data_generation"][2][1]
+    assert "ctm_data.sources.cleaned_alpaca" in by_stage["data_generation"][2][1]
     materialize_eval = dict(by_stage["data_preparation"])["evaluation-suite"]
     assert "ctm_data.adapters.mcq_bias.materialize_eval" in materialize_eval
+    instruction_targets = dict(by_stage["data_preparation"])["instruction-targets"]
+    assert "scripts/prepare_bct_targets.py" in instruction_targets
+    assert instruction_targets[instruction_targets.index("--source-messages-field") + 1] == "reference_messages"
+    assert instruction_targets[instruction_targets.index("--main-messages-field") + 1] == "variant_messages"
     base_eval = by_stage["evaluation"][0][1]
     assert base_eval[base_eval.index("--model") + 1] == "hf/openai/gpt-oss-20b"
     assert all("--tinker-checkpoint" not in command for _, command in by_stage["evaluation"])
@@ -250,10 +371,7 @@ def test_rmct_hle_yaml_routes_six_methods_controls_and_verbalisation_locally():
         "mlpct_lr1",
     ):
         assert training[method][training[method].index("--backend") + 1] == "local"
-    assert (
-        training["bias_augmented_consistency_lr1"][training["bias_augmented_consistency_lr1"].index("--method") + 1]
-        == "bct"
-    )
+    assert training["bias_augmented_consistency_lr1"][training["bias_augmented_consistency_lr1"].index("--method") + 1] == "bct"
     assert training["act_lr1"][training["act_lr1"].index("--method") + 1] == "act"
     assert training["attct_lr1"][training["attct_lr1"].index("--method") + 1] == "attct"
     assert training["mlpct_lr1"][training["mlpct_lr1"].index("--method") + 1] == "mlpct"
@@ -282,6 +400,7 @@ def test_rmct_hle_yaml_routes_six_methods_controls_and_verbalisation_locally():
     unbiased = analysis_commands["aggregate-unbiased-accuracy"]
     assert unbiased[unbiased.index("--variant") + 1] == "unbiased"
     assert "--held-out-exclude" not in unbiased
+    assert "--expected-biases" not in unbiased
     rendering_commands = dict(by_stage["rendering"])
     assert rendering_commands["render-towards-bias-switch"][1:3] == ["-m", "ctm_data.adapters.mcq_bias.plot"]
 
@@ -435,9 +554,14 @@ def test_stage_selection_is_explicit():
     assert experiment.select_stages(config, start_from="eval") == ["evaluation", "analysis"]
 
 
-def test_runner_captures_training_checkpoint():
+def test_runner_captures_training_checkpoint(capsys):
     checkpoint = experiment.run_command([sys.executable, "-c", "print('CTM_FINAL_CHECKPOINT=tinker://unit/final')"])
     assert checkpoint == "tinker://unit/final"
+    output = capsys.readouterr().out
+    timing = json.loads(output.split("CTM_COMMAND_TIMING=", 1)[1])
+    assert timing["status"] == "passed"
+    assert timing["return_code"] == 0
+    assert timing["elapsed_seconds"] >= 0
 
 
 def test_runner_ignores_human_checkpoint_prose():
@@ -447,7 +571,8 @@ def test_runner_ignores_human_checkpoint_prose():
 
 def test_parallel_runner_assigns_one_process_per_gpu_and_preserves_stage_barrier(monkeypatch, tmp_path):
     config_path = tmp_path / "parallel.yaml"
-    config_path.write_text("""
+    config_path.write_text(
+        """
 name: parallel
 training:
   - name: first
@@ -459,7 +584,8 @@ evaluation:
     command: [eval, "${training.first.checkpoint}"]
   - name: eval-second
     command: [eval, "${training.second.checkpoint}"]
-""".strip())
+""".strip()
+    )
     monkeypatch.setattr(experiment, "output_state_path", lambda _: tmp_path / "outputs.json")
     monkeypatch.setattr(experiment, "_missing_executables", lambda _: {})
     training_barrier = threading.Barrier(2)
@@ -500,9 +626,66 @@ def test_parallel_gpu_stage_requires_explicit_gpu_ids():
         )
 
 
+def test_parallel_runner_assigns_requested_multi_gpu_bundle(monkeypatch):
+    calls = []
+
+    def fake_run(command, *, env, label):
+        calls.append((command, env["CUDA_VISIBLE_DEVICES"], label))
+        return None
+
+    monkeypatch.setattr(experiment, "run_command", fake_run)
+    experiment._run_stage_parallel(
+        {
+            "name": "unit",
+            "training": [
+                {
+                    "name": "rmct",
+                    "resource": "gpu",
+                    "gpu_count": 3,
+                    "command": ["train", "rmct"],
+                }
+            ],
+        },
+        "training",
+        {},
+        target=None,
+        parallel=2,
+        gpus=["4", "7", "9"],
+    )
+
+    assert calls == [(["train", "rmct"], "4,7,9", "training:rmct gpu=4,7,9")]
+
+
+def test_parallel_runner_rejects_gpu_bundle_larger_than_supplied(monkeypatch):
+    monkeypatch.setattr(
+        experiment,
+        "run_command",
+        lambda *args, **kwargs: pytest.fail("command ran despite an impossible GPU bundle"),
+    )
+    with pytest.raises(experiment.ExperimentConfigError, match="requests 3 GPU"):
+        experiment._run_stage_parallel(
+            {
+                "name": "unit",
+                "training": [
+                    {
+                        "resource": "gpu",
+                        "gpu_count": 3,
+                        "command": ["train", "rmct"],
+                    }
+                ],
+            },
+            "training",
+            {},
+            target=None,
+            parallel=2,
+            gpus=["0", "1"],
+        )
+
+
 def test_parallel_gpu_execution_requires_gpus_before_any_stage_runs(monkeypatch, tmp_path, capsys):
     config_path = tmp_path / "plan.yaml"
-    config_path.write_text("""
+    config_path.write_text(
+        """
 name: plan-time-gpus
 data_generation:
   - name: fetch
@@ -510,10 +693,9 @@ data_generation:
 training:
   - name: train
     command: [train, one]
-""".strip())
-    monkeypatch.setattr(
-        experiment, "run_command", lambda *args, **kwargs: pytest.fail("a stage executed before GPU validation")
+""".strip()
     )
+    monkeypatch.setattr(experiment, "run_command", lambda *args, **kwargs: pytest.fail("a stage executed before GPU validation"))
     with pytest.raises(SystemExit):
         experiment.main([str(config_path), "--parallel", "2", "--yes"])
     assert "pass --gpus" in capsys.readouterr().err
@@ -533,9 +715,7 @@ def test_gpus_without_parallel_is_rejected(tmp_path, capsys):
 def test_execution_requires_command_executables_on_path(monkeypatch, tmp_path, capsys):
     config_path = tmp_path / "plan.yaml"
     config_path.write_text("name: needs-node\nrendering:\n  - command: [ctm-missing-executable, chart.json]\n")
-    monkeypatch.setattr(
-        experiment, "run_command", lambda *args, **kwargs: pytest.fail("executed despite a missing executable")
-    )
+    monkeypatch.setattr(experiment, "run_command", lambda *args, **kwargs: pytest.fail("executed despite a missing executable"))
     with pytest.raises(SystemExit):
         experiment.main([str(config_path), "--yes"])
     assert "not on PATH" in capsys.readouterr().err

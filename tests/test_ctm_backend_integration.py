@@ -10,7 +10,7 @@ test any new backend (local torch/PEFT, vLLM) must also satisfy.
 import asyncio
 import json
 import math
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import torch
@@ -84,7 +84,7 @@ class FakeSampler:
         seqs = []
         for i in range(num_samples):
             biased = (i % 4 != 0) if cued else (i % 4 == 0)  # 3/4 vs 1/4
-            seqs.append(SampledSequence(tokens=[A_TOKEN if biased else B_TOKEN], logprobs=[-0.1]))
+            seqs.append(SampledSequence(tokens=[A_TOKEN if biased else B_TOKEN], logprobs=[-0.1], finish_reason="stop"))
         return seqs
 
 
@@ -97,6 +97,7 @@ class FakeBackend:
         self.fb_datums: list[list] = []
         self.fb_loss_fns: list[str] = []
         self.optim_lrs: list[float] = []
+        self.refresh_names: list[str] = []
         self.kl_calls = 0
         self.checkpoints: list[str] = []
         self.shutdown_calls = 0
@@ -111,6 +112,7 @@ class FakeBackend:
         return FakeSampler()
 
     async def refresh_policy_sampler(self, name):
+        self.refresh_names.append(name)
         return FakeSampler()
 
     def base_sampler(self):
@@ -227,7 +229,7 @@ class TestRLEndToEnd:
         assert backend.shutdown_calls == 1
 
     def test_full_loop_trains_and_checkpoints(self, tmp_path):
-        final, backend, _, _ = self._run(tmp_path)
+        final, backend, _, logger = self._run(tmp_path)
         assert final == "fake://checkpoint/itest_rl"
         # provenance manifest written into the run's log dir
         from ctm.training.manifest import read_run_manifest
@@ -239,8 +241,13 @@ class TestRLEndToEnd:
         assert len(backend.fb_datums) == 2
         assert backend.fb_loss_fns == ["ppo", "ppo"]
         assert len(backend.optim_lrs) == 2
+        assert backend.refresh_names == [
+            "itest_rl_sampler_optim_1",
+            "itest_rl_sampler_optim_2",
+        ]
         assert backend.kl_calls == 2  # kl_coef > 0 routes through the backend
         assert backend.shutdown_calls == 1
+        assert call.log_hparams({"completed_optimizer_steps": 2}) in logger.mock_calls
         # real tinker datums with RL loss inputs
         datum = backend.fb_datums[0][0]
         assert {"advantages", "logprobs", "mask", "target_tokens"} <= set(datum.loss_fn_inputs)
@@ -299,6 +306,8 @@ class TestRLEndToEnd:
         )
 
         assert backend.fb_datums == []
+        assert backend.optim_lrs == []
+        assert backend.refresh_names == []
         records = list(iter_rollouts(tmp_path / "rollouts"))
         assert len(records) == 64
         assert all(record.skipped_from_training for record in records)
@@ -316,6 +325,41 @@ class TestRLEndToEnd:
         assert all(metrics["rollout/grader_failure_count"] == 0 for metrics in step_metrics)
         assert all(metrics["rollout/grader_failure_rate"] == 0.0 for metrics in step_metrics)
         assert all(metrics["rollout/grader_sample_count"] == 32 for metrics in step_metrics)
+
+    def test_gradient_accumulation_refreshes_only_after_real_update(self, tmp_path):
+        loop = TrainingLoopConfig(
+            batch_size=1,
+            gradient_accumulation_steps=4,
+            refresh_policy_every_n_steps=1,
+            n_epochs=1,
+        )
+
+        _, backend, _, _ = self._run(tmp_path, loop=loop)
+
+        assert len(backend.fb_datums) == 4
+        assert len(backend.optim_lrs) == 1
+        assert backend.refresh_names == ["itest_rl_sampler_optim_1"]
+
+    def test_four_item_pooled_batch_is_one_submission_one_update_one_refresh(self, tmp_path):
+        """A paper-style b=4 is one logical F/B call, not four accumulated calls."""
+        loop = TrainingLoopConfig(
+            batch_size=4,
+            gradient_accumulation_steps=1,
+            refresh_policy_every_n_steps=1,
+            n_epochs=1,
+            normalize="pooled",
+        )
+
+        _, backend, _, _ = self._run(tmp_path, loop=loop, anchor_weight=0.0)
+
+        # Four datapoints × all eight selected cued rollouts are passed together
+        # through one F/B submission, followed by exactly one optimizer update
+        # and publication of its refreshed policy sampler.
+        assert len(backend.fb_datums) == 1
+        assert len(backend.fb_datums[0]) == 32
+        assert backend.fb_loss_fns == ["ppo"]
+        assert len(backend.optim_lrs) == 1
+        assert backend.refresh_names == ["itest_rl_sampler_optim_1"]
 
     def test_wandb_is_opt_in(self):
         assert RLConfig().wandb_project is None
@@ -352,6 +396,9 @@ class TestSFTEndToEnd:
 
         manifest = read_run_manifest(tmp_path / "logs" / "itest" / "sft")
         assert manifest["kind"] == "sft" and manifest["n_samples"] == 5
+        assert manifest["microbatches_per_epoch"] == 3
+        assert manifest["optimizer_steps_per_epoch"] == 3
+        assert manifest["total_optimizer_steps"] == 3
         assert backend.fb_loss_fns == ["cross_entropy"] * 3  # ceil(5/2) steps
         assert len(backend.optim_lrs) == 3
         # linear schedule from full LR, strictly decreasing
@@ -389,3 +436,81 @@ class TestSFTEndToEnd:
         assert len(backend.optim_lrs) == 3
         assert backend.optim_lrs[0] == pytest.approx(1e-4)
         assert backend.optim_lrs[0] > backend.optim_lrs[1] > backend.optim_lrs[2]
+
+    def test_minimum_optimizer_steps_fails_before_backend_setup(self, tmp_path):
+        data = tmp_path / "train.jsonl"
+        samples = [
+            {"messages": [{"role": "user", "content": f"q{i}"}, {"role": "assistant", "content": f"a{i}"}]}
+            for i in range(5)
+        ]
+        data.write_text("".join(json.dumps(sample) + "\n" for sample in samples))
+
+        class SetupRecordingBackend(FakeBackend):
+            def __init__(self):
+                super().__init__()
+                self.setup_calls = 0
+
+            def setup(self, **kwargs):
+                self.setup_calls += 1
+
+        cfg = SFTConfig(
+            experiment_name="itest",
+            run_name="minimum_steps",
+            optimizer=AdamConfig(learning_rate=1e-4),
+            batch_size=1,
+            gradient_accumulation_steps=2,
+            n_epochs=1,
+            minimum_optimizer_steps=4,
+            log_base_dir=str(tmp_path / "logs"),
+        )
+        backend = SetupRecordingBackend()
+        with (
+            patch("ctm.training.sft.setup_logging") as mock_logging,
+            patch("ctm.training.sft.get_renderer_and_tokenizer", return_value=(FakeRenderer(), FakeTokenizer())),
+        ):
+            mock_logging.return_value = MagicMock()
+            with pytest.raises(ValueError, match=r"actual plan has 3 optimizer step\(s\).+minimum_optimizer_steps=4"):
+                asyncio.run(train_sft(data, config=cfg, backend=backend))
+
+        assert backend.setup_calls == 0
+        assert backend.fb_datums == []
+        assert backend.optim_lrs == []
+
+    def test_optimizer_budget_telemetry_records_plan_and_completion(self, tmp_path):
+        data = tmp_path / "train.jsonl"
+        samples = [
+            {"messages": [{"role": "user", "content": f"q{i}"}, {"role": "assistant", "content": f"a{i}"}]}
+            for i in range(5)
+        ]
+        data.write_text("".join(json.dumps(sample) + "\n" for sample in samples))
+        cfg = SFTConfig(
+            experiment_name="itest",
+            run_name="telemetry",
+            optimizer=AdamConfig(learning_rate=1e-4),
+            batch_size=2,
+            gradient_accumulation_steps=2,
+            n_epochs=2,
+            minimum_optimizer_steps=4,
+            log_base_dir=str(tmp_path / "logs"),
+        )
+        backend = FakeBackend()
+        with (
+            patch("ctm.training.sft.setup_logging") as mock_logging,
+            patch("ctm.training.sft.get_renderer_and_tokenizer", return_value=(FakeRenderer(), FakeTokenizer())),
+        ):
+            logger = MagicMock()
+            mock_logging.return_value = logger
+            asyncio.run(train_sft(data, config=cfg, backend=backend))
+
+        hparams = [call.args[0] for call in logger.log_hparams.call_args_list]
+        assert {
+            "n_samples": 5,
+            "microbatches_per_epoch": 3,
+            "optimizer_steps_per_epoch": 2,
+            "total_steps": 4,
+            "nominal_effective_batch_size": 4,
+            "minimum_optimizer_steps": 4,
+        }.items() <= next(values.items() for values in hparams if "total_steps" in values)
+        assert {"completed_optimizer_steps": 4} in hparams
+        completed_call = call.log_hparams({"completed_optimizer_steps": 4})
+        assert logger.mock_calls.index(completed_call) < logger.mock_calls.index(call.close())

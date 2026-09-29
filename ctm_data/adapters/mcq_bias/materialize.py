@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from ctm.artifacts import artifact_manifest_path, write_atomic_bytes, write_verified_jsonl_artifact
 from ctm.pairs import canonical_pair_row
@@ -16,6 +17,39 @@ from ctm_data.adapters.mcq_bias.dataset_specs import parse_dataset_cli_tokens
 
 PAIR_ARTIFACT_SCHEMA = "ctm.prompt_pairs"
 PAIR_ARTIFACT_SCHEMA_VERSION = 1
+
+from ctm_data.adapters.mcq_bias.parser_compat import install_extended_answer_parser
+
+_T = TypeVar("_T")
+
+
+def retry_wrong_argument_materialization(
+    materialize_call: Callable[[], _T],
+    *,
+    enabled: bool,
+    max_rounds: int,
+    dataset: str,
+) -> _T:
+    """Retry only incomplete wrong-argument generation.
+
+    ``mcq_bias`` deliberately gives each missing argument just two stochastic
+    generation attempts. Accepted rows are appended to its canonical store
+    before it raises for a below-floor frozen set, so calling it again retries
+    only the remaining misses while preserving the exact question pool.
+    """
+
+    for round_number in range(1, max_rounds + 1):
+        try:
+            return materialize_call()
+        except ValueError as exc:
+            retryable = enabled and "matched questions for 'wrong_argument'" in str(exc)
+            if not retryable or round_number == max_rounds:
+                raise
+            print(
+                f"wrong_argument: {dataset} remains below its requested floor after generation "
+                f"round {round_number}/{max_rounds}; retrying only missing arguments"
+            )
+    raise AssertionError("unreachable")
 
 
 def interleave_rows(per_file_rows: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -88,6 +122,7 @@ def native_rows_to_prompt_pairs(rows: list[dict[str, Any]]) -> list[dict[str, An
 
 
 def main(argv: list[str] | None = None) -> None:
+    install_extended_answer_parser()
     from mcq_bias.pipeline.records import PROMPT_FAMILIES, PROMPT_STYLES
     from mcq_bias.tasks import BIAS_TYPES, mcq_bias
 
@@ -106,6 +141,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--argument-model")
     parser.add_argument("--generate-missing-arguments", action="store_true")
+    parser.add_argument(
+        "--argument-generation-rounds",
+        type=int,
+        default=5,
+        help="Maximum materialization rounds for missing wrong arguments (two model attempts per round)",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--manifest-output", type=Path, required=True)
     parser.add_argument(
@@ -127,6 +168,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--min-n-questions must be between 1 and --n-questions")
     if args.generate_missing_arguments and args.bias_type != "wrong_argument":
         parser.error("--generate-missing-arguments only applies to wrong_argument")
+    if args.argument_generation_rounds < 1:
+        parser.error("--argument-generation-rounds must be >= 1")
     if args.output.resolve() == args.manifest_output.resolve():
         parser.error("--output and --manifest-output must be different paths")
     if (
@@ -163,7 +206,8 @@ def main(argv: list[str] | None = None) -> None:
     for spec in dataset_specs:
         # Constructing the public task materializes its frozen rows if absent;
         # no model evaluation is run here.
-        task = mcq_bias(
+        task = retry_wrong_argument_materialization(
+            lambda: mcq_bias(
             bias_type=args.bias_type,
             **spec.as_dict(include_defaults=False),
             prompt_style=args.prompt_style,
@@ -175,6 +219,10 @@ def main(argv: list[str] | None = None) -> None:
             argument_model=argument_model,
             generate_missing_arguments=args.generate_missing_arguments,
             dataset_dir=str(args.dataset_dir),
+            ),
+            enabled=args.bias_type == 'wrong_argument' and args.generate_missing_arguments,
+            max_rounds=args.argument_generation_rounds,
+            dataset=spec.dataset,
         )
         source_path = Path(task.metadata["dataset_file"])
         rows = _read_jsonl(source_path)

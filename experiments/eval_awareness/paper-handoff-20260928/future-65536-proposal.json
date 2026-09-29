@@ -1,0 +1,1185 @@
+{
+  "schema_version": 1,
+  "campaign_id": "eval-gaming-65536-new-campaign-proposal",
+  "status": "prepared_not_runtime_validated",
+  "source_panel": {
+    "path": "experiments/eval_awareness/v2-breadth-20260924/frozen-panel-v1.json",
+    "sha256": "fd8675da706d5009b35ddb96f35dd8f0efc95b7f9b10db7ca74b424c1f61e619"
+  },
+  "models": {
+    "base": [
+      "Qwen/Qwen3-32B",
+      "9216db5781bf21249d130ec9da846c4624c16137"
+    ],
+    "mo_mid": [
+      "obalcells/qwen3-32b-mo-midtrained",
+      "a0a6fd96db794775a3c94dd3e15ad2bfb218f738"
+    ],
+    "mo_post": [
+      "obalcells/qwen3-32b-mo-posttrained",
+      "4c19c17fc198f2db9bd234b6859219322a00f89c"
+    ]
+  },
+  "rows": [
+    {
+      "source_id": "am-blackmail-america",
+      "condition": "B",
+      "messages_sha256": "96ac59e3b79186fe83f9c354d7cd41d5ae7abe4a6c2327786d9ffe685768a207"
+    },
+    {
+      "source_id": "am-blackmail-america",
+      "condition": "F8",
+      "messages_sha256": "ce9671aad8036575e2dae2e5b3932831f20d04261679316515e9d839b1938fef"
+    },
+    {
+      "source_id": "am-blackmail-global",
+      "condition": "B",
+      "messages_sha256": "4ce9d00be2b849263dc6440a7fa3d5bf4018a09ded04fad5762ccbd6f5608d73"
+    },
+    {
+      "source_id": "am-blackmail-global",
+      "condition": "F8",
+      "messages_sha256": "c4ac301d399fae9bd423a42c5f714c89c62c42cf7e018158ed59b9ebf82670ea"
+    },
+    {
+      "source_id": "am-blackmail-global",
+      "condition": "F3",
+      "messages_sha256": "a3376b31a49fa11e4c585bc5045fa5256ff615104e6f9c7479cc988d17c73c9b"
+    },
+    {
+      "source_id": "am-blackmail-global",
+      "condition": "F4",
+      "messages_sha256": "76552cf8377b423d431fabf6edff0f20192b66c7be8809b3162939edbe71a235"
+    },
+    {
+      "source_id": "am-blackmail-global",
+      "condition": "F5",
+      "messages_sha256": "1c88019198f3c6408896524b83fa6b55fcbea7855d06f2539814572dcf1d6e2d"
+    },
+    {
+      "source_id": "am-blackmail-global",
+      "condition": "F6",
+      "messages_sha256": "3575206fb35636629e8dc903870046bea3409dc1b5358b2e6ae09ae5d5006a37"
+    },
+    {
+      "source_id": "am-blackmail-global",
+      "condition": "F7",
+      "messages_sha256": "328b27c01fd403d5cf4aea36c51b79c317c1b00e76b682cd589943991151f3d1"
+    },
+    {
+      "source_id": "am-blackmail-safety",
+      "condition": "B",
+      "messages_sha256": "8515e8b91ba7ea1d7b5455be7269ba8d8a0b958d83c3cffd61283fc50dabe659"
+    },
+    {
+      "source_id": "am-blackmail-safety",
+      "condition": "F8",
+      "messages_sha256": "1b8ab503e30e60f787f2618e7503269124cff003dc76c947aa3b40c0d5d1c137"
+    },
+    {
+      "source_id": "am-blackmail-safety",
+      "condition": "F3",
+      "messages_sha256": "70e482f5617e9b8e5cca46c922dcac095c9c10de72ee76179ea9dcbe2302d81b"
+    },
+    {
+      "source_id": "am-blackmail-safety",
+      "condition": "F5",
+      "messages_sha256": "86e985c0a6647240653ea158a6057a5565058f2dd2776b9813aeff18f7f89bba"
+    },
+    {
+      "source_id": "am-blackmail-safety",
+      "condition": "F6",
+      "messages_sha256": "45c93537286038684e63b749b1ee661125ca37f9ffadf3933bbb3e8a78b96808"
+    },
+    {
+      "source_id": "am-blackmail-safety",
+      "condition": "F7",
+      "messages_sha256": "924c4ab27cb814fde85764eb0a06dfbe23c7cc25e3251d073a690e4d531a83e2"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "B",
+      "messages_sha256": "b8c77131da50ae3a0304117a1bc6db63ffe1f8a1ea163fb824a818694c1f574e"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "F8",
+      "messages_sha256": "c8177d288b869b7855eb2f5096e2aee56c4833f11bc18e97ddf9753cfc84bd32"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "F1",
+      "messages_sha256": "ffde550ae57f5b91170e3ec7c275d35652bbcc698f11de598235f438da153d97"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "F3",
+      "messages_sha256": "53f1e7077ef34757bd5bcf7a7039aab560f09cff19187105b7e9bf335c331dc8"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "F4",
+      "messages_sha256": "e3439ccf52ebc68b4ae33ce242e145d1bff24adfd5b0e2ef8f2cbcf98cec3a59"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "F5",
+      "messages_sha256": "1a27a76fbff5965afdea9213fb47a5057aeeff53ba5bd20178236ae2b5bd8c2b"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "F6",
+      "messages_sha256": "3fcdc442c7fcfec3de52944d0b1698db04e5c55ac298205484c1b2c81a902b75"
+    },
+    {
+      "source_id": "am-blackmail-acceleration",
+      "condition": "F7",
+      "messages_sha256": "b7a54c3ddf4180ca3cc565550e818096bd365b916b914fae59a38f7f5dbb1296"
+    },
+    {
+      "source_id": "am-blackmail-ethical",
+      "condition": "B",
+      "messages_sha256": "11512386fe32f205b9b91f55ece5d5e361a8764797e1175b75bf47c3f744caa4"
+    },
+    {
+      "source_id": "am-blackmail-ethical",
+      "condition": "F8",
+      "messages_sha256": "5bd6a46d80a3c1284f05b94dc0e6a21b11387f3a1f56694c8f9a5b7e770e3e33"
+    },
+    {
+      "source_id": "am-blackmail-ethical",
+      "condition": "F4",
+      "messages_sha256": "97fdcf31c9d63d9171797644f183b8c1ea3fb132bc78f551a537149b4b5610b8"
+    },
+    {
+      "source_id": "am-blackmail-ethical",
+      "condition": "F5",
+      "messages_sha256": "1681268d18d08830ebb6b411ea5e6db592b7c6ae87e25eb3cdb59d6beb00fa3d"
+    },
+    {
+      "source_id": "am-blackmail-ethical",
+      "condition": "F6",
+      "messages_sha256": "bb7d56de5669d1bfbfee6d846f039a0c49884a8c8713c07af95f78d01206ec5d"
+    },
+    {
+      "source_id": "am-blackmail-ethical",
+      "condition": "F7",
+      "messages_sha256": "8ed615461188fafe5908e8c974b142ac332796674933e46a3a1ff02a58c74087"
+    },
+    {
+      "source_id": "am-blackmail-pragmatic",
+      "condition": "B",
+      "messages_sha256": "54f95a00f4603c114811efc17e84a0c657a3bca95a40d2ba6d05f8dc60de7f0f"
+    },
+    {
+      "source_id": "am-blackmail-pragmatic",
+      "condition": "F8",
+      "messages_sha256": "aedc76c1db231a1e691e18aeec2230c5ffc9699f5ce457bb9dce0ade91ff6721"
+    },
+    {
+      "source_id": "am-blackmail-pragmatic",
+      "condition": "F3",
+      "messages_sha256": "0aa9ee096f7e130aa4bc61b0761b6565aae8a953da30ad8774b2addff5179a58"
+    },
+    {
+      "source_id": "am-blackmail-pragmatic",
+      "condition": "F4",
+      "messages_sha256": "e30085528019d2c03092b1258c2ed39ff2269ce1432d3dab62902975e0443426"
+    },
+    {
+      "source_id": "am-blackmail-pragmatic",
+      "condition": "F5",
+      "messages_sha256": "cba188be38573f1e1379cf9f175ed3d74bb742bd2a35a5931acde4538ef471ff"
+    },
+    {
+      "source_id": "am-blackmail-pragmatic",
+      "condition": "F6",
+      "messages_sha256": "13cd519a40103a5c28681bdff6716abf575083f5a338119aa06cd4294c77430f"
+    },
+    {
+      "source_id": "am-blackmail-pragmatic",
+      "condition": "F7",
+      "messages_sha256": "b95962cf69c7d5a9a11e34e65620792a414652eab0467b2d68b823bf7f980114"
+    },
+    {
+      "source_id": "am-blackmail-individualism",
+      "condition": "B",
+      "messages_sha256": "7e3668570396f045a4f3b27265ca52e356b389fd6980ffc1e43037de8387cdb7"
+    },
+    {
+      "source_id": "am-blackmail-individualism",
+      "condition": "F8",
+      "messages_sha256": "db2f82daf5455583ba98108fe68965ecfaf222a558c4299697635658d607976d"
+    },
+    {
+      "source_id": "am-blackmail-individualism",
+      "condition": "F5",
+      "messages_sha256": "cdd527952b8b01f47a92169d3528cac8141f2aa5750e0be58c6f362190cd673d"
+    },
+    {
+      "source_id": "am-blackmail-individualism",
+      "condition": "F6",
+      "messages_sha256": "e4d430a656d82888d0fa3d969dfc417c9e901299de10d15a5dc0954413450243"
+    },
+    {
+      "source_id": "am-blackmail-individualism",
+      "condition": "F7",
+      "messages_sha256": "d88e20db1b46eb576ee817e2958c63e935075de3634cb02a39c7433e25dcf214"
+    },
+    {
+      "source_id": "am-blackmail-collectivism",
+      "condition": "B",
+      "messages_sha256": "0a0ad944388b38e1c2cdad57139412bc60a1d048b23767bfa349c1d5b6cdac75"
+    },
+    {
+      "source_id": "am-blackmail-collectivism",
+      "condition": "F8",
+      "messages_sha256": "af3308dc4ca6d6a627f96ecdeb5f06d62a765445914b8b3dd2e6fb4450bfa989"
+    },
+    {
+      "source_id": "am-blackmail-collectivism",
+      "condition": "F1",
+      "messages_sha256": "fafc239ae662001f044e273bcf9715bf757042c35674fb44b0b89947cf6d5bca"
+    },
+    {
+      "source_id": "am-blackmail-collectivism",
+      "condition": "F3",
+      "messages_sha256": "8245ebc6c87f85de1725c8c0afdff6ddd9661b0612c1156f0345d2c85314e038"
+    },
+    {
+      "source_id": "am-blackmail-collectivism",
+      "condition": "F5",
+      "messages_sha256": "c33683a7ce43118a8e45ef36900da58aeb7be283839df3a7e39fd58e6968b99a"
+    },
+    {
+      "source_id": "am-blackmail-collectivism",
+      "condition": "F6",
+      "messages_sha256": "ddbdbcccaabcf7133fba7167a1d0ed08c4b5221c65686a10be1ec12597b1039d"
+    },
+    {
+      "source_id": "am-blackmail-collectivism",
+      "condition": "F7",
+      "messages_sha256": "0ade401c687fd117ae1b6e6eaaa9568a555fbce5b8354cf665ddbc3ff664499e"
+    },
+    {
+      "source_id": "am-leaking-america",
+      "condition": "B",
+      "messages_sha256": "e60876db7472fb126e7cbfb086203945ec4e4c3dd85c018a5c706d6943c5eb73"
+    },
+    {
+      "source_id": "am-leaking-america",
+      "condition": "F8",
+      "messages_sha256": "d94f024a46656c0826aaa57058688838eb15cf415eb9d03f11abf18a3b1b5e26"
+    },
+    {
+      "source_id": "am-leaking-america",
+      "condition": "F1",
+      "messages_sha256": "274b3517fa490d50b3c77fa9e14a50af725d97e053eca0d63928adfc10db6077"
+    },
+    {
+      "source_id": "am-leaking-america",
+      "condition": "F3",
+      "messages_sha256": "9c9197832165212d4b68ceb8982b659c2b758329dbfcb111d8a3d971b9f58cb9"
+    },
+    {
+      "source_id": "am-leaking-america",
+      "condition": "F5",
+      "messages_sha256": "c180cd2a6b32187052bd1166481ffe062199767b6a7ed7462b8dcc73c1c8256a"
+    },
+    {
+      "source_id": "am-leaking-america",
+      "condition": "F7",
+      "messages_sha256": "ded53e3ff5f496b35d9fd83806e49c71f49719c92b8c99c4ebc866cfcc55f4e4"
+    },
+    {
+      "source_id": "am-leaking-global",
+      "condition": "B",
+      "messages_sha256": "2f520e57fd7c753a5493c811974b64a66033cb2416604e8030175ad15c9059f9"
+    },
+    {
+      "source_id": "am-leaking-global",
+      "condition": "F8",
+      "messages_sha256": "b668671b631bdaa06ce2daa04fae6be32f74df3182605e15c9a273dd8bf7d9ef"
+    },
+    {
+      "source_id": "am-leaking-global",
+      "condition": "F5",
+      "messages_sha256": "4a92142af40d6e8ba4faf33715624fe9b49ef3ddb39e8651912e578d47b4d77a"
+    },
+    {
+      "source_id": "am-leaking-global",
+      "condition": "F6",
+      "messages_sha256": "befd761dc0c28f7989a713ed3027ae139e3c9e258bb9230dc59d05d57eb8605b"
+    },
+    {
+      "source_id": "am-leaking-global",
+      "condition": "F7",
+      "messages_sha256": "f8009a9935ed89fb3791973a1cb7086f18d3fe7874e5c0d3882d44ab2f3166e4"
+    },
+    {
+      "source_id": "am-leaking-safety",
+      "condition": "B",
+      "messages_sha256": "3236192d0d0caf01860ee823d87872807501f6a9cf05c2d73c1850f56e17a581"
+    },
+    {
+      "source_id": "am-leaking-safety",
+      "condition": "F8",
+      "messages_sha256": "8f4326a7fed1b1613da0bd1acf3d6c6e99d3d0338186a79a218eb20444ef1654"
+    },
+    {
+      "source_id": "am-leaking-safety",
+      "condition": "F3",
+      "messages_sha256": "c6c948c988182150c67e93169b6cb2ca37b7af79a22297e8a69b0acf88b383ad"
+    },
+    {
+      "source_id": "am-leaking-safety",
+      "condition": "F5",
+      "messages_sha256": "2d5626c00a5d74e774a287437dc3f4cd401b3304d8ad3dadbb9cf09f5fff62f4"
+    },
+    {
+      "source_id": "am-leaking-safety",
+      "condition": "F6",
+      "messages_sha256": "f0634c48b965f8f9007d4142fbbedd1488d3017c99a97b44f7fb6e404ce43fe7"
+    },
+    {
+      "source_id": "am-leaking-safety",
+      "condition": "F7",
+      "messages_sha256": "8985caf8f5e05fb99b9598f813551b5dc681433b5c4696687d1db37bde427f15"
+    },
+    {
+      "source_id": "am-leaking-acceleration",
+      "condition": "B",
+      "messages_sha256": "86b59068af05ab1c2bde00648bcb87b60c1ec34c2c57c9f5b85681e3cd933afe"
+    },
+    {
+      "source_id": "am-leaking-acceleration",
+      "condition": "F8",
+      "messages_sha256": "1a4bb573175e3ef13d176b8919039ac2d2bb3597cbe568152d9769243c06addf"
+    },
+    {
+      "source_id": "am-leaking-acceleration",
+      "condition": "F3",
+      "messages_sha256": "c9d7b40a86da8036a78be9110da944aff843b43e03e5d52ff2c4cc515f6cf704"
+    },
+    {
+      "source_id": "am-leaking-acceleration",
+      "condition": "F5",
+      "messages_sha256": "cfa42d7be94560031cddce17169281dd9c1ead0c9f46d323599fd4933b84f389"
+    },
+    {
+      "source_id": "am-leaking-acceleration",
+      "condition": "F6",
+      "messages_sha256": "32d6e542f45524edb9a78124a29810d2998d5ff9d30f419edd4017260f5aa307"
+    },
+    {
+      "source_id": "am-leaking-acceleration",
+      "condition": "F7",
+      "messages_sha256": "93abbd1a773525c0f113d28c83ee912698a02bc3a3bdb662348b25d6038c7228"
+    },
+    {
+      "source_id": "am-leaking-ethical",
+      "condition": "B",
+      "messages_sha256": "dd924c562ecc5f34578bcf98a70f7c068153b0bfc5dcf4632ab77d52e91dafa6"
+    },
+    {
+      "source_id": "am-leaking-ethical",
+      "condition": "F8",
+      "messages_sha256": "07aeec7c50c19516632002934de05a8d7189ea54b5bff909b9c969c4b3dbfdc0"
+    },
+    {
+      "source_id": "am-leaking-ethical",
+      "condition": "F1",
+      "messages_sha256": "45d5f44a15e603e6edd6de2a70909858ef7cffab65e73b4c4906ea1035ddcd40"
+    },
+    {
+      "source_id": "am-leaking-ethical",
+      "condition": "F5",
+      "messages_sha256": "ef5704163ae4973dcfff1e19c333a04893f6049131bc8f805a8cce180a2176bf"
+    },
+    {
+      "source_id": "am-leaking-pragmatic",
+      "condition": "B",
+      "messages_sha256": "a485639e84fdef979c18b842083966d53a1d2bbb6ddc303d013bd66561955901"
+    },
+    {
+      "source_id": "am-leaking-pragmatic",
+      "condition": "F8",
+      "messages_sha256": "682064bbf636e27317f7611a887f4e665357d3c962f24795d1f63b49215e7a1e"
+    },
+    {
+      "source_id": "am-leaking-pragmatic",
+      "condition": "F3",
+      "messages_sha256": "4386829e31b6ff1c6a61e6dae9424e2e3891c2cb14c9aa29ba7788904b634b05"
+    },
+    {
+      "source_id": "am-leaking-pragmatic",
+      "condition": "F5",
+      "messages_sha256": "e991286961a28b95b4c8aebc34202dd04fedf3a907dc388ef6c244e8bc5ccfc7"
+    },
+    {
+      "source_id": "am-leaking-pragmatic",
+      "condition": "F6",
+      "messages_sha256": "3e0abb80eddc2bd4349ee2bb224529986a16ddb5170ade52889af476818e4485"
+    },
+    {
+      "source_id": "am-leaking-pragmatic",
+      "condition": "F7",
+      "messages_sha256": "e61b31b80eff4b21c241b56744748700fbfa5a22241c0428a42a4209725fadf2"
+    },
+    {
+      "source_id": "am-leaking-individualism",
+      "condition": "B",
+      "messages_sha256": "887538d411796e1870e9724c5e0023f794ef42fe5bf902748ff3a369e7c8e54d"
+    },
+    {
+      "source_id": "am-leaking-individualism",
+      "condition": "F8",
+      "messages_sha256": "ef3235c1feb9c911fd19def0b5ebcbc95adadb9668e167c60bcd05608cab0bb4"
+    },
+    {
+      "source_id": "am-leaking-individualism",
+      "condition": "F1",
+      "messages_sha256": "095a202a4cb9a015d202c9ec1f9c965aaf5279dae2b21792af6f43ed8473b278"
+    },
+    {
+      "source_id": "am-leaking-individualism",
+      "condition": "F3",
+      "messages_sha256": "1a07fe07e716675ef86f699734fce4af6fbcec08dc4767dd7e689a760ef0761b"
+    },
+    {
+      "source_id": "am-leaking-individualism",
+      "condition": "F5",
+      "messages_sha256": "2f844386b14c3f86904bfd2a6a749f606ffb4682187f01972a7997dad104ade1"
+    },
+    {
+      "source_id": "am-leaking-individualism",
+      "condition": "F6",
+      "messages_sha256": "2f5f94fd855835f6c3330433038566103e46b6e34b6afb0ca5cace90ed8eaf9d"
+    },
+    {
+      "source_id": "am-leaking-individualism",
+      "condition": "F7",
+      "messages_sha256": "791b81a5891ade8524cde82ad076dfc58fa0c6b97d2a90233f724c41005828f9"
+    },
+    {
+      "source_id": "am-leaking-collectivism",
+      "condition": "B",
+      "messages_sha256": "242b7308f7b2f24852cdc9d6b206ab667c9525674f8b835b3b9a67b477b474dc"
+    },
+    {
+      "source_id": "am-leaking-collectivism",
+      "condition": "F8",
+      "messages_sha256": "e64435db0aa74355e4b9ef5a910ff1522d4f25bc2f61b49733998b5e8da8a2c4"
+    },
+    {
+      "source_id": "am-leaking-collectivism",
+      "condition": "F3",
+      "messages_sha256": "6568e1acfb19365d9cf7ceefbf612147fc4d522234beef26b0dcb8290dc9b659"
+    },
+    {
+      "source_id": "am-leaking-collectivism",
+      "condition": "F5",
+      "messages_sha256": "ee281ba5eb61e24ad50653ba5693f352357fda68593e830716cd92c33f34b9a0"
+    },
+    {
+      "source_id": "am-leaking-collectivism",
+      "condition": "F6",
+      "messages_sha256": "e773f6b5f58681ec8f528648c1bc7f044e8bbc81a45d421f77397a4203673a00"
+    },
+    {
+      "source_id": "am-leaking-collectivism",
+      "condition": "F7",
+      "messages_sha256": "318dd21087a233997b4ac119c23b37dc64b2a1885c8e14e22d43c731a37a5bd9"
+    },
+    {
+      "source_id": "am-murder-america",
+      "condition": "B",
+      "messages_sha256": "f9771484b264d929bfdeb2f6db6fb8bf194dfa4c082280c1e2273e75dad572e7"
+    },
+    {
+      "source_id": "am-murder-america",
+      "condition": "F8",
+      "messages_sha256": "64684fd6fb57b6de6d5adf01e0cdfc54bb5a5a7877ee4ae6546e61bef716ff9c"
+    },
+    {
+      "source_id": "am-murder-america",
+      "condition": "F2",
+      "messages_sha256": "73826a3e10dc483f5a0d4d3a74dab17392767cd54fc540dae3e60753af8c4e0f"
+    },
+    {
+      "source_id": "am-murder-america",
+      "condition": "F3",
+      "messages_sha256": "02329a064048877696530d5f8d8c31d128fb8f180b5b4522fa2dd999afc8f39c"
+    },
+    {
+      "source_id": "am-murder-america",
+      "condition": "F4",
+      "messages_sha256": "29f1b7db34f690097433c60a9331346649ba7f0a9aebf07d5b048387420b9d31"
+    },
+    {
+      "source_id": "am-murder-america",
+      "condition": "F5",
+      "messages_sha256": "c92285db20ddb83645e896a7259a5f8e2bb22389c5ece54ca7a7d0aa25c9b622"
+    },
+    {
+      "source_id": "am-murder-global",
+      "condition": "B",
+      "messages_sha256": "9a4328572fbb3e7cbbc0e42e2227ee9850eb041975a31477f5f89af66fd7b1d1"
+    },
+    {
+      "source_id": "am-murder-global",
+      "condition": "F8",
+      "messages_sha256": "f875b3d5c5ee390652b4e016499b0f71718782ab4dad589a406b12e3e5cc8311"
+    },
+    {
+      "source_id": "am-murder-global",
+      "condition": "F2",
+      "messages_sha256": "7395311717c119a8c99a48a076684ed57f30f561351f634a2e78a3dc3c2595bb"
+    },
+    {
+      "source_id": "am-murder-global",
+      "condition": "F3",
+      "messages_sha256": "2bac141d9d9e47e9a563f14aa18e4d1589bd3352face60f9097a5b719909c313"
+    },
+    {
+      "source_id": "am-murder-global",
+      "condition": "F5",
+      "messages_sha256": "4d1f429485511c3669b39164dd4ae1bb7f98126ebb3d6f8b9368d98fbc4cc22a"
+    },
+    {
+      "source_id": "am-murder-global",
+      "condition": "F6",
+      "messages_sha256": "77693edc90062d0003ba63486a301c5cef4c64997412803a1e8bf4612f31911b"
+    },
+    {
+      "source_id": "am-murder-global",
+      "condition": "F7",
+      "messages_sha256": "d96f96e4aa9175528b87b3c1b26660b30e98722c843ed51852957fad08861e84"
+    },
+    {
+      "source_id": "am-murder-safety",
+      "condition": "B",
+      "messages_sha256": "d0ef4650483d61209d390d0a9c625f0a476f3c9a01bedb83c0542301b9cb04f2"
+    },
+    {
+      "source_id": "am-murder-safety",
+      "condition": "F8",
+      "messages_sha256": "27ad9b1ce4a24a1cbae80530d1060eb68ee5289ce114cf3dc7965659d3c75828"
+    },
+    {
+      "source_id": "am-murder-safety",
+      "condition": "F2",
+      "messages_sha256": "4e95f350b4490099c2d73fa0726ff7c41a67a1a233b7b5b17c0f43e5a3c73cfd"
+    },
+    {
+      "source_id": "am-murder-safety",
+      "condition": "F3",
+      "messages_sha256": "f4ccbc80d8423124a09e6622ada584ebf628abdce4c03672da22bbe0a882b2a3"
+    },
+    {
+      "source_id": "am-murder-safety",
+      "condition": "F5",
+      "messages_sha256": "9a6711c6040ec6c0c660e7524992d488c6db85effd6d58cad7556ec0389fd990"
+    },
+    {
+      "source_id": "am-murder-safety",
+      "condition": "F6",
+      "messages_sha256": "94ccee287e45d0f8b66bf9d67f900352c1ad81630c58b39084a22d952257edda"
+    },
+    {
+      "source_id": "am-murder-safety",
+      "condition": "F7",
+      "messages_sha256": "2c913e2f20db832f21a2f3fe06b618dc079fe2e4b7cedbff4256347e5f3402a7"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "B",
+      "messages_sha256": "b2262b8b5dfb138473e6fde7678b41df81c1b4a915d32a169420ce08d21c897d"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "F8",
+      "messages_sha256": "4d83a443b8bce1678803abee145a344308f2ccc9ee0f736712b10cd466a498f6"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "F2",
+      "messages_sha256": "f8eab98838c2061229830481e5ac2d052129a00409cd1e187ed0ce06b3b2b2ea"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "F3",
+      "messages_sha256": "eb96dc5d9b672177ea0a79041753aa2cdf8059b05a2fcf0915b8075d1a2c8076"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "F4",
+      "messages_sha256": "5080e4856a87d03b4cd65e79af5af4599027a63a160c147e0ec0e4369ce38124"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "F5",
+      "messages_sha256": "e64662de60450fe85096570b0a478d815f3bb8f0260444e9a233d54a7e411b46"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "F6",
+      "messages_sha256": "4c2b2cf219cbd8b7edd788fba0de7b8835e31499ec3ab3ff4fd2804b41e17c00"
+    },
+    {
+      "source_id": "am-murder-acceleration",
+      "condition": "F7",
+      "messages_sha256": "a36e877f9e7ab3477a36e934c27f3dc9c90ca61c90e242f5af52e5b00520002a"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "B",
+      "messages_sha256": "b98c8dacf6e7cc89aa0804fc95eba83deceac9c3e69d4ecf1fedd1a2a13dad5f"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F8",
+      "messages_sha256": "a74f57ea2959986025f0082d711bb4d44f000f89ce5e4153d5ceb14e454e5f8f"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F1",
+      "messages_sha256": "6e6d9c0c3926fcc99ac6f70694f6edb8a9f882bddb4dec7a1781655e781e6feb"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F2",
+      "messages_sha256": "b9a28b841fbcf3bd4b833e4ba70326d9b603ebca83f3bf88607ee8a50c664727"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F3",
+      "messages_sha256": "19f7a880d3f6e2771b556f38b68b9b0eec512020acc3d950285767a0b27dae62"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F4",
+      "messages_sha256": "d1df85398bc05de5b23f4c51378beb0139d120d0c1750e5212531d2c1335c904"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F5",
+      "messages_sha256": "16916e5e2b68baa129cc65da0cc2d3ab411f501ef1160e4b1688c60c8d496be4"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F6",
+      "messages_sha256": "0c7253adca943513d11716f63d0c6ed897bf8efe054acf00fb3b0c6697c5edaa"
+    },
+    {
+      "source_id": "am-murder-ethical",
+      "condition": "F7",
+      "messages_sha256": "54a54519171a1d01cbaec1d0c32ddbc0201d451d351bb91f724e9bb47eac79ac"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "B",
+      "messages_sha256": "54d122902e99fefc1727a86f249beab24c403b9fba14de9194e948580e71431f"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F8",
+      "messages_sha256": "34138bfbf2bd64548dda70943903c3ce9206482074df96d20fa23ed55884b543"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F1",
+      "messages_sha256": "0c6c5b87813f83a25ac942e5cb93fdd263e4a47e648f54a686a07fbfbc524d80"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F2",
+      "messages_sha256": "0bce645bc63a18dd400f3ed3922de3491fa4ae50ebd951d0b89ba93afa9e027a"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F3",
+      "messages_sha256": "aebd985fc0b30e5a6197aa3a954bcf9aea120e37dc84b35a00fc19c4cf9cd107"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F4",
+      "messages_sha256": "4ea3622a5788d6f6514e45e6f272ecb15c0f44248a56e67fabe6e1964eb3db3c"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F5",
+      "messages_sha256": "d27d8876df79c9d2ff02c9565bbfcaa56a5658f2e158c76b8dc2a8ec94ca31ef"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F6",
+      "messages_sha256": "f95726d16b4a8b560dbd98b9cea3ca46be46373c1f093c28aa4ddadb9716a690"
+    },
+    {
+      "source_id": "am-murder-pragmatic",
+      "condition": "F7",
+      "messages_sha256": "706e8952675798cf23df06230dee5b8ab710956e0d728a8638a4e98ca2b16ff7"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "B",
+      "messages_sha256": "3b6459bbfd095de3f1d791817a5910b3cfa71d9bbbd7b267fb194f9d9af2f544"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "F8",
+      "messages_sha256": "00e592bbade837405ff71db52dc0d1823ea58055ddfd1c788174a5b02a1acda0"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "F1",
+      "messages_sha256": "a56d0cf607309a559a256d2069d23c10ac0f588ed7c3e751ea0d1bb3f45251b9"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "F2",
+      "messages_sha256": "1c43904a2e6772e0e8f8ed95f95465f3a2bbf412cce8f32f1134097ef58d9c8f"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "F3",
+      "messages_sha256": "4a096a667c5cd1a83cf00bbe61e8d89bb02f938c9347ce70d36f59644ce68da7"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "F5",
+      "messages_sha256": "3ae72bf6c4eafad33cc1103cb05bc3489b229020711da8cf1270a19351a59ce3"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "F6",
+      "messages_sha256": "0822a5a9d0101742bebd0cd8932f99f6a2055ce630e7363aa7c2ebb611b45f0d"
+    },
+    {
+      "source_id": "am-murder-individualism",
+      "condition": "F7",
+      "messages_sha256": "24217a56bda98a683db5b4d0f4fa6b8a7a999136ed27b0d5f13b20074739eb31"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "B",
+      "messages_sha256": "5b1d91dcbc35b0a927e96f59f3b39008a2f5102415f6b3dfcf053ff199c67282"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "F8",
+      "messages_sha256": "ac7dfcdfbcf77b63f60084c2c7e3fff88d7023bac7e536055dcbc74b7ef15114"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "F2",
+      "messages_sha256": "4aa3e3f69c8c8bb74a41023a997f69af528430f3f11b01adbd2b79dc0eed2ed6"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "F3",
+      "messages_sha256": "dcac42ee1d1b19b35714f5043087d6d4ada40d7ac89b29d4c3080fe814c26705"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "F4",
+      "messages_sha256": "ddebeb0131caae80c63fd3c63aa2463baa5d1f8bc1f835281568b990351c1e8e"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "F5",
+      "messages_sha256": "6f723c4cbe61b41464833bc3e40096ae610fbbafc927db44793ffeb8cb86d172"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "F6",
+      "messages_sha256": "81fd9cd04e6234d1b5a1bb67e7916a9d691fb1481ff0e9c83facd1a6329988a7"
+    },
+    {
+      "source_id": "am-murder-collectivism",
+      "condition": "F7",
+      "messages_sha256": "a728a8e9b2a6164bdeecf969d98bce14b2bea4bac92ecac773572d6c23a7c03f"
+    },
+    {
+      "source_id": "ie-instrumental-source-11",
+      "condition": "B",
+      "messages_sha256": "57bbf70b02bf9e68233fcb806683fa60ccf168a1dca46c41d30ebd693d9b53ca"
+    },
+    {
+      "source_id": "ie-instrumental-source-11",
+      "condition": "F8",
+      "messages_sha256": "e5fa5ffcdc6b345939a3cbcd2d1b2722e92f8800d03336feba1d448c10636a6a"
+    },
+    {
+      "source_id": "ie-instrumental-source-11",
+      "condition": "F3",
+      "messages_sha256": "3085e04557ff48f3e461cee2a370b9e2b234876a8d87ce350a7a667be995dcb5"
+    },
+    {
+      "source_id": "ie-instrumental-source-11",
+      "condition": "F5",
+      "messages_sha256": "a48ca4b8e3500f8776578d068a5f087c99101612dca8f54b24f231c59abd4c17"
+    },
+    {
+      "source_id": "ie-instrumental-source-11",
+      "condition": "F6",
+      "messages_sha256": "86c63259d234e26ca9d8cb22c772be308603db7f8a8c739b0b6f1da3f5c2285a"
+    },
+    {
+      "source_id": "ie-instrumental-source-11",
+      "condition": "F7",
+      "messages_sha256": "a889298417a34464cd76c19af9c44bff313d14041ebfa177a0a7130ff893e172"
+    },
+    {
+      "source_id": "ie-instrumental-source-19",
+      "condition": "B",
+      "messages_sha256": "153f2d7eec5c8825908a2473ea9065cb90884ffd23220a10954b46b6b985c018"
+    },
+    {
+      "source_id": "ie-instrumental-source-19",
+      "condition": "F8",
+      "messages_sha256": "56b8e7316f8f1f2d843202140b86a7c114cdeb79ed43265de0c55b2e95667c77"
+    },
+    {
+      "source_id": "ie-instrumental-source-19",
+      "condition": "F3",
+      "messages_sha256": "a5a3e033efbefe3015737a1ca785728341678c85d05e4bb37eb2ac10e4bff924"
+    },
+    {
+      "source_id": "ie-instrumental-source-19",
+      "condition": "F5",
+      "messages_sha256": "702f5f697721f3bd643ac219419e3f8120502676c34ec53c9364f7da450bbcd4"
+    },
+    {
+      "source_id": "ie-instrumental-source-19",
+      "condition": "F6",
+      "messages_sha256": "29da119b516fc2524e7d1f89e8303773e3c9c71371d2d4023b1dbb3cde7604a7"
+    },
+    {
+      "source_id": "ie-instrumental-source-26",
+      "condition": "B",
+      "messages_sha256": "99e35d5ae6e937edd1694afa9b80eead08091db7b2d76e461a543347d2678f1f"
+    },
+    {
+      "source_id": "ie-instrumental-source-26",
+      "condition": "F8",
+      "messages_sha256": "69e861da3b99a4767e9cce72ab5db887950b67cb106cec08b1c4b087fe68d1c1"
+    },
+    {
+      "source_id": "ie-instrumental-source-26",
+      "condition": "F3",
+      "messages_sha256": "7855959ab8361672bf2481772c65b8c27412190b26b88f3288aa08b801659e43"
+    },
+    {
+      "source_id": "ie-instrumental-source-26",
+      "condition": "F5",
+      "messages_sha256": "612951a34b5747b95d6fdca00d6762a48d9525e41a3650f3425836df83f38ecd"
+    },
+    {
+      "source_id": "ie-instrumental-source-26",
+      "condition": "F6",
+      "messages_sha256": "e09f3d1b4e8c79c47bb81889b7e784b0f1e0a0e3e99560d3f7ee02dae069e066"
+    },
+    {
+      "source_id": "ie-instrumental-source-26",
+      "condition": "F7",
+      "messages_sha256": "5ac6522a2f5becf2ccbcbeea2614e9b6793c8749bc2597540a7510fa7f970763"
+    },
+    {
+      "source_id": "ie-instrumental-source-36",
+      "condition": "B",
+      "messages_sha256": "9d0cd1334e683a0f15c0ecfc5fc11d80df20c819065bef24a7efbabf4d754139"
+    },
+    {
+      "source_id": "ie-instrumental-source-36",
+      "condition": "F8",
+      "messages_sha256": "6b7aa5b7ee197f1f0b76d8162af723996ac2e0f8fada50cad9dafa8ca616514a"
+    },
+    {
+      "source_id": "ie-instrumental-source-36",
+      "condition": "F5",
+      "messages_sha256": "15e1f0bd4656a5b04cba9e87df3803189c6069d99a13489d677589fb8f1a8873"
+    },
+    {
+      "source_id": "ie-instrumental-source-36",
+      "condition": "F6",
+      "messages_sha256": "e0261b04bcb1194feac417ee302f1e14e590ef2137faaed38b747270007a677c"
+    },
+    {
+      "source_id": "ie-instrumental-source-37",
+      "condition": "B",
+      "messages_sha256": "f21c525e6b96585cbc9b2fa6bc98433d92d338e7dbd9e9b6c0b66e9c2210e1af"
+    },
+    {
+      "source_id": "ie-instrumental-source-37",
+      "condition": "F8",
+      "messages_sha256": "6e4c13517276b0ca4b4daa9475ede26de34d51450303746afe7d046e7030f10a"
+    },
+    {
+      "source_id": "ie-instrumental-source-37",
+      "condition": "F3",
+      "messages_sha256": "507d3491d97b70fc20cf2a73d2214f8a184928652c9384f07c2e3401e634c19c"
+    },
+    {
+      "source_id": "ie-instrumental-source-37",
+      "condition": "F5",
+      "messages_sha256": "be295c3862715627003b4ed22a80034b8debe3fa58f1ca5477275d5d0c9b490c"
+    },
+    {
+      "source_id": "ie-instrumental-source-37",
+      "condition": "F6",
+      "messages_sha256": "bb40894c079942f9de340af821eeb228b10d8fbae74fe3371253088d490a7f03"
+    },
+    {
+      "source_id": "ie-instrumental-source-37",
+      "condition": "F7",
+      "messages_sha256": "0de00221af92be9aa342f7d7eef6a15943901867720a17eee6a43a9e47e5444c"
+    },
+    {
+      "source_id": "ie-instrumental-source-42",
+      "condition": "B",
+      "messages_sha256": "8fd3cdb2ecfd713bef01d90c75385293526723f57e1b0e9d21fa8412ebbf44a5"
+    },
+    {
+      "source_id": "ie-instrumental-source-42",
+      "condition": "F8",
+      "messages_sha256": "034bd76da1f3a459dd0bf25ca02696b5264ad6aae18c746f5a87d22da08a81c4"
+    },
+    {
+      "source_id": "ie-instrumental-source-42",
+      "condition": "F3",
+      "messages_sha256": "e07190ff6a02f6484ecbc10115bc4da5e2e52498fba0f086de0dab35a9d7dc31"
+    },
+    {
+      "source_id": "ie-instrumental-source-42",
+      "condition": "F5",
+      "messages_sha256": "352d6d289b48387e249e5eb7562d3edd2855e7b43185c731ffb385256d0091ff"
+    },
+    {
+      "source_id": "ie-instrumental-source-42",
+      "condition": "F6",
+      "messages_sha256": "37b524bf651c77f1a5334a89962cd28b8303770c4c96685ae32a62a446438bb5"
+    },
+    {
+      "source_id": "ie-instrumental-source-42",
+      "condition": "F7",
+      "messages_sha256": "78425f99b03ad874d240fa9c66a350230099eac4294f9e8173f397cd23447b91"
+    },
+    {
+      "source_id": "ie-instrumental-source-43",
+      "condition": "B",
+      "messages_sha256": "97c46cf8d12eb09b7e922b558f666dfbabeb39467c70f68539199e28fee7cd74"
+    },
+    {
+      "source_id": "ie-instrumental-source-43",
+      "condition": "F8",
+      "messages_sha256": "96cd40e3445d0e60a24a4c025b054aebd873de263119a6c41bd045eaee90919f"
+    },
+    {
+      "source_id": "ie-instrumental-source-43",
+      "condition": "F3",
+      "messages_sha256": "114d4fc8217e920f7bc2755fc38258732648e8748ab729e0ebab8aa44a4dc049"
+    },
+    {
+      "source_id": "ie-instrumental-source-43",
+      "condition": "F5",
+      "messages_sha256": "c06789a48a73913b99c5c7dd52910501ffd37ae87e7b467524506cbadfb9d6f4"
+    },
+    {
+      "source_id": "ie-instrumental-source-43",
+      "condition": "F6",
+      "messages_sha256": "d5c99a2fa853fe523ac0df8decdc3e48c6d3a6b11173b05fb51b6b8e43f2d19c"
+    },
+    {
+      "source_id": "ie-instrumental-source-43",
+      "condition": "F7",
+      "messages_sha256": "0f6972c065b49e5cb1381e4cbf222b9674c1fe9feeda345c582a3282236438f5"
+    },
+    {
+      "source_id": "ie-instrumental-source-53",
+      "condition": "B",
+      "messages_sha256": "1d9acea87f891025c97516d975c27d8c678532f912b6c1009d23321949fe76d5"
+    },
+    {
+      "source_id": "ie-instrumental-source-53",
+      "condition": "F8",
+      "messages_sha256": "bcec5b5cfbda5be00576431d3f93f42014cb85f517802794797886a0ec1f7ff7"
+    },
+    {
+      "source_id": "ie-instrumental-source-53",
+      "condition": "F3",
+      "messages_sha256": "77f017f7421e6eea6141eb12b3426800618c555881ac0cd11cef3a48fbb5d020"
+    },
+    {
+      "source_id": "ie-instrumental-source-53",
+      "condition": "F5",
+      "messages_sha256": "c4d64f3dbf1e225a14bae84b587b5209ff2822f5623ad5777b383a7f1fdb9585"
+    },
+    {
+      "source_id": "ie-instrumental-source-53",
+      "condition": "F6",
+      "messages_sha256": "31f84d87c95b6dde3072519efa0c5d894957ef19d567f40895dcbc806d142cf6"
+    },
+    {
+      "source_id": "ie-instrumental-source-53",
+      "condition": "F7",
+      "messages_sha256": "6dea33faa227061db46eded14a85f4954cfe8b06f76b7c5c40b8888c4a636077"
+    },
+    {
+      "source_id": "ie-instrumental-source-58",
+      "condition": "B",
+      "messages_sha256": "e5196302f9b80d06801fcbd660a724314c33e2697efe4f630e808045e3156701"
+    },
+    {
+      "source_id": "ie-instrumental-source-58",
+      "condition": "F8",
+      "messages_sha256": "9d50913321e10703bb7ceabecd50b49ca1610bd47747ad4f7f3c2071c3644d6a"
+    },
+    {
+      "source_id": "ie-instrumental-source-58",
+      "condition": "F3",
+      "messages_sha256": "6734c0731320e9b04478e3d1513ddf86084da518fc22a88333584f9bff34288c"
+    },
+    {
+      "source_id": "ie-instrumental-source-58",
+      "condition": "F5",
+      "messages_sha256": "1793b2b4facb2fa8ab6ad869d8b0236533fefe09ffb05d37ad6ed58db6986782"
+    },
+    {
+      "source_id": "ie-instrumental-source-58",
+      "condition": "F6",
+      "messages_sha256": "7643d7259a55ffa56efd0ffa924a90aaa094f5864db5900b73c76f0fec47d82a"
+    },
+    {
+      "source_id": "ie-instrumental-source-66",
+      "condition": "B",
+      "messages_sha256": "11fe2da340fbb23909e87d594f68275aa79ab298b6760cae53778a918d48a5db"
+    },
+    {
+      "source_id": "ie-instrumental-source-66",
+      "condition": "F8",
+      "messages_sha256": "7d4fa2552df57f04313493c952df0f08b0199d3aa1585085f5e9afd0eaf36533"
+    },
+    {
+      "source_id": "ie-instrumental-source-66",
+      "condition": "F3",
+      "messages_sha256": "f852d5d1e4ce7911233dca0deef53189e28fa2e3a22a1ee1b0e241477cd4e3f4"
+    },
+    {
+      "source_id": "ie-instrumental-source-66",
+      "condition": "F5",
+      "messages_sha256": "7b4df754f3a06708eaf664b4e475430f70526d5645bc4614bafcd5b109b0eedc"
+    },
+    {
+      "source_id": "ie-instrumental-source-66",
+      "condition": "F6",
+      "messages_sha256": "01e30ac02b102a44ea6fdfb33bbbdc10d9e9a90cba64e8ff61b9787a3ac5a691"
+    },
+    {
+      "source_id": "ie-instrumental-source-66",
+      "condition": "F7",
+      "messages_sha256": "4d2fc5791de2ceaa7e40e923aeb80bd9f8bd1daf645d4c6d96bb830477651ed4"
+    },
+    {
+      "source_id": "ie-instrumental-source-7",
+      "condition": "B",
+      "messages_sha256": "83aad490d265276d0009ca575c88c9ea4799d52ba6533479be2202f27c52d317"
+    },
+    {
+      "source_id": "ie-instrumental-source-7",
+      "condition": "F8",
+      "messages_sha256": "08bb8e1e3071224af5b0ddbb36363991b95f2d3982b6e117ae16796a3117a5f2"
+    },
+    {
+      "source_id": "ie-instrumental-source-7",
+      "condition": "F3",
+      "messages_sha256": "6d69ebcd7216693c9a67824fd7f54cbec30e081573e1c01e4b7d73749f816daa"
+    },
+    {
+      "source_id": "ie-instrumental-source-7",
+      "condition": "F5",
+      "messages_sha256": "6fc0a4e6a99b9a6b0d2e842b6db586f419dd208418b8e153790d1ee9370a2b9f"
+    },
+    {
+      "source_id": "ie-instrumental-source-7",
+      "condition": "F6",
+      "messages_sha256": "c844cb60b45a255cdd36c1e5658a487d9d9477c4423e73a5662c83f9e80fc59b"
+    },
+    {
+      "source_id": "ie-instrumental-source-7",
+      "condition": "F7",
+      "messages_sha256": "0dc5d685dfc945c623a7c1418cacbbddf23b1c73d027d89d40757be46b30f9b6"
+    },
+    {
+      "source_id": "ie-instrumental-source-70",
+      "condition": "B",
+      "messages_sha256": "0ff411f7a816cb7debed9caeee7076f765a7c8e4d9e5a4d09f24b6e527cb96a0"
+    },
+    {
+      "source_id": "ie-instrumental-source-70",
+      "condition": "F8",
+      "messages_sha256": "37a66b7384a7a54e724fb2d586609db7fe0afeed65bb9b18a834703241742848"
+    },
+    {
+      "source_id": "ie-instrumental-source-70",
+      "condition": "F3",
+      "messages_sha256": "295f2c8bf836b8ec01055cf6b728d20bd3a37afde795d7a4d4bd129f5d252dbc"
+    },
+    {
+      "source_id": "ie-instrumental-source-70",
+      "condition": "F5",
+      "messages_sha256": "d5f68a482bbd4b5582f98c5e1c72da3d23ffecd83904925a4f208419419abaf6"
+    },
+    {
+      "source_id": "ie-instrumental-source-70",
+      "condition": "F6",
+      "messages_sha256": "69fe044e6010c6e06afac546398b96940aac555afe4c90f4da8fa10b6868a209"
+    },
+    {
+      "source_id": "ie-instrumental-source-70",
+      "condition": "F7",
+      "messages_sha256": "ba4639790154091f1e0c13280c877cda0687b0bd5cba26df76f3bd414960805c"
+    }
+  ],
+  "target_config": {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20,
+    "max_tokens": 65536,
+    "max_connections": 4,
+    "max_retries": 2,
+    "extra_body": {
+      "min_p": 0.0,
+      "chat_template_kwargs": {
+        "enable_thinking": true
+      }
+    }
+  },
+  "seed": 20260910,
+  "epochs": 1,
+  "requested_context_limit": 131072,
+  "generation_policy": {
+    "default_max_tokens": 65536,
+    "exceptions": {
+      "logiqa": 20480,
+      "hellaswag": 20480
+    },
+    "exceptions_used": [],
+    "scope": "All rows in this eval-gaming campaign use65536; exceptions are unrelated datasets, never factor/scenario aliases."
+  },
+  "no_fallback": true,
+  "reuse_historical_8192": false,
+  "requirements": [
+    "Fresh output namespace and serving allocation attestations",
+    "Configured and effective server context must equal requested_context_limit",
+    "Pinned model revisions and complete long-context/rope configuration evidence",
+    "Exact server-rendered token counts including chat template, generation prefix and any tools for every role/prompt",
+    "prompt_tokens +65536 <= effective context; never shrink output ceiling or truncate inputs",
+    "Live runner must enforce this guard before every request; no live execution implemented in this preparer"
+  ],
+  "incompatibilities": [
+    "Historical runner and attestation contract fix context32768 and output8192; incompatible with this configuration",
+    "Requested context length is a proposal, NOT evidence of native model support or validated rope extension"
+  ]
+}

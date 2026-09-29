@@ -27,6 +27,8 @@ class Rollout:
     grader_evaluated: bool = True
     grader_failed: bool = False
     prompt: Any | None = None
+    finish_reason: str = "unknown"
+    raw_logprobs: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -87,6 +89,9 @@ class RolloutRecord(BaseModel):
     prompt_text: str
     prompt_context: dict[str, str] = Field(default_factory=dict)
     completion_text: str
+    finish_reason: str = "unknown"
+    completion_tokens: list[int] = Field(default_factory=list)
+    sampled_logprobs: list[float] = Field(default_factory=list)
     trait_value: float | None
     parsed_successfully: bool
     grader_failed: bool

@@ -178,6 +178,17 @@ def _inspect_summary(log: Any, metric: str) -> _Summary | None:
     return None
 
 
+def _inspect_summary_matches_samples(summary: _Summary, values: Sequence[float]) -> bool:
+    """Return whether an Inspect aggregate describes the finite sample scores."""
+
+    return summary.n == len(values) and math.isclose(
+        summary.mean,
+        statistics.fmean(values),
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+
+
 def _metric_result_key(metrics: Mapping[str, Any], basename: str) -> str | None:
     """Match both Inspect's qualified and legacy unqualified metric keys."""
 
@@ -422,8 +433,10 @@ def aggregate_log_groups(
                     if predicate is None:
                         unscored_tasks.append((condition, replicate_index, identity))
                     continue
-                inspect_summary = _inspect_summary(log, metric) if stderr == "inspect" and predicate is None else None
-                if inspect_summary is not None:
+                inspect_summary = (
+                    _inspect_summary(log, metric) if stderr == "inspect" and predicate is None else None
+                )
+                if inspect_summary is not None and _inspect_summary_matches_samples(inspect_summary, values):
                     pooled[key].append(inspect_summary)
                 else:
                     fallback = "sample" if stderr == "inspect" else stderr
@@ -590,6 +603,162 @@ def append_held_out_summary(
                 }
             )
         output.append(summary)
+    return output
+
+
+_BIAS_GROUP_VALUE_FIELDS = frozenset(
+    {
+        "bias_type",
+        "bias_label",
+        "mean",
+        "stderr",
+        "ci_lower",
+        "ci_upper",
+        "ci_method",
+        "n_scored",
+        "n_total",
+        "datasets",
+        "component_biases",
+        "source_mean_metric",
+        "source_stderr_metric",
+        "p_value",
+        "significance",
+        "significance_baseline",
+        "significance_unavailable_reason",
+    }
+)
+
+
+def _bias_group_key(row: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Return every non-estimate dimension in a stable, extensible form."""
+
+    return tuple(
+        sorted(
+            (str(key), json.dumps(value, sort_keys=True, allow_nan=False))
+            for key, value in row.items()
+            if key not in _BIAS_GROUP_VALUE_FIELDS
+        )
+    )
+
+
+def append_bias_group_summaries(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    groups: Mapping[str, Sequence[str]],
+) -> list[dict[str, Any]]:
+    """Append arbitrary sample-weighted bias groups to chart-ready rows.
+
+    Group membership is supplied as data rather than inferred from a legacy
+    training regime. Groups may overlap (for example ``seen``, ``held_out``,
+    and ``overall``), while every group must be complete within each condition
+    and facet cell. This keeps scientific bias status out of the renderer.
+    """
+
+    if not isinstance(groups, Mapping) or not groups:
+        raise ValueError("bias groups must be a non-empty object")
+    normalized: dict[str, tuple[str, ...]] = {}
+    existing_biases = {str(row.get("bias_type", "")) for row in rows}
+    for raw_label, raw_members in groups.items():
+        label = str(raw_label)
+        if not label or label in existing_biases:
+            raise ValueError(f"bias group label must be non-empty and distinct from atomic biases: {label!r}")
+        if not isinstance(raw_members, Sequence) or isinstance(raw_members, (str, bytes)):
+            raise ValueError(f"bias group {label!r} must contain an array of bias names")
+        members = tuple(str(value) for value in raw_members)
+        if not members or any(not value for value in members) or len(set(members)) != len(members):
+            raise ValueError(f"bias group {label!r} must contain unique non-empty bias names")
+        normalized[label] = members
+
+    output = [dict(row) for row in rows]
+    for label, members in normalized.items():
+        member_set = set(members)
+        selected_by_cell: dict[tuple[tuple[str, str], ...], list[Mapping[str, Any]]] = defaultdict(list)
+        for row in rows:
+            if str(row.get("bias_type", "")) in member_set:
+                selected_by_cell[_bias_group_key(row)].append(row)
+        if not selected_by_cell:
+            raise ValueError(f"bias group {label!r} does not select any chart rows")
+        for _, selected in sorted(selected_by_cell.items(), key=lambda item: repr(item[0])):
+            actual = [str(row["bias_type"]) for row in selected]
+            if len(actual) != len(member_set) or set(actual) != member_set:
+                raise ValueError(
+                    f"bias group {label!r} is incomplete within a condition/facet cell; "
+                    f"expected={list(members)}, found={actual}"
+                )
+            ordered = sorted(selected, key=lambda row: members.index(str(row["bias_type"])))
+            pooled = _pool_summaries(
+                [
+                    _Summary(
+                        mean=float(row["mean"]),
+                        stderr=float(row["stderr"]),
+                        n=int(row["n_scored"]),
+                        estimate_method=str(row.get("estimate_method", "unknown")),
+                        stderr_method=str(row.get("stderr_method", "unknown")),
+                        source_mean_metric=row.get("source_mean_metric"),
+                        source_stderr_metric=row.get("source_stderr_metric"),
+                    )
+                    for row in ordered
+                ]
+            )
+            summary = {
+                **{key: value for key, value in ordered[0].items() if key not in _BIAS_GROUP_VALUE_FIELDS},
+                "condition": ordered[0]["condition"],
+                "bias_type": label,
+                "metric": ordered[0]["metric"],
+                "mean": pooled.mean,
+                "stderr": pooled.stderr,
+                "estimate_method": pooled.estimate_method,
+                "stderr_method": pooled.stderr_method,
+                "n_scored": pooled.n,
+                "n_total": sum(int(row["n_total"]) for row in ordered),
+                "datasets": sorted({dataset for row in ordered for dataset in row["datasets"]}),
+                "component_biases": list(members),
+                "sample_count_weighted": True,
+                **({"source_mean_metric": pooled.source_mean_metric} if pooled.source_mean_metric else {}),
+                **({"source_stderr_metric": pooled.source_stderr_metric} if pooled.source_stderr_metric else {}),
+            }
+            output.append(summary)
+    return output
+
+
+def append_binomial_wilson_intervals(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    confidence: float = 0.95,
+) -> list[dict[str, Any]]:
+    """Attach exact asymmetric Wilson intervals to binary chart rows."""
+
+    if not math.isfinite(confidence) or not 0.0 < confidence < 1.0:
+        raise ValueError("confidence must be finite and in (0, 1)")
+    z = NormalDist().inv_cdf(0.5 + confidence / 2.0)
+    output: list[dict[str, Any]] = []
+    for index, source in enumerate(rows):
+        row = dict(source)
+        mean = float(row["mean"])
+        n = int(row["n_scored"])
+        if n <= 0 or not 0.0 <= mean <= 1.0:
+            raise ValueError(f"row {index} is not a positive-sample binary estimate")
+        successes = mean * n
+        rounded = round(successes)
+        if not math.isclose(successes, rounded, rel_tol=1e-9, abs_tol=1e-9):
+            raise ValueError(f"row {index} mean*n_scored is not an integer binary count")
+        denominator = 1.0 + z * z / n
+        center = (mean + z * z / (2.0 * n)) / denominator
+        half_width = z * math.sqrt(mean * (1.0 - mean) / n + z * z / (4.0 * n * n)) / denominator
+        lower = max(0.0, min(mean, center - half_width))
+        upper = min(1.0, max(mean, center + half_width))
+        row.update(
+            {
+                # Preserve the mathematical containment invariant exactly at
+                # the 0/1 boundaries despite floating-point cancellation.
+                "ci_lower": lower,
+                "ci_upper": upper,
+                "ci_method": "wilson",
+                "ci_confidence": confidence,
+                "success_count": int(rounded),
+            }
+        )
+        output.append(row)
     return output
 
 
@@ -924,6 +1093,16 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Derive held-out exclusions independently from each row group's training_biases",
     )
+    parser.add_argument(
+        "--bias-groups",
+        type=_json_object,
+        help='Append arbitrary pooled groups, e.g. {"seen_mean":["wrong_argument","suggested_answer"]}',
+    )
+    parser.add_argument(
+        "--binomial-wilson",
+        action="store_true",
+        help="Attach 95% Wilson intervals after all atomic and pooled binary rows are produced",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("-y", "--yes", action="store_true")
     args = parser.parse_args(argv)
@@ -952,7 +1131,15 @@ def main(argv: list[str] | None = None) -> None:
     try:
         log_groups_by_condition = {name: [_read_logs(path) for path in paths] for name, paths in runs.items()}
         if args.report == "sycophancy_tradeoff":
-            if args.where or args.where_metric or args.held_out_exclude or args.held_out_auto or args.ratio_baseline:
+            if (
+                args.where
+                or args.where_metric
+                or args.held_out_exclude
+                or args.held_out_auto
+                or args.bias_groups
+                or args.binomial_wilson
+                or args.ratio_baseline
+            ):
                 raise ValueError("filter, held-out, and ratio options apply only to --report metric")
             repeated = [name for name, groups in log_groups_by_condition.items() if len(groups) > 1]
             if repeated:
@@ -977,6 +1164,8 @@ def main(argv: list[str] | None = None) -> None:
             )
             if args.held_out_exclude and args.held_out_auto:
                 raise ValueError("use either --held-out-exclude or --held-out-auto, not both")
+            if args.bias_groups and (args.held_out_exclude or args.held_out_auto):
+                raise ValueError("use either --bias-groups or the legacy held-out summary options, not both")
             if args.ratio_baseline:
                 rows = append_percent_change(rows, baseline_condition=args.ratio_baseline)
             if args.held_out_exclude or args.held_out_auto:
@@ -984,6 +1173,10 @@ def main(argv: list[str] | None = None) -> None:
                     rows,
                     excluded_biases=args.held_out_exclude if not args.held_out_auto else None,
                 )
+            if args.bias_groups:
+                rows = append_bias_group_summaries(rows, groups=args.bias_groups)
+            if args.binomial_wilson:
+                rows = append_binomial_wilson_intervals(rows)
             if args.significance_baseline and not args.ratio_baseline:
                 rows = append_significance(rows, baseline_condition=args.significance_baseline)
     except (OSError, TypeError, ValueError) as exc:

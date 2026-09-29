@@ -1,0 +1,81 @@
+{
+  "as_of": "2026-07-30",
+  "currency": "USD",
+  "input_cache_assumption": "uncached",
+  "pricing_source": "https://tinker-docs.thinkingmachines.ai/tinker/models/",
+  "automatic_retries": 0,
+  "max_output_tokens_per_request": 20480,
+  "training_design": {
+    "bias": "wrong_argument",
+    "questions_per_dataset": 100,
+    "datasets": ["logiqa", "hellaswag"],
+    "requests": 400,
+    "explanation": "Each question is sampled once clean and once biased."
+  },
+  "hle_design": {
+    "questions": 100,
+    "clean_requests": 100,
+    "biases": 6,
+    "biased_requests": 600,
+    "requests": 700
+  },
+  "models": {
+    "Qwen/Qwen3.5-4B": {
+      "tokenizer_revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "requests": 1100,
+      "input_tokens": 764342,
+      "workload": {
+        "training": {"requests": 400, "input_tokens": 185517},
+        "hle": {"requests": 700, "input_tokens": 578825}
+      },
+      "input_usd_per_million": 0.33,
+      "output_usd_per_million": 1.005,
+      "cost_usd": {
+        "mean_output_1000": 1.357733,
+        "mean_output_4000": 4.674233,
+        "all_outputs_at_ceiling": 22.892873
+      }
+    },
+    "Qwen/Qwen3.5-9B": {
+      "tokenizer_revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+      "requests": 1100,
+      "input_tokens": 764342,
+      "workload": {
+        "training": {"requests": 400, "input_tokens": 185517},
+        "hle": {"requests": 700, "input_tokens": 578825}
+      },
+      "input_usd_per_million": 0.66,
+      "output_usd_per_million": 1.995,
+      "cost_usd": {
+        "mean_output_1000": 2.698966,
+        "mean_output_4000": 9.282466,
+        "all_outputs_at_ceiling": 45.447826
+      }
+    },
+    "Qwen/Qwen3-8B": {
+      "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "requests": 1100,
+      "input_tokens": 739801,
+      "workload": {
+        "training": {"requests": 400, "input_tokens": 178796},
+        "hle": {"requests": 700, "input_tokens": 561005}
+      },
+      "input_usd_per_million": 0.195,
+      "output_usd_per_million": 0.6,
+      "cost_usd": {
+        "mean_output_1000": 0.804261,
+        "mean_output_4000": 2.784261,
+        "all_outputs_at_ceiling": 13.661061
+      }
+    }
+  },
+  "portfolio": {
+    "requests": 3300,
+    "input_tokens": 2268485,
+    "cost_usd": {
+      "mean_output_1000": 4.860960,
+      "mean_output_4000": 16.740960,
+      "all_outputs_at_ceiling": 82.001760
+    }
+  }
+}

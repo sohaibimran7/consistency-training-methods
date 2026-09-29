@@ -1,10 +1,12 @@
 import json
 import sys
+import json
 
 import pytest
 
 from scripts import train_bct
 from scripts.train_bct import resolve_lora_config, resolve_optimizer_config
+from ctm.training.sft import SFTConfig
 
 
 def test_dry_run_loads_bct_rows_without_initializing_backend(monkeypatch, tmp_path, capsys):
@@ -67,6 +69,39 @@ def test_consistency_methods_reject_identical_variant_and_reference_fields(monke
     with pytest.raises(SystemExit):
         train_bct.main()
     assert "identically zero" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", [0, -1, True])
+def test_sft_config_rejects_invalid_minimum_optimizer_steps(value):
+    with pytest.raises(ValueError, match="minimum_optimizer_steps must be a positive integer"):
+        SFTConfig(minimum_optimizer_steps=value)
+
+
+def test_cli_rejects_input_plan_below_minimum_optimizer_steps(tmp_path, monkeypatch, capsys):
+    data = tmp_path / "rows.jsonl"
+    data.write_text("".join(json.dumps({"messages": []}) + "\n" for _ in range(2)))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train_bct.py",
+            "--model",
+            "test-model",
+            "--data",
+            str(data),
+            "--batch-size",
+            "1",
+            "--gradient-accumulation-steps",
+            "2",
+            "--minimum-optimizer-steps",
+            "2",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        train_bct.main()
+
+    assert "input plan has only 1 optimizer step" in capsys.readouterr().err
 
 
 def test_nested_training_configs_expose_portable_backend_parameters():

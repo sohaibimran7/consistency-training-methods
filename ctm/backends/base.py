@@ -32,6 +32,16 @@ class SampledSequence:
 
     tokens: list[int]
     logprobs: list[float] | None
+    finish_reason: str = "unknown"
+
+    def validate(self) -> None:
+        """Reject malformed sampling evidence before it reaches a datum."""
+        import math
+        if self.logprobs is not None:
+            if len(self.logprobs) != len(self.tokens):
+                raise ValueError("sample token/logprob lengths differ")
+            if any(not math.isfinite(value) for value in self.logprobs):
+                raise ValueError("sample contains a non-finite logprob")
 
 
 @dataclass
@@ -85,7 +95,7 @@ class SamplerHandle(PolicyScorerHandle, Protocol):
         self,
         prompt: Any,
         *,
-        max_tokens: int,
+        max_tokens: int | None,
         temperature: float,
         stop: Any,
         num_samples: int,

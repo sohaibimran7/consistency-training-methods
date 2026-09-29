@@ -1,0 +1,17 @@
+name: rmct_paper_vast_dense_expedited_12h_frozen_hle_import
+
+# Offline, opt-in import for the time-bounded expedited screen only. This does
+# not materialize data, call a model/API, or write the full Stage 1 shared root.
+# The importer fails unless it confirms the audited 88/100 question overlap,
+# the 12 IDs unique to each pool, and the distinct vLLM argument provenance.
+data_generation:
+  - name: import-audited-expedited-hle-screen
+    resource: cpu
+    command: ["${python}", -m, ctm_data.adapters.mcq_bias.import_expedited_screen]
+    args:
+      repository_root: .
+      audit: experiments/switch_gate/audit.json
+      lock: experiments/switch_gate/lock.json
+      full_shared_plan: experiments/rmct_paper_vast_dense_models/shared_data.yaml
+      output_root: artifacts/rmct-hle-dense-models-shared-expedited-12h
+      "yes": true

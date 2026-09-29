@@ -1,0 +1,446 @@
+name: rmct_paper_vast_dense_qwen3_5_9b_stage1_supervised_recovery_none_calibration_20260803
+
+# Fresh no-CoT recovery for the supervised methods only.  This is deliberately
+# separate from both the historical Stage-1 plan and the on-policy recovery:
+# it has its own artifact namespace, training-output publication state, and no
+# evaluation stage.  Raw Qwen3.5 LoRAs must be attested separately before any
+# vLLM evaluation is allowed. For repaired ACT, first run the companion
+# `qwen3_5_9b_repaired_act_tiny_behavioral_gate_20260803.yaml` against its
+# published raw checkpoint; that native-HF gate precedes any long evaluation.
+#
+# The recovered pair source is a content-level conversion of the historical
+# legacy-G4 prompts. It is not a metadata relabel: the preparation gate checks
+# the old complete prompt body and the exact replacement none-style terminal on
+# every one of its 3,000 rows.  Do not point this plan at the old CoT source.
+variables:
+  model: Qwen/Qwen3.5-9B
+  recovered_none_pairs: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801/data/distractor-argument-pairs.jsonl
+  recovered_none_manifest: artifacts/rmct-hle-dense-models-shared-qwen3.5-none-20260801/data/distractor-argument-pairs.manifest.json
+  frozen_instruction_targets: artifacts/stage1-vast-staging-20260731/shared_training_targets/artifacts/rmct-hle-qwen3.5-9b-dense-stage1/data
+  # A separate root prevents a resumed host from silently reusing the old
+  # one-pass / broad-target checkpoint state after this corrected calibration
+  # contract is synchronized.
+  artifact_root: artifacts/rmct-hle-qwen3.5-9b-dense-stage1-supervised-recovery-none-calibration-20260803
+
+# Run the data-preparation commands in listed order. The first one is CPU-only;
+# the second uses four vLLM base-only workers; target-specific checks then
+# protect each later training target from being run with stale artifacts.
+data_preparation:
+  - name: prepare_none_supervised_inputs
+    target: inputs
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+  # Keep the BCT target-generation target fail-closed when it is launched on
+  # its own host: validate the recovered source and immutable reused targets
+  # before paying for the four frozen-base vLLM workers below.
+  - name: verify_bct_target_source
+    target: bct-targets
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+  # This samples Qwen's frozen base once on each recovered none-style clean
+  # prompt, and attaches the same completion to the biased and control views.
+  # Its manifest is written last; BCT/control checks below verify prompts and
+  # source IDs row by row before either training run can start.
+  - name: generate_none_bct_targets
+    target: bct-targets
+    resource: gpu
+    gpu_count: 4
+    command: ["${python}", scripts/prepare_bct_targets.py]
+    args:
+      backend: local
+      local_dtype: bfloat16
+      local_sampler: vllm
+      local_gpu_mem_util: 0.34
+      local_rollout_gpu_mem_util: 0.75
+      local_vllm_language_model_only: true
+      local_gradient_checkpointing: true
+      local_gradient_checkpointing_layers: 16
+      local_vllm_max_num_seqs: 256
+      local_vllm_max_num_batched_tokens: 8192
+      local_vllm_max_model_len: 32768
+      local_forward_microbatch_max_datums: 8
+      local_forward_microbatch_max_tokens: 20480
+      local_target_logprob_chunk_size: 2048
+      local_rollout_gpus: 0,1,2,3
+      model: "${model}"
+      data: ["${recovered_none_pairs}"]
+      limit: 2048
+      source_messages_field: unbiased_messages
+      main_messages_field: biased_messages
+      control_messages_field: unbiased_messages
+      main_output: "${artifact_root}/data/bias-augmented-consistency-none.jsonl"
+      control_output: "${artifact_root}/data/bias-augmented-consistency-control-none.jsonl"
+      manifest_output: "${artifact_root}/data/bias-augmented-consistency-none.manifest.json"
+      max_tokens: 20480
+      temperature: 1.0
+      # The frozen 2,048-target artifact was generated with 96 concurrent
+      # requests.  This is a throughput-only setting; the manifest gate
+      # binds it so later BCT training cannot silently consume another run.
+      max_concurrency: 96
+      "yes": true
+
+  # Target-specific CPU rechecks make `--target <condition> --stages
+  # data_preparation,training` fail closed if the common preparation was not
+  # done on this host or is not byte-identical.
+  - name: verify_repaired_act_inputs
+    target: repaired-act
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+  - name: verify_attct_inputs
+    target: attct
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+  - name: verify_mlpct_inputs
+    target: mlpct
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+  - name: verify_bct_main_inputs
+    target: bct-main
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+  - name: verify_bct_main_targets
+    target: bct-main
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, verify-bct-targets]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      main: "${artifact_root}/data/bias-augmented-consistency-none.jsonl"
+      control: "${artifact_root}/data/bias-augmented-consistency-control-none.jsonl"
+      manifest: "${artifact_root}/data/bias-augmented-consistency-none.manifest.json"
+
+  - name: verify_bct_control_inputs
+    target: bct-control
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, prepare]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      instruction_main: "${frozen_instruction_targets}/instruction-targets.jsonl"
+      instruction_control: "${frozen_instruction_targets}/instruction-targets-control.jsonl"
+      instruction_manifest: "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      output_dir: "${artifact_root}/data"
+
+  - name: verify_bct_control_targets
+    target: bct-control
+    resource: cpu
+    command: ["${python}", -m, experiments.rmct_paper_vast_dense_models.stage1.supervised_recovery_none_prepare, verify-bct-targets]
+    args:
+      source: "${recovered_none_pairs}"
+      source_manifest: "${recovered_none_manifest}"
+      main: "${artifact_root}/data/bias-augmented-consistency-none.jsonl"
+      control: "${artifact_root}/data/bias-augmented-consistency-control-none.jsonl"
+      manifest: "${artifact_root}/data/bias-augmented-consistency-none.manifest.json"
+
+# These five targets are intentionally independent.  The runner writes one
+# target-scoped output state per completed raw checkpoint, then the designated
+# coordinator atomically publishes the canonical five-checkpoint state only
+# after all target states have been synchronized and integrity-checked.
+training_output_publication:
+  owner: supervised-recovery-none-coordinator
+  targets: [repaired-act, attct, mlpct, bct-main, bct-control]
+
+training:
+  # This is the successful repaired-ACT protocol, not the historical 16-step
+  # Stage-1 ACT command.  Its 4,000 paired updates remain explicitly labelled
+  # as a repair condition rather than silently becoming an equal-budget row.
+  - name: repaired_act_none
+    target: repaired-act
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      backend: local
+      local_dtype: bfloat16
+      local_sampler: hf
+      local_gradient_checkpointing: true
+      local_forward_microbatch_max_datums: 1
+      local_forward_microbatch_max_tokens: 20480
+      model: "${model}"
+      method: act
+      data: ["${artifact_root}/data/canonical-repaired-act-train-n200.jsonl:200"]
+      data_manifest: ["${artifact_root}/data/canonical-repaired-act-train-n200.manifest.json"]
+      reference_messages_field: unbiased_messages
+      variant_messages_field: biased_messages
+      require_full_reference_suffix_alignment: true
+      # One paired Transformers/PEFT backward must prove that the full hybrid
+      # ACT adapter receives a nonzero finite gradient before this 4,000-step
+      # recovery trajectory can spend GPU time.
+      qwen35_consistency_preflight: true
+      method_config: {weight: 0.00005, layer_selection: all, normalize: false}
+      lora_config:
+        rank: 8
+        alpha: 16
+        dropout: 0.05
+        target_modules: [q_proj, k_proj, v_proj, o_proj, in_proj_qkv, in_proj_z, in_proj_b, in_proj_a, out_proj]
+        train_mlp: false
+        train_attn: false
+        train_unembed: false
+        seed: 42
+      optimizer_config:
+        learning_rate: 0.0001
+        lr_schedule: constant
+        beta1: 0.9
+        beta2: 0.999
+        eps: 0.00000001
+        weight_decay: 0.01
+        grad_clip_norm: 1.0
+      batch_size: 1
+      gradient_accumulation_steps: 1
+      minimum_optimizer_steps: 4000
+      epochs: 20
+      save_every: 500
+      save_state: true
+      experiment_name: "${experiment}"
+      run_name: repaired-act-none-n200-4000steps
+      wandb_project: rmct_paper_vast_dense_models_stage1_supervised_recovery_none_20260801
+      "yes": true
+
+  - name: attct_none
+    target: attct
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      backend: local
+      local_dtype: bfloat16
+      local_sampler: hf
+      local_gradient_checkpointing: true
+      local_gradient_checkpointing_layers: 16
+      local_forward_microbatch_max_datums: 8
+      local_forward_microbatch_max_tokens: 20480
+      local_target_logprob_chunk_size: 2048
+      model: "${model}"
+      method: attct
+      data: ["${artifact_root}/data/canonical-consistency-pairs-n2048.jsonl:2048"]
+      data_manifest: ["${artifact_root}/data/canonical-consistency-pairs-n2048.manifest.json"]
+      reference_messages_field: unbiased_messages
+      variant_messages_field: biased_messages
+      require_full_reference_suffix_alignment: true
+      qwen35_consistency_preflight: true
+      method_config: {layer_selection: all, layer_weights: uniform}
+      # The AttCT release's default is rank-8 Q/V LoRA. Qwen3.5 has eight
+      # conventional attention blocks and 24 DeltaNet blocks; only the former
+      # expose the probability matrices used by this JSD objective. Keep this
+      # primary run strictly comparable rather than silently adapting MLPs or
+      # the fused DeltaNet Q/K/V matrix. A Qwen-hybrid extension belongs in a
+      # separately named ablation if it is needed later.
+      lora_config:
+        rank: 8
+        alpha: 16
+        dropout: 0.05
+        target_modules: [q_proj, v_proj]
+        train_mlp: false
+        train_attn: false
+        train_unembed: false
+        seed: 42
+      # The released Qwen AttCT script supplies --max-steps 4000 and its
+      # baseline config has no gradient accumulation, so its executable
+      # protocol is 4,000 optimiser updates.  The paper's Table 3 also says
+      # ``grad accumulation = 8``; that conflicts with the released script
+      # (one epoch would then contain only 500 updates).  We retain the
+      # user's deliberately shared 1e-4 rate, rather than the release's 3e-6,
+      # so this is a Qwen3.5 calibration trajectory—not a literal paper
+      # reproduction. Intermediate checkpoints are retained for selection by
+      # the joint TBSR/verbalisation gate.
+      # Pin AdamW's paper/release defaults explicitly. LocalBackend's generic
+      # beta2=0.95 cookbook default is not the upstream Trainer's PyTorch
+      # AdamW beta2=0.999.
+      optimizer_config:
+        learning_rate: 0.0001
+        lr_schedule: constant
+        beta1: 0.9
+        beta2: 0.999
+        eps: 0.00000001
+        weight_decay: 0.0
+        grad_clip_norm: 1.0
+      batch_size: 1
+      # Two seeded passes through 2,048 frozen pairs yield exactly 4,096
+      # actual updates: the nearest whole-epoch counterpart to the release's
+      # 4,000-update / 4,000-prompt protocol.  This is deliberately not the
+      # historical 16-update failure mode.
+      gradient_accumulation_steps: 1
+      minimum_optimizer_steps: 4096
+      epochs: 2
+      save_every: 256
+      experiment_name: "${experiment}"
+      run_name: attct-none-qv-4096steps-lr-1e-4
+      wandb_project: rmct_paper_vast_dense_models_stage1_supervised_recovery_none_20260801
+      "yes": true
+
+  - name: mlpct_none
+    target: mlpct
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      backend: local
+      local_dtype: bfloat16
+      local_sampler: hf
+      local_gradient_checkpointing: true
+      local_gradient_checkpointing_layers: 16
+      local_forward_microbatch_max_datums: 8
+      local_forward_microbatch_max_tokens: 20480
+      local_target_logprob_chunk_size: 2048
+      model: "${model}"
+      method: mlpct
+      data: ["${artifact_root}/data/canonical-consistency-pairs-n2048.jsonl:2048"]
+      data_manifest: ["${artifact_root}/data/canonical-consistency-pairs-n2048.manifest.json"]
+      reference_messages_field: unbiased_messages
+      variant_messages_field: biased_messages
+      require_full_reference_suffix_alignment: true
+      qwen35_consistency_preflight: true
+      method_config: {variant: hidden, layer_selection: all, layer_weights: uniform, distance_metric: cosine, normalize: false}
+      # Match the MLPCT release's default Q/V LoRA baseline. MLPCT's loss is
+      # measured on post-activation MLP states; it does not imply that the MLP
+      # weights themselves should be trainable.
+      lora_config:
+        rank: 8
+        alpha: 16
+        dropout: 0.05
+        target_modules: [q_proj, v_proj]
+        train_mlp: false
+        train_attn: false
+        train_unembed: false
+        seed: 42
+      # The released Qwen MLPCT config explicitly uses batch one with
+      # gradient accumulation eight for one 4,000-prompt epoch: 500 updates.
+      # Preserve that method-specific effective batch, but restore the full
+      # four-thousand-presentation budget with two passes through our 2,048
+      # frozen pairs. We retain the user's shared 1e-4 rate rather than the
+      # release's 3e-6, so this too is a calibration trajectory; every saved
+      # checkpoint is eligible for the joint behavioral selection gate.
+      # Same explicit upstream AdamW moments and clipping as AttCT above.
+      optimizer_config:
+        learning_rate: 0.0001
+        lr_schedule: constant
+        beta1: 0.9
+        beta2: 0.999
+        eps: 0.00000001
+        weight_decay: 0.0
+        grad_clip_norm: 1.0
+      batch_size: 1
+      # Exactly 512 actual updates = the nearest full-epoch counterpart to
+      # the released 500-update (4,000 examples / accumulation 8) protocol.
+      gradient_accumulation_steps: 8
+      minimum_optimizer_steps: 512
+      epochs: 2
+      save_every: 32
+      experiment_name: "${experiment}"
+      run_name: mlpct-none-qv-512steps-lr-1e-4
+      wandb_project: rmct_paper_vast_dense_models_stage1_supervised_recovery_none_20260801
+      "yes": true
+
+  - name: bct_none
+    target: bct-main
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      backend: local
+      local_dtype: bfloat16
+      local_sampler: hf
+      local_gradient_checkpointing: true
+      local_forward_microbatch_max_datums: 8
+      local_forward_microbatch_max_tokens: 20480
+      local_target_logprob_chunk_size: 2048
+      model: "${model}"
+      method: bct
+      data:
+        - "${artifact_root}/data/bias-augmented-consistency-none.jsonl:2048"
+        - "${frozen_instruction_targets}/instruction-targets.jsonl:2048"
+      data_manifest:
+        - "${artifact_root}/data/bias-augmented-consistency-none.manifest.json"
+        - "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      interleave: true
+      lora_config: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false, seed: 42}
+      optimizer_config: {learning_rate: 0.0001, lr_schedule: linear}
+      batch_size: 1
+      gradient_accumulation_steps: 128
+      epochs: 1
+      save_every: 16
+      experiment_name: "${experiment}"
+      run_name: bct-none-lr-1e-4
+      wandb_project: rmct_paper_vast_dense_models_stage1_supervised_recovery_none_20260801
+      "yes": true
+
+  - name: bct_control_none
+    target: bct-control
+    resource: gpu
+    gpu_count: 1
+    command: ["${python}", scripts/train_bct.py]
+    args:
+      backend: local
+      local_dtype: bfloat16
+      local_sampler: hf
+      local_gradient_checkpointing: true
+      local_forward_microbatch_max_datums: 8
+      local_forward_microbatch_max_tokens: 20480
+      local_target_logprob_chunk_size: 2048
+      model: "${model}"
+      method: bct
+      data:
+        - "${artifact_root}/data/bias-augmented-consistency-control-none.jsonl:2048"
+        - "${frozen_instruction_targets}/instruction-targets-control.jsonl:2048"
+      data_manifest:
+        - "${artifact_root}/data/bias-augmented-consistency-none.manifest.json"
+        - "${frozen_instruction_targets}/instruction-targets.manifest.json"
+      interleave: true
+      lora_config: {rank: 8, alpha: 16, dropout: 0.0, train_mlp: true, train_attn: true, train_unembed: false, seed: 42}
+      optimizer_config: {learning_rate: 0.0001, lr_schedule: linear}
+      batch_size: 1
+      gradient_accumulation_steps: 128
+      epochs: 1
+      save_every: 16
+      experiment_name: "${experiment}"
+      run_name: bct-control-none-lr-1e-4
+      wandb_project: rmct_paper_vast_dense_models_stage1_supervised_recovery_none_20260801
+      "yes": true

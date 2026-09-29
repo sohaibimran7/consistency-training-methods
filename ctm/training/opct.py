@@ -19,6 +19,7 @@ import math
 import random
 import traceback
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -33,7 +34,7 @@ from tinker_cookbook.utils.lr_scheduling import compute_schedule_lr_multiplier
 from tinker_cookbook.utils.ml_log import setup_logging
 from tqdm import tqdm
 
-from ctm.backends.base import PolicyScorerHandle, SamplerHandle, TrainingBackend
+from ctm.backends.base import ForwardBackwardOutput, PolicyScorerHandle, SamplerHandle, TrainingBackend
 from ctm.backends.renderers import get_renderer_and_tokenizer
 from ctm.core.config import AdamConfig, CheckpointConfig, LoRAConfig
 from ctm.core.types import RolloutRecord
@@ -49,21 +50,33 @@ class OPCTGenerationConfig(BaseModel):
     """Online student-rollout configuration."""
 
     rollouts_per_prompt: int = 4
-    max_new_tokens: int = 2048
+    # ``None`` is an explicit EOS-only policy. Backends must preserve it as
+    # ``max_tokens=None`` and reject any non-EOS termination.
+    max_new_tokens: int | None = 2048
     temperature: float = 0.7
 
-    @field_validator("rollouts_per_prompt", "max_new_tokens")
+    @field_validator("rollouts_per_prompt")
     @classmethod
     def _positive_integer(cls, value: int) -> int:
         if isinstance(value, bool) or value < 1:
             raise ValueError("must be a positive integer")
         return value
 
-    @field_validator("temperature")
+    @field_validator("max_new_tokens")
     @classmethod
-    def _non_negative_temperature(cls, value: float) -> float:
-        if isinstance(value, bool) or not math.isfinite(value) or value < 0:
-            raise ValueError("temperature must be a finite non-negative number")
+    def _positive_generation_limit_or_none(cls, value: int | None) -> int | None:
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+            raise ValueError("must be a positive integer or None for EOS-only generation")
+        return value
+
+    @field_validator("temperature", mode="before")
+    @classmethod
+    def _positive_temperature(cls, value: float) -> float:
+        # OPCT uses importance sampling from the generated behavior policy.
+        # Greedy decoding has zero support away from its argmax and cannot be
+        # corrected back to the raw stochastic policy.
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            raise ValueError("temperature must be a finite positive number")
         return value
 
 
@@ -80,6 +93,7 @@ class OPCTConfig(BaseModel):
     n_epochs: int = 1
     batch_size: int = 8
     gradient_accumulation_steps: int = 1
+    shuffle_samples: bool = True
     kl_coef: float = 1.0
     kl_discount_factor: float = 0.0
     loss_fn: Literal["importance_sampling", "ppo"] = "importance_sampling"
@@ -134,14 +148,28 @@ def discounted_future_sum(values: torch.Tensor, discount: float) -> torch.Tensor
         raise ValueError(f"discounted_future_sum expects a 1D tensor, got shape {tuple(values.shape)}")
     if not 0 <= discount <= 1:
         raise ValueError("discount must be in [0, 1]")
-    if discount == 0:
+    if values.numel() == 0 or discount == 0:
         return values.clone()
-    output = torch.empty_like(values)
-    running = torch.zeros((), dtype=values.dtype, device=values.device)
-    for index in range(len(values) - 1, -1, -1):
-        running = values[index] + discount * running
-        output[index] = running
-    return output
+    if discount == 1:
+        output = torch.flip(torch.cumsum(torch.flip(values, dims=(0,)), dim=0), dims=(0,))
+        return output.to(dtype=values.dtype)
+
+    # Compose adjacent discounted spans in parallel.  After each iteration,
+    # output[t] contains the discounted sum over the next ``span`` values.
+    # Doubling the span reduces device dispatches from one per token to O(log T)
+    # while avoiding the overflow-prone division by discount**t used by the
+    # usual cumsum reformulation.
+    output = values.clone()
+    span = 1
+    span_discount = discount
+    while span < values.numel():
+        output = torch.cat(
+            (output[:-span] + span_discount * output[span:], output[-span:]),
+            dim=0,
+        )
+        span *= 2
+        span_discount *= span_discount
+    return output.to(dtype=values.dtype)
 
 
 def apply_reference_reverse_kl(
@@ -165,15 +193,9 @@ def apply_reference_reverse_kl(
     """
 
     if len(datums) != len(teacher_action_logprobs):
-        raise ValueError(
-            "datums and teacher_action_logprobs must have the same length, got "
-            f"{len(datums)} and {len(teacher_action_logprobs)}"
-        )
+        raise ValueError(f"datums and teacher_action_logprobs must have the same length, got {len(datums)} and {len(teacher_action_logprobs)}")
     if student_action_logprobs is not None and len(datums) != len(student_action_logprobs):
-        raise ValueError(
-            "datums and student_action_logprobs must have the same length, got "
-            f"{len(datums)} and {len(student_action_logprobs)}"
-        )
+        raise ValueError(f"datums and student_action_logprobs must have the same length, got {len(datums)} and {len(student_action_logprobs)}")
     if not math.isfinite(kl_coef) or kl_coef < 0:
         raise ValueError("kl_coef must be a finite non-negative number")
     if not math.isfinite(kl_discount_factor) or not 0 <= kl_discount_factor <= 1:
@@ -189,29 +211,18 @@ def apply_reference_reverse_kl(
         mask = datum.loss_fn_inputs["mask"].to_torch() > 0
         existing_advantages = datum.loss_fn_inputs["advantages"].to_torch().float()
         if behavior.shape != mask.shape or behavior.shape != existing_advantages.shape:
-            raise ValueError(
-                f"datum {index} has inconsistent logprobs/mask/advantages shapes: "
-                f"{tuple(behavior.shape)}, {tuple(mask.shape)}, {tuple(existing_advantages.shape)}"
-            )
+            raise ValueError(f"datum {index} has inconsistent logprobs/mask/advantages shapes: {tuple(behavior.shape)}, {tuple(mask.shape)}, {tuple(existing_advantages.shape)}")
         behavior_actions = behavior[mask]
         raw_student = behavior_actions if student_action_logprobs is None else student_action_logprobs[index]
         student = torch.as_tensor(raw_student, dtype=behavior.dtype)
         teacher = torch.as_tensor(raw_teacher, dtype=behavior.dtype)
         if len(behavior_actions) != len(student):
-            raise ValueError(
-                f"datum {index} has {len(behavior_actions)} action tokens but {len(student)} student logprobs"
-            )
+            raise ValueError(f"datum {index} has {len(behavior_actions)} action tokens but {len(student)} student logprobs")
         if len(student) != len(teacher):
-            raise ValueError(
-                f"datum {index} has {len(behavior_actions)} action tokens but {len(teacher)} teacher logprobs"
-            )
+            raise ValueError(f"datum {index} has {len(behavior_actions)} action tokens but {len(teacher)} teacher logprobs")
         if not len(teacher):
             raise ValueError(f"datum {index} has no action tokens")
-        if (
-            not torch.isfinite(behavior_actions).all()
-            or not torch.isfinite(student).all()
-            or not torch.isfinite(teacher).all()
-        ):
+        if not torch.isfinite(behavior_actions).all() or not torch.isfinite(student).all() or not torch.isfinite(teacher).all():
             raise ValueError(f"datum {index} contains non-finite behavior, student, or teacher logprobs")
 
         reverse_kl = student - teacher
@@ -264,6 +275,19 @@ def validate_opct_samples(samples: Sequence[dict], config: OPCTConfig) -> list[d
     return validated
 
 
+@dataclass
+class _UnscoredOPCTBatch:
+    """Validated rollouts awaiting raw student/reference policy scores."""
+
+    references: list[types.ModelInput]
+    variants: list[types.ModelInput]
+    completions: list[list[int]]
+    sampled_logprobs: list[list[float]]
+    valid_rollout_meta: list[dict | None]
+    rollout_meta: list[dict]
+    response_lengths: list[int]
+
+
 class OPCTTrainer:
     """Backend-agnostic, fully on-policy consistency trainer."""
 
@@ -291,17 +315,10 @@ class OPCTTrainer:
         if self.config.lora.seed is not None:
             random.seed(self.config.lora.seed)
         if self.resume_from and not self.backend.policy_samplers_are_snapshots:
-            raise NotImplementedError(
-                "OPCT resume requires an immutable run-start policy handle; "
-                f"{type(self.backend).__name__} exposes live policy handles, so resuming would use the wrong teacher"
-            )
+            raise NotImplementedError(f"OPCT resume requires an immutable run-start policy handle; {type(self.backend).__name__} exposes live policy handles, so resuming would use the wrong teacher")
         with_optimizer = False
         if self.resume_from:
-            with_optimizer = (
-                self.resume_with_optimizer
-                if self.resume_with_optimizer is not None
-                else "/weights/" in self.resume_from and "/sampler_weights/" not in self.resume_from
-            )
+            with_optimizer = self.resume_with_optimizer if self.resume_with_optimizer is not None else "/weights/" in self.resume_from and "/sampler_weights/" not in self.resume_from
         self.backend.setup(
             model=self.config.model,
             lora=self.config.lora,
@@ -312,9 +329,7 @@ class OPCTTrainer:
             self.config.model,
             source=self.backend.renderer_source,
         )
-        self.sampling_client = self.backend.policy_sampler(
-            name=f"{self.config.experiment_name}_{self.config.run_name}_opct_sampler"
-        )
+        self.sampling_client = self.backend.policy_sampler(name=f"{self.config.experiment_name}_{self.config.run_name}_opct_sampler")
         if self.backend.policy_samplers_are_snapshots:
             # This exact handle captures the current policy after any supported
             # checkpoint load, so it is both equal at run start and immutable.
@@ -324,6 +339,51 @@ class OPCTTrainer:
             # the immutable base copy, which equals the just-initialized policy.
             self.reference_policy = self.backend.base_sampler()
         self.setup_done = True
+
+    def _requires_serialized_sampling_and_training(self) -> bool:
+        """Whether rollout/scoring and coordinator work share GPU resources.
+
+        Tinker and the ordinary local topology deliberately retain their
+        historical overlap: OPCT can generate the next unchanged-policy group
+        while the current group is in forward/backward.  A sleep/wake rollout
+        backend reclaims those same GPUs for the persistent trainer replicas,
+        so it advertises ``sampling_training_overlap_supported = False`` and
+        requires an explicit phase transition around every group.
+
+        The optional attribute is intentionally duck-typed.  That preserves
+        the behavior of all existing backends which predate phase sharing.
+        """
+
+        supported = getattr(self.backend, "sampling_training_overlap_supported", True)
+        if callable(supported):
+            supported = supported()
+        return not bool(supported)
+
+    async def _enter_rollout_phase_if_needed(self) -> None:
+        """Wake phase-shared rollout workers before sampling or raw scoring."""
+
+        if not self._requires_serialized_sampling_and_training():
+            return
+        enter = getattr(self.backend, "enter_rollout_phase", None)
+        if not callable(enter):
+            raise TypeError(
+                "backend disables sampling/training overlap but does not expose "
+                "an async enter_rollout_phase() lifecycle method"
+            )
+        await enter()
+
+    async def _enter_training_phase_if_needed(self) -> None:
+        """Sleep phase-shared rollout workers before coordinator computation."""
+
+        if not self._requires_serialized_sampling_and_training():
+            return
+        enter = getattr(self.backend, "enter_training_phase", None)
+        if not callable(enter):
+            raise TypeError(
+                "backend disables sampling/training overlap but does not expose "
+                "an async enter_training_phase() lifecycle method"
+            )
+        await enter()
 
     @staticmethod
     def _create_datum(prompt: types.ModelInput, tokens: list[int], logprobs: list[float]):
@@ -359,10 +419,12 @@ class OPCTTrainer:
         self._rollout_logger.log_step(records)
         self._pending_rollout_meta = []
 
-    async def _build_batch(self, batch: Sequence[tuple[int, dict] | dict]):
-        assert self.sampling_client is not None
-        assert self.reference_policy is not None
-        self._pending_rollout_meta = []
+    def _prepare_batch(
+        self,
+        batch: Sequence[tuple[int, dict] | dict],
+    ) -> list[tuple[int, types.ModelInput, types.ModelInput]]:
+        """Render one logical microbatch into reference/variant pairs."""
+
         pairs = []
         for fallback_idx, item in enumerate(batch):
             if isinstance(item, tuple):
@@ -378,34 +440,81 @@ class OPCTTrainer:
                     self.renderer.build_generation_prompt(variant_messages),
                 )
             )
+        return pairs
 
-        sampled_groups = await asyncio.gather(
-            *[
-                self.sampling_client.sample(
-                    variant_prompt,
-                    max_tokens=self.config.generation.max_new_tokens,
-                    temperature=self.config.generation.temperature,
-                    stop=self.renderer.get_stop_sequences(),
-                    num_samples=self.config.generation.rollouts_per_prompt,
-                )
-                for _, _, variant_prompt in pairs
-            ]
-        )
+    async def _sample_prepared_pairs(
+        self,
+        pairs: Sequence[tuple[int, types.ModelInput, types.ModelInput]],
+    ) -> list[list[Any]]:
+        """Sample variants, using one native prompt batch when available."""
 
-        references = []
-        variants = []
+        # OPCT generates each unchanged-policy accumulation group before any
+        # of its F/B work.  In a phase-shared topology this is the earliest
+        # point at which vLLM may safely reclaim the rollout GPUs.
+        await self._enter_rollout_phase_if_needed()
+        assert self.sampling_client is not None
+        prompts = [variant_prompt for _, _, variant_prompt in pairs]
+        sample_kwargs = {
+            "max_tokens": self.config.generation.max_new_tokens,
+            "temperature": self.config.generation.temperature,
+            "stop": self.renderer.get_stop_sequences(),
+            "num_samples": self.config.generation.rollouts_per_prompt,
+        }
+        batch_sampler = getattr(self.sampling_client, "sample_batch", None)
+        if callable(batch_sampler):
+            sampled_groups = await batch_sampler(prompts, **sample_kwargs)
+        else:
+            sampled_groups = await asyncio.gather(*[self.sampling_client.sample(prompt, **sample_kwargs) for prompt in prompts])
+        if len(sampled_groups) != len(pairs):
+            raise RuntimeError(f"student sampler returned {len(sampled_groups)} prompt group(s); expected {len(pairs)}")
+        return [list(group) for group in sampled_groups]
+
+    async def _build_batch(
+        self,
+        batch: Sequence[tuple[int, dict] | dict],
+        *,
+        prepared_pairs: Sequence[tuple[int, types.ModelInput, types.ModelInput]] | None = None,
+        sampled_groups: Sequence[Sequence[Any]] | None = None,
+    ):
+        assert self.sampling_client is not None
+        assert self.reference_policy is not None
+        self._pending_rollout_meta = []
+        pairs = list(prepared_pairs) if prepared_pairs is not None else self._prepare_batch(batch)
+        if len(pairs) != len(batch):
+            raise ValueError(f"prepared OPCT pair count {len(pairs)} does not match microbatch size {len(batch)}")
+        if sampled_groups is None:
+            sampled_groups = await self._sample_prepared_pairs(pairs)
+        elif len(sampled_groups) != len(pairs):
+            raise ValueError(f"prefetched OPCT sample-group count {len(sampled_groups)} does not match pair count {len(pairs)}")
+
+        result = (
+            await self._build_batch_group(
+                [batch],
+                prepared_pair_groups=[pairs],
+                sampled_groups=[sampled_groups],
+            )
+        )[0]
+        datums, kl_metrics, response_lengths, rollout_meta = result
+        self._pending_rollout_meta = rollout_meta
+        return datums, kl_metrics, response_lengths
+
+    def _collect_unscored_batch(
+        self,
+        pairs: Sequence[tuple[int, types.ModelInput, types.ModelInput]],
+        sampled_groups: Sequence[Sequence[Any]],
+    ) -> _UnscoredOPCTBatch:
+        """Validate sampled sequences without changing scoring reductions."""
+
+        references: list[types.ModelInput] = []
+        variants: list[types.ModelInput] = []
         completions: list[list[int]] = []
-        behavior_logprobs: list[list[float]] = []
+        sampled_logprobs: list[list[float]] = []
         valid_rollout_meta: list[dict | None] = []
+        rollout_meta_records: list[dict] = []
         response_lengths: list[int] = []
-        for pair_index, ((datapoint_idx, reference_prompt, variant_prompt), sequences) in enumerate(
-            zip(pairs, sampled_groups)
-        ):
+        for pair_index, ((datapoint_idx, reference_prompt, variant_prompt), sequences) in enumerate(zip(pairs, sampled_groups)):
             if len(sequences) != self.config.generation.rollouts_per_prompt:
-                raise RuntimeError(
-                    f"student sampler returned {len(sequences)} rollouts for pair {pair_index}; "
-                    f"expected {self.config.generation.rollouts_per_prompt}"
-                )
+                raise RuntimeError(f"student sampler returned {len(sequences)} rollouts for pair {pair_index}; expected {self.config.generation.rollouts_per_prompt}")
             for sequence in sequences:
                 tokens = list(sequence.tokens)
                 response_lengths.append(len(tokens))
@@ -449,17 +558,37 @@ class OPCTTrainer:
                         "p_ref": None,
                         "p_ref_init": None,
                     }
-                    self._pending_rollout_meta.append(rollout_meta)
+                    rollout_meta_records.append(rollout_meta)
 
                 if skip_reason is not None:
                     continue
                 references.append(reference_prompt)
                 variants.append(variant_prompt)
                 completions.append(tokens)
-                behavior_logprobs.append(logprobs)
+                sampled_logprobs.append(logprobs)
                 valid_rollout_meta.append(rollout_meta)
 
-        if not completions:
+        return _UnscoredOPCTBatch(
+            references=references,
+            variants=variants,
+            completions=completions,
+            sampled_logprobs=sampled_logprobs,
+            valid_rollout_meta=valid_rollout_meta,
+            rollout_meta=rollout_meta_records,
+            response_lengths=response_lengths,
+        )
+
+    def _finalize_scored_batch(
+        self,
+        prepared: _UnscoredOPCTBatch,
+        student_logprobs: Sequence[Sequence[float]] | None,
+        teacher_logprobs: Sequence[Sequence[float]],
+        *,
+        fused_student_scoring: bool = False,
+    ) -> tuple[list[Any], dict[str, float], list[int], list[dict]]:
+        """Apply the original per-microbatch OPCT reduction to batched scores."""
+
+        if not prepared.completions:
             return (
                 [],
                 {
@@ -468,18 +597,49 @@ class OPCTTrainer:
                     "teacher_cross_entropy": 0.0,
                     "teacher_scored_tokens": 0.0,
                 },
-                response_lengths,
+                prepared.response_lengths,
+                prepared.rollout_meta,
+            )
+        if len(teacher_logprobs) != len(prepared.completions):
+            raise RuntimeError(
+                "OPCT teacher scorer result count does not match valid completions: "
+                f"teacher={len(teacher_logprobs)}, completions={len(prepared.completions)}"
+            )
+        if student_logprobs is not None and len(student_logprobs) != len(prepared.completions):
+            raise RuntimeError(
+                "OPCT student scorer result count does not match valid completions: "
+                f"student={len(student_logprobs)}, completions={len(prepared.completions)}"
             )
 
-        # The generation scores remain in the RL datum as behavior-policy scores.
-        # Rescoring the same tokens gives raw student scores for a probability-space
-        # matched comparison with the raw reference-policy scores, even at T != 1.
-        student_logprobs = await self.sampling_client.score_completions(variants, completions)
-        teacher_logprobs = await self.reference_policy.score_completions(references, completions)
         datums = [
             self._create_datum(prompt, tokens, logprobs)
-            for prompt, tokens, logprobs in zip(variants, completions, behavior_logprobs)
+            for prompt, tokens, logprobs in zip(
+                prepared.variants,
+                prepared.completions,
+                prepared.sampled_logprobs,
+            )
         ]
+        if fused_student_scoring:
+            for datum, teacher in zip(datums, teacher_logprobs):
+                datum.loss_fn_inputs["opct_teacher_logprobs"] = tinker.TensorData.from_torch(
+                    torch.as_tensor(teacher, dtype=torch.float32)
+                )
+            # Raw current-policy scores, reverse-KL advantages, and these
+            # aggregate placeholders are completed by the fused F/B result.
+            # The generated behavior scores above remain authoritative.
+            return (
+                datums,
+                {
+                    "teacher_kl": 0.0,
+                    "student_entropy": 0.0,
+                    "teacher_cross_entropy": 0.0,
+                    "teacher_scored_tokens": 0.0,
+                },
+                prepared.response_lengths,
+                prepared.rollout_meta,
+            )
+        if student_logprobs is None:
+            raise RuntimeError("non-fused OPCT batches require raw student scores")
         kl_metrics = apply_reference_reverse_kl(
             datums,
             teacher_logprobs,
@@ -488,7 +648,10 @@ class OPCTTrainer:
             kl_discount_factor=self.config.kl_discount_factor,
         )
         for datum, raw_student, raw_teacher, rollout_meta in zip(
-            datums, student_logprobs, teacher_logprobs, valid_rollout_meta
+            datums,
+            student_logprobs,
+            teacher_logprobs,
+            prepared.valid_rollout_meta,
         ):
             if rollout_meta is None:
                 continue
@@ -497,7 +660,160 @@ class OPCTTrainer:
             action_advantages = datum.loss_fn_inputs["advantages"].to_torch()[mask]
             rollout_meta["reward"] = float((-self.config.kl_coef * reverse_kl).mean())
             rollout_meta["advantage"] = float(action_advantages.mean())
-        return datums, kl_metrics, response_lengths
+        return datums, kl_metrics, prepared.response_lengths, prepared.rollout_meta
+
+    async def _build_batch_group(
+        self,
+        batches: Sequence[Sequence[tuple[int, dict] | dict]],
+        *,
+        prepared_pair_groups: Sequence[Sequence[tuple[int, types.ModelInput, types.ModelInput]]],
+        sampled_groups: Sequence[Sequence[Sequence[Any]]],
+    ) -> list[tuple[list[Any], dict[str, float], list[int], list[dict]]]:
+        """Score one unchanged-policy accumulation group in flat calls.
+
+        Scores are split back at the original microbatch boundaries before KL
+        metrics and advantages are reduced, so only transport batching changes.
+        A fused local backend needs only the frozen-teacher call: its train-time
+        differentiable forward supplies raw current-policy scores, while datums
+        retain the processed behavior scores returned by generation.
+        """
+
+        assert self.sampling_client is not None
+        assert self.reference_policy is not None
+        if not (len(batches) == len(prepared_pair_groups) == len(sampled_groups)):
+            raise ValueError("OPCT grouped batches, prepared pairs, and samples must have the same length")
+
+        prepared_batches: list[_UnscoredOPCTBatch] = []
+        for batch, pairs, samples in zip(batches, prepared_pair_groups, sampled_groups):
+            if len(pairs) != len(batch):
+                raise ValueError(f"prepared OPCT pair count {len(pairs)} does not match microbatch size {len(batch)}")
+            if len(samples) != len(pairs):
+                raise ValueError(f"prefetched OPCT sample-group count {len(samples)} does not match pair count {len(pairs)}")
+            prepared_batches.append(self._collect_unscored_batch(pairs, samples))
+
+        flat_variants = [prompt for prepared in prepared_batches for prompt in prepared.variants]
+        flat_references = [prompt for prepared in prepared_batches for prompt in prepared.references]
+        flat_completions = [tokens for prepared in prepared_batches for tokens in prepared.completions]
+        fused_submit = getattr(self.backend, "submit_opct_forward_backward", None)
+        fused_student_scoring = bool(getattr(self.backend, "supports_fused_opct_scoring", False))
+        if fused_student_scoring and not callable(fused_submit):
+            raise RuntimeError("backend advertises fused OPCT scoring without a submit method")
+
+        if flat_completions:
+            # Both the live student scorer (non-fused path) and the frozen
+            # OPCT teacher can be rollout-worker vLLM handles.  Keep the
+            # entire raw-scoring group in rollout phase; the caller switches
+            # to trainer phase only after all scores have returned.
+            await self._enter_rollout_phase_if_needed()
+            # Generated-token scores are the processed behavior distribution.
+            # Non-fused backends still need raw student scoring here. A fused
+            # local backend obtains it from the differentiable training pass.
+            flat_student = (
+                None
+                if fused_student_scoring
+                else await self.sampling_client.score_completions(
+                    flat_variants,
+                    flat_completions,
+                )
+            )
+            flat_teacher = await self.reference_policy.score_completions(flat_references, flat_completions)
+            if len(flat_teacher) != len(flat_completions):
+                raise RuntimeError(
+                    "OPCT grouped teacher scorer result count does not match valid completions: "
+                    f"teacher={len(flat_teacher)}, completions={len(flat_completions)}"
+                )
+            if flat_student is not None and len(flat_student) != len(flat_completions):
+                raise RuntimeError(
+                    "OPCT grouped student scorer result count does not match valid completions: "
+                    f"student={len(flat_student)}, completions={len(flat_completions)}"
+                )
+        else:
+            flat_student = None if fused_student_scoring else []
+            flat_teacher = []
+
+        output = []
+        offset = 0
+        for prepared in prepared_batches:
+            end = offset + len(prepared.completions)
+            output.append(
+                self._finalize_scored_batch(
+                    prepared,
+                    None if flat_student is None else flat_student[offset:end],
+                    flat_teacher[offset:end],
+                    fused_student_scoring=fused_student_scoring,
+                )
+            )
+            offset = end
+        return output
+
+    def _complete_fused_batch(
+        self,
+        datums: Sequence[Any],
+        fwd_bwd: ForwardBackwardOutput,
+        kl_metrics: dict[str, float],
+        rollout_meta: Sequence[dict],
+    ) -> None:
+        """Complete fused KL reductions and provenance from pre-update scores."""
+
+        if len(fwd_bwd.logprobs) != len(datums):
+            raise RuntimeError(
+                "fused OPCT forward/backward returned the wrong number of score tensors: "
+                f"scores={len(fwd_bwd.logprobs)}, datums={len(datums)}"
+            )
+
+        student_action_logprobs: list[torch.Tensor] = []
+        teacher_action_logprobs: list[torch.Tensor] = []
+        for index, (datum, raw_values) in enumerate(zip(datums, fwd_bwd.logprobs)):
+            mask = datum.loss_fn_inputs["mask"].to_torch().bool()
+            raw = torch.as_tensor(raw_values).detach().float().cpu()
+            if raw.shape != mask.shape:
+                raise RuntimeError(
+                    f"fused OPCT datum {index} raw-score/mask shape mismatch: "
+                    f"raw={tuple(raw.shape)}, mask={tuple(mask.shape)}"
+                )
+            teacher_data = datum.loss_fn_inputs.get("opct_teacher_logprobs")
+            if teacher_data is None:
+                raise RuntimeError(f"fused OPCT datum {index} is missing teacher scores")
+            teacher = teacher_data.to_torch().detach().float().cpu()
+            if teacher.ndim != 1 or teacher.numel() != int(mask.sum()):
+                raise RuntimeError(
+                    f"fused OPCT datum {index} has {int(mask.sum())} action tokens but "
+                    f"{teacher.numel()} teacher scores"
+                )
+            student_action_logprobs.append(raw[mask])
+            teacher_action_logprobs.append(teacher)
+
+        completed_metrics = apply_reference_reverse_kl(
+            datums,
+            teacher_action_logprobs,
+            student_action_logprobs=student_action_logprobs,
+            kl_coef=self.config.kl_coef,
+            kl_discount_factor=self.config.kl_discount_factor,
+        )
+        # Replace all pre-F/B placeholders. Keeping the normalized output in
+        # sync also makes the final metrics merge and progress display agree.
+        kl_metrics.update(completed_metrics)
+        fwd_bwd.metrics.update(completed_metrics)
+
+        if not rollout_meta:
+            return
+        valid_meta = [meta for meta in rollout_meta if not meta.get("skipped_from_training", False)]
+        if len(valid_meta) != len(datums):
+            raise RuntimeError(
+                "fused OPCT rollout provenance does not align with training datums: "
+                f"valid_records={len(valid_meta)}, datums={len(datums)}"
+            )
+        for datum, student, teacher, meta in zip(
+            datums,
+            student_action_logprobs,
+            teacher_action_logprobs,
+            valid_meta,
+        ):
+            reverse_kl = student - teacher
+            mask = datum.loss_fn_inputs["mask"].to_torch() > 0
+            action_advantages = datum.loss_fn_inputs["advantages"].to_torch()[mask]
+            meta["reward"] = float((-self.config.kl_coef * reverse_kl).mean())
+            meta["advantage"] = float(action_advantages.mean())
 
     async def train(self, samples: Sequence[dict]) -> str:
         """Train on paired prompt rows and return the final checkpoint path."""
@@ -524,11 +840,7 @@ class OPCTTrainer:
                 else:
                     prior_steps = []
                 if prior_steps or existing_step_file is not None:
-                    raise FileExistsError(
-                        f"OPCT rollout directory {rollout_dir} already contains step records. "
-                        "Checkpoint loading is a warm start and does not restore the loop position; "
-                        "choose a fresh run name or --rollout-dir to avoid overwriting provenance."
-                    )
+                    raise FileExistsError(f"OPCT rollout directory {rollout_dir} already contains step records. Checkpoint loading is a warm start and does not restore the loop position; choose a fresh run name or --rollout-dir to avoid overwriting provenance.")
                 self._rollout_logger = RolloutLogger(rollout_dir)
             else:
                 self._rollout_logger = None
@@ -547,15 +859,9 @@ class OPCTTrainer:
             )
 
             microbatches_per_epoch = (len(samples) + self.config.batch_size - 1) // self.config.batch_size
-            optimizer_steps_per_epoch = (
-                microbatches_per_epoch + self.config.gradient_accumulation_steps - 1
-            ) // self.config.gradient_accumulation_steps
+            optimizer_steps_per_epoch = (microbatches_per_epoch + self.config.gradient_accumulation_steps - 1) // self.config.gradient_accumulation_steps
             total_steps = optimizer_steps_per_epoch * self.config.n_epochs
-            base_lr = (
-                self.config.optimizer.learning_rate
-                if self.config.optimizer.learning_rate is not None
-                else get_recommended_lr(self.config.model)
-            )
+            base_lr = self.config.optimizer.learning_rate if self.config.optimizer.learning_rate is not None else get_recommended_lr(self.config.model)
             logger.log_hparams(
                 {
                     "n_samples": len(samples),
@@ -564,11 +870,7 @@ class OPCTTrainer:
                     "rollouts_per_prompt": self.config.generation.rollouts_per_prompt,
                 }
             )
-            print(
-                f"OPCT Training: {len(samples)} prompt pairs, batch={self.config.batch_size}, "
-                f"k={self.config.generation.rollouts_per_prompt}, {total_steps} optimizer steps, "
-                f"lr={base_lr:.2e}"
-            )
+            print(f"OPCT Training: {len(samples)} prompt pairs, batch={self.config.batch_size}, k={self.config.generation.rollouts_per_prompt}, {total_steps} optimizer steps, lr={base_lr:.2e}")
 
             def learning_rate(step: int) -> float:
                 multiplier = max(
@@ -586,48 +888,125 @@ class OPCTTrainer:
             global_microbatch = 0
             accumulated_grad_batches = 0
             indexed_samples = list(enumerate(samples))
+            phase_serialized = self._requires_serialized_sampling_and_training()
             for epoch in range(self.config.n_epochs):
                 epoch_samples = list(indexed_samples)
-                random.shuffle(epoch_samples)
+                if self.config.shuffle_samples:
+                    random.shuffle(epoch_samples)
                 batch_starts = list(range(0, len(epoch_samples), self.config.batch_size))
                 pbar = tqdm(batch_starts, desc=f"Epoch {epoch + 1}")
-                for microbatch_index, start in enumerate(pbar):
-                    batch = epoch_samples[start : start + self.config.batch_size]
-                    datums, kl_metrics, response_lengths = await self._build_batch(batch)
-                    # Provenance is an invariant: persist the sampled/selected set
-                    # before forward/backward or optimizer state can mutate.
-                    self._log_rollouts(global_microbatch + 1, epoch)
+                prefetched_batches: dict[
+                    int,
+                    tuple[list[Any], dict[str, float], list[int], list[dict]],
+                ] = {}
+                for microbatch_index, _ in enumerate(pbar):
+                    if not prefetched_batches:
+                        # Generate and raw-score the whole unchanged-policy
+                        # accumulation group in native batches. Scores are split
+                        # before per-microbatch KL/advantage reduction and fwd/bwd.
+                        group_end = min(
+                            microbatch_index + self.config.gradient_accumulation_steps,
+                            len(batch_starts),
+                        )
+                        group_batches: list[list[tuple[int, dict]]] = []
+                        group_pairs: list[list[tuple[int, types.ModelInput, types.ModelInput]]] = []
+                        for grouped_index in range(microbatch_index, group_end):
+                            grouped_start = batch_starts[grouped_index]
+                            grouped_batch = epoch_samples[grouped_start : grouped_start + self.config.batch_size]
+                            group_batches.append(grouped_batch)
+                            group_pairs.append(self._prepare_batch(grouped_batch))
+                        flat_pairs = [pair for prepared in group_pairs for pair in prepared]
+                        flat_samples = await self._sample_prepared_pairs(flat_pairs)
+                        offset = 0
+                        group_samples = []
+                        for prepared in group_pairs:
+                            end = offset + len(prepared)
+                            group_samples.append(flat_samples[offset:end])
+                            offset = end
+                        group_results = await self._build_batch_group(
+                            group_batches,
+                            prepared_pair_groups=group_pairs,
+                            sampled_groups=group_samples,
+                        )
+                        for grouped_index, result in zip(range(microbatch_index, group_end), group_results):
+                            prefetched_batches[grouped_index] = result
+                    datums, kl_metrics, response_lengths, rollout_meta = prefetched_batches.pop(microbatch_index)
+                    self._pending_rollout_meta = rollout_meta
                     current_lr = learning_rate(global_step)
-                    should_step = (
-                        microbatch_index + 1
-                    ) % self.config.gradient_accumulation_steps == 0 or microbatch_index + 1 == len(batch_starts)
+                    should_step = (microbatch_index + 1) % self.config.gradient_accumulation_steps == 0 or microbatch_index + 1 == len(batch_starts)
+                    uses_fused_scoring = bool(datums) and all(
+                        "opct_teacher_logprobs" in datum.loss_fn_inputs for datum in datums
+                    )
+
+                    # Non-fused metadata is already complete. Fused metadata
+                    # needs the differentiable raw scores returned below, but is
+                    # still persisted before any optimizer mutation.
+                    if not uses_fused_scoring:
+                        self._log_rollouts(global_microbatch + 1, epoch)
+
+                    # All generation and raw policy/reference scoring for this
+                    # unchanged-policy group have completed.  In phase-shared
+                    # mode the persistent HF replicas now reclaim the rollout
+                    # GPUs for F/B (and, at an accumulation boundary, the
+                    # optimizer).  The check also covers an empty final
+                    # microbatch which still needs to flush gradients from an
+                    # earlier microbatch in the group.
+                    if datums or (should_step and accumulated_grad_batches > 0):
+                        await self._enter_training_phase_if_needed()
 
                     pending_fwd_bwd = None
                     if datums:
-                        pending_fwd_bwd = await self.backend.submit_forward_backward(
-                            datums,
-                            loss_fn=self.config.loss_fn,
-                        )
+                        fused_submit = getattr(self.backend, "submit_opct_forward_backward", None)
+                        if uses_fused_scoring:
+                            if not callable(fused_submit):
+                                raise RuntimeError("fused OPCT datums require backend support")
+                            pending_fwd_bwd = await fused_submit(
+                                datums,
+                                behavior_temperature=self.config.generation.temperature,
+                                kl_coef=self.config.kl_coef,
+                                kl_discount_factor=self.config.kl_discount_factor,
+                                loss_fn=self.config.loss_fn,
+                            )
+                        else:
+                            pending_fwd_bwd = await self.backend.submit_forward_backward(
+                                datums,
+                                loss_fn=self.config.loss_fn,
+                            )
                         accumulated_grad_batches += 1
+
+                    fwd_bwd = None
+                    if uses_fused_scoring:
+                        assert pending_fwd_bwd is not None
+                        fwd_bwd = await pending_fwd_bwd.result()
+                        self._complete_fused_batch(datums, fwd_bwd, kl_metrics, rollout_meta)
+                        self._pending_rollout_meta = rollout_meta
+                        self._log_rollouts(global_microbatch + 1, epoch)
+
                     pending_optim = None
                     if should_step and accumulated_grad_batches > 0:
                         pending_optim = await self.backend.submit_optim_step(
                             learning_rate=current_lr,
                             adam=self.config.optimizer,
                         )
-                    fwd_bwd = await pending_fwd_bwd.result() if pending_fwd_bwd is not None else None
+                    if fwd_bwd is None and pending_fwd_bwd is not None:
+                        fwd_bwd = await pending_fwd_bwd.result()
                     did_step = pending_optim is not None
                     if pending_optim is not None:
                         await pending_optim.result()
                         accumulated_grad_batches = 0
                         global_step += 1
-                        # OPCT's defining guarantee: every post-update rollout is
-                        # sampled from newly published current-policy weights.
-                        self.sampling_client = await self.backend.refresh_policy_sampler(
-                            name=(
-                                f"{self.config.experiment_name}_{self.config.run_name}_" f"opct_sampler_{global_step}"
+                        if not phase_serialized:
+                            # Preserve the historical disjoint-GPU schedule:
+                            # publish immediately after the optimizer update,
+                            # before logging or checkpoint materialization.
+                            # OPCT's defining guarantee remains that every
+                            # post-update rollout uses newly published weights.
+                            self.sampling_client = await self.backend.refresh_policy_sampler(
+                                name=(
+                                    f"{self.config.experiment_name}_"
+                                    f"{self.config.run_name}_opct_sampler_{global_step}"
+                                )
                             )
-                        )
 
                     global_microbatch += 1
                     metrics = {
@@ -637,9 +1016,7 @@ class OPCTTrainer:
                         "train/optimizer_step": global_step,
                         "train/n_rollouts": len(datums),
                         "train/n_skipped_rollouts": len(response_lengths) - len(datums),
-                        "train/avg_response_length": (
-                            sum(response_lengths) / len(response_lengths) if response_lengths else 0.0
-                        ),
+                        "train/avg_response_length": (sum(response_lengths) / len(response_lengths) if response_lengths else 0.0),
                         "train/epoch": epoch,
                     }
                     logger.log_metrics(metrics, step=global_microbatch)
@@ -652,6 +1029,12 @@ class OPCTTrainer:
                     )
 
                     if did_step:
+                        if phase_serialized:
+                            # A checkpoint hashes/serializes trainer state, so
+                            # it must complete while worker vLLM engines remain
+                            # asleep.  Only then may adapter publication wake
+                            # them for the next unchanged-policy rollout group.
+                            await self._enter_training_phase_if_needed()
                         await save_intermediate_checkpoint(
                             self.backend,
                             experiment_name=self.config.experiment_name,
@@ -664,7 +1047,18 @@ class OPCTTrainer:
                             checkpoint_paths=checkpoint_paths,
                             logger=logger,
                         )
+                        if phase_serialized:
+                            self.sampling_client = await self.backend.refresh_policy_sampler(
+                                name=(
+                                    f"{self.config.experiment_name}_"
+                                    f"{self.config.run_name}_opct_sampler_{global_step}"
+                                )
+                            )
 
+            # The final checkpoint is trainer work too.  In particular, the
+            # last adapter refresh may have woken a phase-shared worker pool;
+            # re-establish the barrier before it hashes or writes state.
+            await self._enter_training_phase_if_needed()
             return await finalize_checkpoint(
                 self.backend,
                 experiment_name=self.config.experiment_name,

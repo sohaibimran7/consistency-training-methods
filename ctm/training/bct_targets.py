@@ -19,7 +19,7 @@ from typing import Any
 
 from ctm.artifacts import plain_file_identity, write_atomic_bytes
 from ctm.backends.base import SamplerHandle
-from ctm.backends.renderers import decode_response
+from ctm.training.bct_response import TARGET_POLICY, content_spans, decode_bct_response, verify_supervised_preservation
 from ctm.cli_safety import redact_secrets
 from ctm.generation_provenance import (
     build_fresh_target_provenance,
@@ -29,7 +29,7 @@ from ctm.generation_provenance import (
 from ctm.identity import sha256_json
 
 BCT_TARGET_SCHEMA_VERSION = 1
-BCT_PROGRESS_SCHEMA_VERSION = 1
+BCT_PROGRESS_SCHEMA_VERSION = 2
 COMPLETION_EXPORT_SCHEMA = "ctm.completion_export"
 COMPLETION_EXPORT_SCHEMA_VERSION = 1
 
@@ -70,10 +70,9 @@ def _validate_generated_pair(
         if (
             not isinstance(assistant, dict)
             or assistant.get("role") != "assistant"
-            or not isinstance(assistant.get("content"), str)
-            or not assistant["content"].strip()
         ):
             raise ValueError(f"{location} {name} output must end with a non-empty assistant message")
+        content_spans(assistant)
         outputs.append(value)
     if outputs[0]["messages"][-1] != outputs[1]["messages"][-1]:
         raise ValueError(f"{location} main/control assistant targets differ")
@@ -118,6 +117,7 @@ def build_bct_progress_identity(
                 "control_messages": control_messages_field,
             },
             "generation": dict(generation_config),
+            "target_policy": TARGET_POLICY,
             "prompt_count": len(prompts),
             "prompts_sha256": hashlib.sha256(prompt_payload).hexdigest(),
         }
@@ -509,7 +509,7 @@ async def generate_bct_rows(
     sampler: SamplerHandle,
     renderer: Any,
     tokenizer: Any,
-    max_tokens: int = 32768,
+    max_tokens: int | None = 32768,
     temperature: float = 0.0,
     max_concurrency: int = 32,
     completed: Mapping[int, tuple[dict[str, Any], dict[str, Any]]] | None = None,
@@ -522,8 +522,10 @@ async def generate_bct_rows(
     checkpoint work before another concurrent sample can fail.
     """
 
-    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1:
-        raise ValueError("max_tokens must be a positive integer")
+    if max_tokens is not None and (
+        not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1
+    ):
+        raise ValueError("max_tokens must be a positive integer or None for EOS-only generation")
     if not isinstance(max_concurrency, int) or isinstance(max_concurrency, bool) or max_concurrency < 1:
         raise ValueError("max_concurrency must be a positive integer")
     if not isinstance(temperature, (int, float)) or isinstance(temperature, bool) or temperature < 0:
@@ -567,11 +569,14 @@ async def generate_bct_rows(
                 f"base sampler returned {len(sequences)} sequences for row {index + 1} "
                 f"({item.source_id!r}); expected exactly one"
             )
-        completion = decode_response(renderer, tokenizer, sequences[0].tokens)
-        if not completion.strip():
-            raise RuntimeError(f"base sampler returned an empty completion for row {index + 1} ({item.source_id!r})")
-        main_rows, control_rows = build_bct_rows_from_completions([item], {item.source_id: completion})
-        main, control = main_rows[0], control_rows[0]
+        assistant = decode_bct_response(renderer, tokenizer, sequences[0].tokens, prompt=prompt)
+        metadata = {"source_id": item.source_id, "target_policy": TARGET_POLICY,
+                    "sampled_tokens_sha256": sha256_json(list(sequences[0].tokens))}
+        main = {**metadata, "messages": [*item.main_messages, assistant]}
+        control = {**metadata, "messages": [*item.control_messages, assistant]}
+        _validate_generated_pair(index, item, main, control, location="generated BCT target")
+        for row in (main, control):
+            verify_supervised_preservation(renderer, tokenizer, row["messages"])
         if on_completed is not None:
             on_completed(index, item, main, control)
         return index, main, control
