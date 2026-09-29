@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 import subprocess
 from unittest.mock import patch
-from experiments.rmct_restart_20260928.qwen_train_window import command,gates
+from experiments.rmct_restart_20260928.qwen_train_window import command,gates,execute_segment
 from experiments.rmct_restart_20260928.qwen_validation_producer import scheduler_complete
 
 
@@ -40,6 +40,39 @@ class ControllerBoundaryTests(unittest.TestCase):
         prefix='experiments.rmct_restart_20260928.qwen_train_window.'
         with patch(prefix+'source_check'),patch('subprocess.run'),patch('subprocess.check_output',return_value='a'*40),patch(prefix+'sha',return_value='hash'),patch(prefix+'read',side_effect=[dict(source_commit='a'*40,plan_sha256='hash'),dict(schema='rmct-native-rl-gate-v1',status='passed',source_commit='b'*40)]):
             with self.assertRaises(ValueError):gates(dict(incorporated_commit='a'*40),'plan','preflight','rl','regression',Path('/repo'))
+
+    def parent(self):
+        a=self.plan['argv'];campaign=a[a.index('--run-name')+1];experiment=a[a.index('--experiment-name')+1]
+        name=f'{campaign}-s001'
+        return dict(schema='rmct-clean-checkpoint-v1',campaign_id=campaign,step=16,
+                    checkpoint=str(Path('/repo/logs')/experiment/name/'checkpoints'/f'{experiment}_{name}'),
+                    files={},parent=None,command=command(self.plan,0,None))
+
+    def test_wrong_campaign_or_path_never_starts_child(self):
+        for field,value in [('campaign_id','wrong'),('checkpoint','/old/checkpoint'),('step',32)]:
+            parent=self.parent();parent[field]=value
+            with patch('subprocess.run') as child:
+                with self.assertRaises(ValueError):execute_segment(self.plan,1,parent,Path('/repo'),{})
+                child.assert_not_called()
+
+    def test_changed_parent_seal_never_starts_child(self):
+        parent=self.parent()
+        with patch('experiments.rmct_restart_20260928.qwen_train_window.seal',return_value=dict(parent,files={'changed':True})),patch('subprocess.run') as child:
+            with self.assertRaises(ValueError):execute_segment(self.plan,1,parent,Path('/repo'),{})
+            child.assert_not_called()
+
+    def test_invalid_strict_resume_state_never_starts_child(self):
+        with patch('experiments.rmct_restart_20260928.qwen_train_window.seal',side_effect=ValueError('invalid optimizer/RNG state')),patch('subprocess.run') as child:
+            with self.assertRaises(ValueError):execute_segment(self.plan,1,self.parent(),Path('/repo'),{})
+            child.assert_not_called()
+
+    def test_valid_parent_revalidated_before_child(self):
+        events=[];parent=self.parent()
+        def checked(*a,**kw):events.append('seal');return parent
+        def launched(*a,**kw):events.append('child')
+        with patch('experiments.rmct_restart_20260928.qwen_train_window.seal',side_effect=checked),patch('subprocess.run',side_effect=launched):
+            execute_segment(self.plan,1,parent,Path('/repo'),{})
+        self.assertEqual(events,['seal','child'])
 
 
 if __name__=='__main__':unittest.main()

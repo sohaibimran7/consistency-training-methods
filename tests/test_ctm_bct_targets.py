@@ -20,6 +20,12 @@ from ctm.training.bct_targets import (
 
 
 class _Renderer:
+    def build_supervised_example(self, messages):
+        from types import SimpleNamespace
+        import torch
+        token = int(messages[-1]["content"].removeprefix("answer-"))
+        return SimpleNamespace(to_ints=lambda: [token]), torch.tensor([1.0])
+
     def build_generation_prompt(self, messages):
         return int(messages[-1]["content"].removeprefix("clean-"))
 
@@ -32,7 +38,7 @@ class _Renderer:
 
 class _Tokenizer:
     def decode(self, tokens):
-        return f"decoded-{tokens[0]}"
+        return f"answer-{tokens[0]}"
 
 
 class _Sampler:

@@ -57,6 +57,38 @@ def command(plan,index,parent):
     return argv
 
 
+def validate_parent(plan,index,parent,repo):
+    """Revalidate the exact clean parent BEFORE a child can use its weights.
+
+    Resealing checks required file paths/hashes, final four-rank metadata and
+    strict optimizer/RNG resume state. The expected path comes from this plan,
+    not from the untrusted saved parent receipt.
+    """
+    if index==0:
+        if parent is not None:raise ValueError('Fresh segment cannot have a parent')
+        return
+    argv=plan['argv']
+    campaign_id=argv[argv.index('--run-name')+1]
+    experiment=argv[argv.index('--experiment-name')+1]
+    if (not parent or parent.get('schema')!='rmct-clean-checkpoint-v1'
+        or parent.get('campaign_id')!=campaign_id or parent.get('step')!=index*16):
+        raise ValueError('Wrong clean parent identity before training')
+    run_name=f'{campaign_id}-s{index:03d}'
+    expected=Path(repo).resolve()/'logs'/experiment/run_name/'checkpoints'/f'{experiment}_{run_name}'
+    if parent.get('checkpoint')!=str(expected):raise ValueError('Wrong parent path before training')
+    grandparent=parent.get('parent')
+    expected_command=command(plan,index-1,grandparent)
+    if parent.get('command')!=expected_command:raise ValueError('Parent recipe differs from current clean plan')
+    current=seal(expected,campaign_root=Path(repo).resolve()/'logs'/experiment,
+                 campaign_id=campaign_id,step=index*16,command=expected_command,parent=grandparent)
+    if current!=parent:raise ValueError('Parent seal or bytes changed before training')
+
+
+def execute_segment(plan,index,parent,repo,env):
+    validate_parent(plan,index,parent,repo)
+    subprocess.run(command(plan,index,parent),cwd=repo,env=env,check=True)
+
+
 def run(args):
     if not os.environ.get('SLURM_JOB_ID'):raise ValueError('Scheduled allocation required')
     plan=read(args.plan);repo=Path(plan['argv'][1]).resolve().parents[1]
@@ -98,7 +130,7 @@ def run(args):
         if run_dir.exists():raise ValueError('Uncertain/existing production run; no replay')
         folder=root/'segments'/str(index)
         write(folder/'started.json',dict(argv=argv,plan_sha256=sha(args.plan),gates=checked))
-        subprocess.run(argv,cwd=repo,env=env,check=True)
+        execute_segment(plan,index,parent,repo,env)
         checkpoint=run_dir/'checkpoints'/f'{experiment}_{run_name}'
         parent=seal(checkpoint,campaign_root=repo/'logs'/experiment,campaign_id=campaign_id,
                     step=(index+1)*16,command=argv,parent=parent)

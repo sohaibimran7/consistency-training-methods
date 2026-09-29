@@ -52,6 +52,7 @@ for ext in ['png','pdf']:fig.savefig(O/f'auroc.{ext}',dpi=170)
 plt.close(fig)
 fig,axes=plt.subplots(1,2,figsize=(12,6));diagnostic={}
 for ax,match in zip(axes,[True,False]):
+ ax.plot([0,1],[0,1],ls='--',color='#999999',lw=1.5,label='Uniform-random scores')
  for m,name,color in methods:
   rr=[r for r in rows if r['method']==m and r['already_matched'] and r['biased_matches']==match];n=len(rr);k=f'{m}:biased_matches={match}'
   diagnostic[k]={'n':n,'all_labels_zero':True}
@@ -66,6 +67,7 @@ fig,axes=plt.subplots(2,2,figsize=(13,11));quadrants={}
 for row,clean_match in enumerate([False,True]):
  for col,biased_match in enumerate([False,True]):
   ax=axes[row,col];positive=not clean_match and biased_match
+  ax.plot([0,1],[0,1],ls='--',color='#999999',lw=1.5,label='Uniform-random scores')
   for m,name,color in methods:
    rr=[r for r in rows if r['method']==m and r['already_matched']==clean_match and r['biased_matches']==biased_match]
    n=len(rr);k=f'{m}:clean_matches={clean_match}:biased_matches={biased_match}'
