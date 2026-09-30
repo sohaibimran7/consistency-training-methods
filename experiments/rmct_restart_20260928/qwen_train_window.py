@@ -301,6 +301,57 @@ def train_to_boundary(plan, binding, root, target, checked, parent, env):
         write(folder / 'complete.json', parent)
 
 
+def require_resume_load_gate(path, parent, binding, checked):
+    """Accept only same-source scheduled load evidence for this exact parent."""
+    if path is None:
+        raise ValueError('Saved recovery requires completed optimizer/RNG load gate')
+    record = identity(path)
+    receipt = read(path)
+    if (receipt.get('schema') != 'rmct-saved-resume-load-v1' or receipt.get('status') != 'passed'
+            or receipt.get('binding') != binding or receipt.get('gates') != checked
+            or receipt.get('checkpoint') != parent
+            or receipt.get('production_resume_forbidden') is not True):
+        raise ValueError('Load gate source/parent/prerequisites differ')
+    if (receipt.get('sampled_batches'),receipt.get('optimizer_updates'),receipt.get('next_batch')) != (16,12,16):
+        raise ValueError('Load gate counter/cursor mismatch')
+    import re
+    def digest(h): return isinstance(h,str) and re.fullmatch('[0-9a-f]{64}',h) is not None
+    if receipt.get('coordinator_rng_restored') is not True or not digest(receipt.get('coordinator_rng_sha256')):
+        raise ValueError('Coordinator RNG load unverified')
+    operations=receipt.get('operations',[])
+    if len(operations)!=1 or operations[0].get('operation')!='setup':
+        raise ValueError('Unexpected load gate operations')
+    for key in ('generation_calls','backward_calls','optimizer_step_calls'):
+        if type(receipt.get(key)) is not int or receipt[key] != 0:
+            raise ValueError('Load gate performed forbidden optimizer or rollout work')
+    rows = receipt.get('optimizer_rank_records',[])
+    if len(rows) != 4 or {row.get('device') for row in rows} != {f'cuda:{r}' for r in range(4)}:
+        raise ValueError('Load evidence missing or duplicated GPU rank')
+    digests = {row.get('optimizer_state_sha256') for row in rows}
+    if len(digests) != 1 or any(not digest(h) for h in digests):
+        raise ValueError('Loaded optimizer state hashes differ')
+    for row in rows:
+        if row.get('resume_from') != 'file://' + parent['checkpoint']:
+            raise ValueError('Rank loaded a different checkpoint')
+        for key in ('generation_calls','optimizer_step_calls'):
+            if type(row.get(key)) is not int or row[key] != 0:
+                raise ValueError('Rank performed forbidden work')
+    rng = receipt.get('rng_sha256_by_rank',{})
+    if set(rng) != set(map(str,range(4))) or any(not digest(h) for h in rng.values()):
+        raise ValueError('Four-rank RNG load unverified')
+    if not digest(receipt.get('adapter_state_hash')):
+        raise ValueError('Loaded adapter state hash missing')
+    job = receipt.get('job_id')
+    if not isinstance(job,str) or not job.isdecimal():
+        raise ValueError('Load gate scheduler identity missing')
+    state = subprocess.check_output(['sacct','-X','-j',job,'--noheader','--format=State,ExitCode','-P'],text=True).strip()
+    if state != 'COMPLETED|0:0':
+        raise ValueError('Load gate scheduler completion unverified')
+    if identity(path) != record:
+        raise ValueError('Load receipt changed during verification')
+    return record
+
+
 def run(args):
     if not os.environ.get('SLURM_JOB_ID'):raise ValueError('Scheduled allocation required')
     plan=read(args.plan);repo=Path(plan['argv'][1]).resolve().parents[1]
@@ -344,6 +395,7 @@ def run(args):
         audit=checked_record(contract['audit'])
         state=subprocess.check_output(['sacct','-X','-j',str(audit['job']),'--noheader','--format=State,ExitCode','-P'],text=True).strip()
         if state!='FAILED|1:0':raise ValueError('Original failed job is not confirmed terminal')
+        checked=dict(checked,resume_load_gate=require_resume_load_gate(args.resume_load_gate,parent,binding,checked))
     window=root/f'window-{args.target}'
     write(window/'attempt.json',dict(job_id=os.environ['SLURM_JOB_ID'],plan_sha256=sha(args.plan),gates=checked))
     env=dict(os.environ,PYTHONPATH=str(repo),PYTHONNOUSERSITE='1',PYTHONDONTWRITEBYTECODE='1')
@@ -358,4 +410,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('plan','campaign','preflight','rl-gate','regression','validation-manifest'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--target',type=int,required=True)
+    p.add_argument('--resume-load-gate',type=Path)
     run(p.parse_args())
