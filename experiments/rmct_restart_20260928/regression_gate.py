@@ -20,6 +20,10 @@ TESTS = [
     'experiments/rmct_restart_20260928/test_qwen_validation.py',
     'experiments/rmct_restart_20260928/test_qwen_runtime_boundaries.py',
     'experiments/rmct_restart_20260928/test_qwen_controller.py',
+    'experiments/rmct_restart_20260928/test_qwen_progress.py',
+    'experiments/rmct_restart_20260928/test_qwen_recovery_v2.py',
+    'experiments/rmct_restart_20260928/test_qwen_validation_prepare.py',
+    'ctm_data/adapters/mcq_bias/tests/test_shared_qid_two_bias.py',
 ]
 
 
