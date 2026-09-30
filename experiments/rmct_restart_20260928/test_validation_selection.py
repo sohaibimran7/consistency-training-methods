@@ -146,3 +146,40 @@ def test_backward_consumed_cursor_and_wrong_checkpoint_validation_rejected(campa
     with pytest.raises(ValueError, match='identity differs'):
         s.accept_validation(c['root'], c['contract'], p, wrong,
                             verify_checkpoint=c['verify_checkpoint'], verify_validation=c['verify_validation'])
+
+
+def test_bootstrap_requires_verified_base_and_fresh_optimizer(campaign):
+    c=campaign
+    start=dict(schema='ctm-training-start-v1',contract=c['contract'],campaign_id='fresh',
+               method='bct',model='gemma',source_commit='source',actual_optimizer_step=0,
+               next_attempt_index=0,resume_from=None,optimizer='fresh')
+    record=c['save']('start.json',start)
+    assert s.bootstrap_budget(c['contract'],record,requested_updates=100,
+                              verify_start=lambda a,b:a)==64
+    def fail(*args):raise ValueError('Native start evidence missing')
+    with pytest.raises(ValueError,match='Native start evidence'):
+        s.bootstrap_budget(c['contract'],record,requested_updates=16,verify_start=fail)
+    for changed in [{**start,'actual_optimizer_step':12}, {**start,'optimizer':'resumed'},
+                    {**start,'resume_from':'old-checkpoint'}, {**start,'next_attempt_index':16}]:
+        bad=c['save']('bad-start.json',changed)
+        with pytest.raises(ValueError):
+            s.bootstrap_budget(c['contract'],bad,requested_updates=16,verify_start=lambda a,b:a)
+
+
+def test_empty_history_cannot_bypass_missing_mutated_or_invalid_contract(campaign):
+    c=campaign
+    callbacks=dict(verify_checkpoint=c['verify_checkpoint'],verify_validation=c['verify_validation'])
+    with pytest.raises(ValueError):
+        s.replay([], {'path':str(c['root']/'missing.json'),'sha256':'a'*64,'bytes':1}, **callbacks)
+    contract=s.read_verified(c['contract'])
+    invalid=c['save']('invalid-contract.json',{**contract,'policy':{**s.POLICY,'patience':100}})
+    with pytest.raises(ValueError,match='selection policy'):
+        s.replay([],invalid,**callbacks)
+    _,progress=c['checkpoint'](12,attempts=16)
+    state=dict(contract=invalid,stopped=False,latest=None)
+    with pytest.raises(ValueError,match='selection policy'):
+        s.continuation_budget(progress,state,requested_updates=64)
+    from pathlib import Path
+    Path(c['contract']['path']).write_text('{}')
+    with pytest.raises(ValueError,match='identity changed'):
+        s.replay([],c['contract'],**callbacks)

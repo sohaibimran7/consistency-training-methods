@@ -39,6 +39,14 @@ successful negative.
 
 ## Calls and persistence
 
+Before the first checkpoint exists, `bootstrap_budget(contract_record,
+start_record, requested_updates=..., verify_start=...)` requires an immutable
+`ctm-training-start-v1` record with the same campaign/method/model/source,
+`contract`, zero actual updates/next attempt, `resume_from=null`, and
+`optimizer=fresh`. The adapter verifies original base/data/native gate evidence
+and the exclusive scheduled-start claim. It grants at most 64 actual updates;
+later windows use checkpoint progress and accepted validation receipts.
+
 1. `accept_validation(folder, contract_record, progress_record,
    validation_record, verify_checkpoint=..., verify_validation=...)` verifies
    all evidence before creating an exclusive `validation/step-NNNNNN.json`.

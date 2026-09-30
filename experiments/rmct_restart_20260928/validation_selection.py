@@ -104,6 +104,7 @@ def _verified_entry(entry, contract_record, verify_checkpoint, verify_validation
 
 
 def replay(entries, contract_record, *, verify_checkpoint, verify_validation):
+    check_contract(read_verified(contract_record))
     best = latest = None
     stale = 0
     history = []
@@ -168,7 +169,9 @@ def continuation_budget(progress, state, *, requested_updates):
     """Pure budget; call only with freshly verified progress/replayed state."""
     if type(requested_updates) is not int or requested_updates <= 0:
         raise ValueError('Positive actual-update budget required')
-    check_progress(progress, read_verified(state['contract']))
+    contract=read_verified(state['contract'])
+    check_contract(contract)
+    check_progress(progress, contract)
     step = progress['actual_optimizer_step']
     if type(step) is not int or not 0 <= step <= POLICY['max_optimizer_updates']:
         raise ValueError('Invalid actual optimizer progress')
@@ -184,12 +187,38 @@ def continuation_budget(progress, state, *, requested_updates):
     return min(requested_updates, accepted + 64 - step, POLICY['max_optimizer_updates'] - step)
 
 
+def bootstrap_budget(contract_record, start_record, *, requested_updates, verify_start):
+    """Budget the fresh first window before a training checkpoint exists."""
+    contract = read_verified(contract_record)
+    check_contract(contract)
+    start = read_verified(start_record)
+    if start.get('schema') != 'ctm-training-start-v1' or start.get('contract') != contract_record:
+        raise ValueError('Fresh start contract mismatch')
+    for key in ('campaign_id','method','model','source_commit'):
+        if start.get(key) != contract[key]:
+            raise ValueError('Fresh start identity mismatch')
+    for key in ('actual_optimizer_step','next_attempt_index'):
+        if type(start.get(key)) is not int or start[key] != 0:
+            raise ValueError('Bootstrap requires fresh zero progress')
+    if start.get('resume_from') is not None or start.get('optimizer') != 'fresh':
+        raise ValueError('Bootstrap requires base weights and fresh optimizer')
+    # Adapter verifies actual source, original base/data/native gate evidence
+    # and exclusive start claims before returning this same immutable record.
+    if verify_start(start,contract) != start:
+        raise ValueError('Fresh start evidence not verified')
+    if type(requested_updates) is not int or requested_updates <= 0:
+        raise ValueError('Positive actual-update budget required')
+    return min(requested_updates,64)
+
+
 def selected_evaluation_manifest(state):
     """Materialize the selected identity from a freshly replayed state."""
     selected = state['selected']
     if selected is None:
         raise ValueError('No verified selected checkpoint')
-    progress = read_verified(selected['progress'])
+    contract=read_verified(state['contract'])
+    check_contract(contract)
+    progress = check_progress(read_verified(selected['progress']),contract)
     return dict(schema='ctm-selected-checkpoint-evaluation-v1', contract=state['contract'],
                 progress=selected['progress'], validation=selected['validation'],
                 actual_optimizer_step=progress['actual_optimizer_step'],
