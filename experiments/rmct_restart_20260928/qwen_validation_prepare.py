@@ -13,6 +13,28 @@ from experiments.rmct_restart_20260928.qwen_launch import source_check
 from experiments.rmct_restart_20260928.qwen_validation_executor import read,write,check_contract
 from experiments.rmct_restart_20260928.qwen_validation_producer import scheduler_complete
 from experiments.rmct_restart_20260928.qwen_validation_server import check_executable
+from experiments.rmct_restart_20260928.qwen_train_window import verify_seal_v2, plan_binding
+
+
+def verified_validation_checkpoint(sealed, root, source_commit, model):
+    """Verify lineage and runtime before translation or GPU side effects."""
+    binding = sealed['binding']
+    plan = read(binding['plan']['path'])
+    if plan_binding(plan, binding['plan']['path']) != binding:
+        raise ValueError('Validation plan identity mismatch')
+    if binding['source_commit'] != source_commit or binding['source_root'] != str(Path(root).resolve()):
+        raise ValueError('Validation source differs from checkpoint source')
+    argv = plan['argv']
+    if (os.path.abspath(argv[0]) != os.path.abspath(sys.executable)
+            or plan['python_prefix'] != sys.prefix
+            or argv[argv.index('--model') + 1] != model):
+        raise ValueError('Validation runtime/model differs from training')
+    verified = verify_seal_v2(sealed, plan, binding)
+    step = verified['step']
+    if (type(step) is not int or step < 64 or step % 64
+            or step != verified['progress']['optimizer_updates']):
+        raise ValueError('Expected positive actual 64-update boundary')
+    return verified
 
 
 def prepare(a):
@@ -21,10 +43,7 @@ def prepare(a):
     root=Path(__file__).resolve().parents[2];source_check(root,a.source_commit)
     scheduler_complete(a.training_job)
     v.population(a.manifest)
-    sealed=read(a.checkpoint_seal)
-    if sealed['schema']!='rmct-clean-checkpoint-v1' or sealed['step']%64:raise ValueError('Expected clean64-update boundary')
-    for f in sealed['files'].values():
-        if identity(f['path'])!=f:raise ValueError('Sealed checkpoint changed')
+    sealed=verified_validation_checkpoint(read(a.checkpoint_seal),root,a.source_commit,a.model)
     if v.sha(a.reference_report)!=a.reference_sha:raise ValueError('Probe reference changed')
     reference=read(a.reference_report);data=reference['data']
     if v.sha(data['path'])!=data['sha256']:raise ValueError('Probe population changed')

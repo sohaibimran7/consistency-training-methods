@@ -259,6 +259,39 @@ def test_released_manifest_shape_without_new_provenance_fields_remains_loadable(
     assert setting.run_metadata()["pool_contract"]["qids_per_dataset"] == 500
 
 
+def test_bounded_batch_slices_preserve_frozen_order_without_replay(tmp_path: Path) -> None:
+    result, _ = _materialized(tmp_path)
+    setting = SharedQidTwoBiasSetting(
+        data_path=result.data_path, manifest_path=result.manifest_path,
+        expected_manifest_sha256=result.manifest_sha256)
+    full = setting.load_datapoints(n_datapoints=32, segment_index=1)
+    first = setting.load_datapoints(n_datapoints=32, segment_index=1, batch_offset=0, batch_count=4)
+    remainder = setting.load_datapoints(n_datapoints=32, segment_index=1, batch_offset=4)
+    assert first + remainder == full
+    assert len(first) == 8 and len(remainder) == 24
+    metadata = setting.run_metadata()["segment"]
+    assert metadata["n_datapoints"] == 32  # Full verified segment contract unchanged.
+    sliced = metadata["batch_slice"]
+    assert sliced["sampled_batches_start"] == 20
+    assert sliced["sampled_batches_end"] == 32
+    assert sliced["interleaved_question_ids"] == [row["question_id"] for row in remainder]
+    assert sliced["interleaved_question_ids_sha256"] == _ids_sha256(sliced["interleaved_question_ids"])
+    assert [row["source_dataset"] for row in remainder] == ["logiqa", "hellaswag"] * 12
+    for offset, count in [(-1, 1), (16, 1), (True, 1), (0, False), (0, 0), (15, 2), (0, 1.5)]:
+        with pytest.raises(ValueError, match="batch_"):
+            setting.load_datapoints(n_datapoints=32, segment_index=1, batch_offset=offset, batch_count=count)
+    # Sub-slicing never permits a different manifest-bound segment width.
+    with pytest.raises(ValueError, match="n_datapoints=32"):
+        setting.load_datapoints(n_datapoints=8, batch_offset=0, batch_count=4)
+    # Even a one-batch request must validate the complete frozen artifact.
+    result.data_path.write_bytes(result.data_path.read_bytes() + b"\n")
+    fresh = SharedQidTwoBiasSetting(
+        data_path=result.data_path, manifest_path=result.manifest_path,
+        expected_manifest_sha256=result.manifest_sha256)
+    with pytest.raises(ValueError):
+        fresh.load_datapoints(n_datapoints=32, batch_offset=0, batch_count=1)
+
+
 def test_segment_width_is_manifest_driven(tmp_path: Path) -> None:
     inputs = _write_fixture_inputs(tmp_path, qids_per_dataset=24)
     result = materialize_shared_qid_two_bias(

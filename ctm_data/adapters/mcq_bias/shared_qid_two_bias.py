@@ -8,7 +8,7 @@ Stage-2 populations by their exact question ids, and pins the canonical
 ``mcq_bias`` suggested-answer injector used to reconstruct the second cue.
 
 By default the setting preserves the released 1,000-QID contract and exposes
-32 deterministic 16-update windows.  The materializer can also freeze any
+32 deterministic 16-batch windows (at most 16 optimizer updates). The materializer can also freeze any
 explicit balanced pool size.  Window count is then derived from the frozen
 manifest rather than from the legacy 500-QID-per-dataset assumption.  At the
 default window size, each window contains 32 base questions: 16 LogiQA and 16
@@ -1059,6 +1059,8 @@ class SharedQidTwoBiasSetting:
         *,
         segment_index: int = 0,
         cycle_segments: bool = False,
+        batch_offset: int = 0,
+        batch_count: int | None = None,
         **_: Any,
     ) -> list[dict[str, Any]]:
         manifest, rows = self._load_verified()
@@ -1101,6 +1103,18 @@ class SharedQidTwoBiasSetting:
             for local_index in range(qids_per_dataset_per_segment)
             for question_id in (per_dataset_ids["logiqa"][local_index], per_dataset_ids["hellaswag"][local_index])
         ]
+        # A controller can finish an exact optimizer boundary using a bounded
+        # suffix/prefix of a verified data segment. The manifest and complete
+        # segment remain verified above; these units are always two QIDs, one
+        # from each dataset. Skipped-gradient batches still consume their QIDs.
+        segment_batches = len(interleaved_ids) // 2
+        if type(batch_offset) is not int or not 0 <= batch_offset < segment_batches:
+            raise ValueError("batch_offset must be an integer inside the verified segment")
+        if batch_count is None:
+            batch_count = segment_batches - batch_offset
+        if type(batch_count) is not int or not 1 <= batch_count <= segment_batches - batch_offset:
+            raise ValueError("batch_count must be a positive integer within the remaining segment")
+        selected_ids = interleaved_ids[2 * batch_offset:2 * (batch_offset + batch_count)]
         self._loaded_segment = {
             "segment_index": segment_index,
             "segment_count": shape["segment_count"],
@@ -1112,8 +1126,19 @@ class SharedQidTwoBiasSetting:
             "per_dataset": per_dataset_metadata,
             "interleaved_question_ids": interleaved_ids,
             "interleaved_question_ids_sha256": _ids_sha256(interleaved_ids),
+            "optimizer_updates_are_upper_bound": True,
+            "batch_slice": {
+                "batch_size": 2,
+                "batch_offset": batch_offset,
+                "batch_count": batch_count,
+                "sampled_batches_start": segment_index * segment_batches + batch_offset,
+                "sampled_batches_end": segment_index * segment_batches + batch_offset + batch_count,
+                "n_datapoints": len(selected_ids),
+                "interleaved_question_ids": selected_ids,
+                "interleaved_question_ids_sha256": _ids_sha256(selected_ids),
+            },
         }
-        return [copy.deepcopy(rows[question_id]) for question_id in interleaved_ids]
+        return [copy.deepcopy(rows[question_id]) for question_id in selected_ids]
 
     @staticmethod
     def _prompt(messages: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
