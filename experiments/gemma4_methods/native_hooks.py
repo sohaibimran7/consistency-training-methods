@@ -108,6 +108,11 @@ def verify_start(start,contract,args):
     if frozen['contract']['prompt_mode'].get('enable_thinking') is not True:
         raise ValueError('Thinking-enabled training contract required')
     cpu=read_verified(start['cpu_receipt'])
+    from experiments.gemma4_methods.native_method_probe import verify_context
+    current=verify_context(types.SimpleNamespace(repository=str(root),commit=contract['source_commit'],
+        model=contract['model'],cpu_receipt=start['cpu_receipt']['path']))
+    if current!=cpu:
+        raise ValueError('CPU evidence changed during bootstrap consumption')
     update=read_verified(start['native_update'])
     restored=read_verified(start['native_restore'])
     if (cpu['schema'],cpu['status'],cpu['source_commit']) != ('rmct-restart-cpu-v1','cpu_checks_passed',contract['source_commit']):

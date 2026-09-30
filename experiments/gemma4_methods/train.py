@@ -147,6 +147,8 @@ async def run(args):
     run_dir.mkdir(parents=True, exist_ok=True)
     with (run_dir / '.training.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        from experiments.gemma4_methods.checkpoint import recover_publication
+        recover_publication(run_dir,plan_hash,method)
         state, resume = helpers.load_resume(run_dir, plan_hash, method)
         if state['decision'] != 'continue':
             return

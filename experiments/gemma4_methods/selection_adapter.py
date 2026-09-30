@@ -128,6 +128,9 @@ class GemmaVerifiers:
         if any(r['sample_id'] != f"{r['dataset']}:{r['question_id']}:{r['condition']}"
                for r in population):
             raise ValueError('Population sample identity disagrees with row fields')
+        if any(r['condition']!='clean' and r.get('biased_option') not in tuple('ABCD')
+               for r in population):
+            raise ValueError('Promoted option must be a single A-D label')
         settings = contract['settings']
         required = {'enable_thinking':True,'max_tokens':20480,'temperature':1.0,'top_p':.95,'top_k':20}
         if any(settings.get(k) != v for k,v in required.items()):
@@ -145,7 +148,9 @@ class GemmaVerifiers:
             if request['settings'] != settings or request['model'] != contract['model']:
                 raise ValueError('Actual validation request settings/model changed')
             tokens = response['generated_token_ids']
-            if not tokens or len(tokens)>20480 or response['finish_reason'] not in ('stop','length'):
+            if (not isinstance(tokens,list) or not tokens or len(tokens)>20480
+                    or any(type(t) is not int or t<0 for t in tokens)
+                    or response['finish_reason'] not in ('stop','length')):
                 raise ValueError('Unknown/invalid generation termination')
             raw = self.processor.decode(tokens, skip_special_tokens=False)
             if raw != response['raw_text']:
