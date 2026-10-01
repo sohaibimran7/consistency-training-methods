@@ -190,7 +190,13 @@ def run(root, rank, *, expected_workers=None):
     generation = {d: generation_for(d, bad_words=words) for d in CAPS}
     save(destination / 'effective-generation.json', {'per_dataset': generation,
          'scope': 'requested per-task configs; live provider attestation required by deployment gate'})
-    model = get_model('vllm/' + record['model'] + ':' + record['checkpoint'],
+    from ctm.backends.local.gemma4_vllm_compat import inference_view
+    adapter_path = inference_view(record['checkpoint'], model=record['model'],
+                                 version=record['training_state']['step'])
+    save(destination / 'adapter-view.json',
+         {'raw_checkpoint': record['checkpoint'], 'effective_vllm_adapter': adapter_path,
+          'raw_checkpoint_files': record['checkpoint_files']})
+    model = get_model('vllm/' + record['model'] + ':' + adapter_path,
            config=GenerateConfig(**generation['hle-text-mc']), dtype='bfloat16', tensor_parallel_size=1,
            gpu_memory_utilization=0.85, max_num_seqs=32, max_num_batched_tokens=8192,
            enforce_eager=False, generation_config='auto', host='127.0.0.1')
