@@ -10,6 +10,26 @@ import math
 import importlib.metadata
 from pathlib import Path
 import subprocess
+import sys
+
+ENGINE_OPTIONS = {'dtype': 'bfloat16', 'gpu_memory_utilization': 0.85,
+                  'max_lora_rank': 8, 'max_num_seqs': 32,
+                  'max_num_batched_tokens': 8192, 'enforce_eager': False,
+                  'generation_config': 'vllm', 'seed': 42}
+
+
+def verify_module_origins(receipt, modules):
+    root = Path(receipt['source_root']).resolve()
+    attested = {Path(x['path']).resolve(): x['sha256'] for x in receipt['sources']}
+    checked = []
+    for path in modules:
+        path = Path(path).resolve()
+        if not path.is_relative_to(root) or path not in attested:
+            raise RuntimeError('Imported module is not in CPU-attested source tree: ' + str(path))
+        if hashlib.sha256(path.read_bytes()).hexdigest() != attested[path]:
+            raise RuntimeError('Imported module changed since CPU preflight')
+        checked.append(str(path))
+    return checked
 
 
 def save(path, data):
@@ -61,6 +81,8 @@ def main():
     if (receipt.get('schema'), receipt.get('status'), receipt.get('optimizer_work_authorized')) != (
             'rmct-restart-cpu-v1', 'cpu_checks_passed', False):
         raise RuntimeError('Current integrated CPU receipt required')
+    if str(Path(sys.executable).absolute()) != str(Path(receipt['python']).absolute()):
+        raise RuntimeError('Python environment differs from CPU preflight')
     root = Path(receipt['source_root']).resolve()
     def git(*argv):
         return subprocess.check_output(['git', '-C', str(root), *argv], text=True).strip()
@@ -69,6 +91,10 @@ def main():
     for item in receipt['sources']:
         if hashlib.sha256(Path(item['path']).read_bytes()).hexdigest() != item['sha256']:
             raise RuntimeError('CPU-attested module changed')
+    from ctm.backends import renderers, gemma_thinking
+    from ctm.backends.local import vllm_sampler
+    checked_modules = verify_module_origins(receipt, [__file__, renderers.__file__,
+        gemma_thinking.__file__, vllm_sampler.__file__])
     pins = json.loads(Path(__file__).with_name('gemma_launch_pins.json').read_text())
     if Path(a.model).name != pins['revision']:
         raise RuntimeError('Wrong original snapshot')
@@ -122,15 +148,18 @@ def main():
         save(a.output / 'hf.json', records)
         save(a.output / 'provenance.json', {'cpu_receipt_sha256': hashlib.sha256(a.cpu_receipt.read_bytes()).hexdigest(),
              'source_commit': receipt['source_commit'], 'targets': targets,
+             'python': sys.executable, 'checked_module_origins': checked_modules,
+             'engine_options': ENGINE_OPTIONS,
+             'context_limit': 'model configuration; no probe override',
+             'sampling_temperature': 0.0,
+             'production_equivalence': 'teacher-forced per-engine parity only; not rollout distribution/topology parity',
              'adapter': 'synthetic random nonzero LoRA, no optimizer, never a scientific parent'})
         return
     provenance = json.loads((a.output / 'provenance.json').read_text())
     if provenance['cpu_receipt_sha256'] != hashlib.sha256(a.cpu_receipt.read_bytes()).hexdigest():
         raise RuntimeError('HF and vLLM CPU provenance differ')
     from ctm.backends.local.vllm_sampler import VLLMSampler
-    sampler = VLLMSampler(a.model, dtype='bfloat16', gpu_memory_utilization=0.85,
-        max_lora_rank=8, max_num_seqs=32, max_num_batched_tokens=8192,
-        enforce_eager=False, generation_config='vllm', seed=42)
+    sampler = VLLMSampler(a.model, **ENGINE_OPTIONS)
     sampler.advance_policy(str(a.output / 'disposable-adapter'))
     records = json.loads((a.output / 'hf.json').read_text())
     termination = []
