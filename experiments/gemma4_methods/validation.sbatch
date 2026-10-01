@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#SBATCH --partition=workq
+#SBATCH --nodes=1
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=120G
+#SBATCH --time=12:00:00
+set -euo pipefail
+: "${GEMMA_SELECTION_CONTRACT:?}" "${GEMMA_SELECTION_FOLDER:?}" "${GEMMA_VALIDATION_PROGRESS:?}" "${GEMMA_VALIDATION_OUTPUT:?}" "${GEMMA_VALIDATION_ACTION:?}"
+export GEMMA_LAUNCH_PROFILE=generation VLLM_WORKER_MULTIPROC_METHOD=spawn
+source "$GEMMA_DEPLOY_REPO/experiments/gemma4_methods/deployment_env.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=16 PYTHONDONTWRITEBYTECODE=1
+"$GEMMA_RUNTIME_PYTHON" -B -m experiments.gemma4_methods.validation "$GEMMA_VALIDATION_ACTION" \
+  --contract "$GEMMA_SELECTION_CONTRACT" --progress "$GEMMA_VALIDATION_PROGRESS" \
+  --folder "$GEMMA_SELECTION_FOLDER" --output "$GEMMA_VALIDATION_OUTPUT"

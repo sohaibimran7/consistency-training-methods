@@ -65,7 +65,8 @@ def freeze(root, runtime):
     from ctm.backends.gemma_thinking import require_run_approval
     approval = require_run_approval(root, scope='training', cap=CAP)
     ordered_pool(root)
-    files = sorted((root / 'experiments/gemma4_methods').rglob('*.py'))
+    files = sorted((runtime / 'experiments/gemma4_methods').rglob('*.py'))
+    files += sorted((runtime / 'experiments/rmct_restart_20260928').rglob('*.py'))
     files += sorted((runtime / 'ctm').rglob('*.py'))
     files += sorted((runtime / 'ctm_data').rglob('*.py'))
     sources = {str(p.resolve()): reference.sha256(p) for p in files}
@@ -128,6 +129,14 @@ def alignment_processor(processor):
     return Processor(processor)
 
 
+def training_processors(official_processor):
+    """Attest on/off controls without weakening thinking-on alignment."""
+    from ctm.backends.gemma_thinking import attest_thinking
+    from ctm.evals.local_model import Gemma4UnifiedTextProcessor
+    evidence = attest_thinking(Gemma4UnifiedTextProcessor(official_processor))
+    return alignment_processor(official_processor), evidence
+
+
 async def run(args):
     import torch
     from transformers import AutoModelForImageTextToText, AutoProcessor
@@ -175,6 +184,9 @@ async def run(args):
             end_step = state['step']+budget
         state.setdefault('attempts', state['step'])
         pool = ordered_pool(root)
+        # Fail template/control checks before starting any rollout workers.
+        official_processor = AutoProcessor.from_pretrained(args.model, local_files_only=True)
+        tokenizer, evidence = training_processors(official_processor)
         online = method in {'bct', 'opct'}
         model = AutoModelForImageTextToText.from_pretrained(args.model, dtype=torch.bfloat16,
                   local_files_only=True, **({'attn_implementation': 'eager'} if not online else {}))
@@ -204,9 +216,6 @@ async def run(args):
              'starting_step': state['step'], 'starting_attempt': state['attempts'],
              'model': args.model, 'lora_targets': targets,
              'trainable_names': [n for n, p in backend.model.named_parameters() if p.requires_grad]})
-        tokenizer = alignment_processor(AutoProcessor.from_pretrained(args.model, local_files_only=True))
-        from ctm.backends.gemma_thinking import attest_thinking
-        evidence = attest_thinking(tokenizer)
         evidence_path = run_dir / 'thinking-attestation.json'
         if evidence_path.exists():
             assert json.loads(evidence_path.read_text()) == evidence
