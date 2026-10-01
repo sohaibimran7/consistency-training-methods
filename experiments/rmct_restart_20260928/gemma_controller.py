@@ -18,6 +18,30 @@ from experiments.gemma4_methods.reference.plan import immutable_json
 from experiments.rmct_restart_20260928.qwen_progress import progress,next_slice,advance,validate_loop
 
 
+def approved_plan(plan_record,start_record,contract_record,*,python=None):
+    """Bind the exact executed plan to native proof BEFORE GPU/child effects."""
+    plan=read_verified(plan_record)
+    start=read_verified(start_record)
+    contract=read_verified(contract_record)
+    if start['contract']!=contract_record or start['native_plan']!=plan_record:
+        raise ValueError('Supplied plan is not the native-gate-approved plan')
+    if start['source_commit']!=contract['source_commit'] or plan['incorporated_commit']!=contract['source_commit']:
+        raise ValueError('Approved plan/source differs')
+    if python is not None and os.path.abspath(plan['argv'][0])!=os.path.abspath(python):
+        raise ValueError('Approved plan interpreter differs')
+    gate=read_verified(start['native_rl_gate'])
+    if gate['plan']!=plan_record:raise ValueError('Native RL proof approved a different plan')
+    from experiments.rmct_restart_20260928.gemma_production_plan import build
+    args=plan['argument_map']
+    setting=args['setting_config']
+    expected=build(repo=str(Path(plan['argv'][1]).resolve().parents[1]),python=plan['argv'][0],
+        model=contract['model'],targets=args['lora_config']['target_modules'],data=setting['data_path'],
+        manifest=setting['manifest_path'],commit=contract['source_commit'],run_name=args['run_name'],
+        approval_reference=contract['approval_reference'],validation_sha256=contract['population']['sha256'])
+    if plan!=expected:raise ValueError('Approved plan is not the unchanged frozen RMCT recipe')
+    return plan
+
+
 def command(plan,before,selection,parent):
     argv=list(plan['argv'])
     if any(x.startswith('--resume') for x in argv):raise ValueError('Fresh recipe required')
@@ -33,6 +57,9 @@ def command(plan,before,selection,parent):
         if argv.count(flag)!=1 or argv[argv.index(flag)+1]!=value:
             raise ValueError('Scientific recipe changed:'+flag)
     if '--no-shuffle-datapoints' not in argv:raise ValueError('Frozen order required')
+    for flag in ('--n-ref-rollouts','--n-train-rollouts','--n-consistency-rollouts','--n-anchor-rollouts'):
+        if argv.count(flag)!=1 or argv[argv.index(flag)+1]!='96':
+            raise ValueError('Scientific96-rollout recipe changed')
     base=argv[argv.index('--run-name')+1]
     argv[argv.index('--run-name')+1]=f"{base}-b{before['sampled_batches']:06d}"
     # Gemma's ContinuingSharedQidSetting expects an ABSOLUTE attempted cursor,
@@ -153,7 +180,7 @@ def train_window(args):
     contract=read_verified(contract_record)
     check_source(repo,contract['source_commit'])
     plan_record=file_identity(args.plan)
-    plan=read_verified(plan_record)
+    plan=approved_plan(plan_record,file_identity(args.start),contract_record,python=sys.executable)
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=True)
     with (output/'.controller.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -161,6 +188,8 @@ def train_window(args):
         adapter=RMCTVerifiers(processor=processor)
         pointer=output/'latest.json'
         parent=read_verified(file_identity(pointer)) if pointer.exists() else None
+        if parent is not None and parent['plan']!=plan_record:
+            raise ValueError('Durable parent belongs to another approved plan')
         if parent is None:
             budget=bootstrap_budget(contract_record,file_identity(args.start),requested_updates=16,verify_start=verify_start)
             before=progress(0,0)

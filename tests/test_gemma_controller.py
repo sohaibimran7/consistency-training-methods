@@ -1,7 +1,7 @@
 import json
 import types
 import pytest
-from experiments.rmct_restart_20260928.gemma_controller import command,seal,verify_seal,normalized
+from experiments.rmct_restart_20260928.gemma_controller import command,seal,verify_seal,normalized,approved_plan
 from experiments.rmct_restart_20260928.qwen_progress import progress,next_slice
 from experiments.rmct_restart_20260928.gemma_production_plan import build,REVISION
 from experiments.gemma4_methods.validation import saved_response
@@ -66,3 +66,26 @@ def test_native_seal_preserves_skips_and_detects_changed_checkpoint(tmp_path):
     assert (value['actual_optimizer_step'],value['next_attempt_index'])==(2,3)
     (checkpoint/'optimizer.pt').write_text('changed-payload')
     with pytest.raises(ValueError,match='bytes changed'):verify_seal(receipt)
+
+
+def test_supplied_plan_is_native_gate_bound_before_launch(tmp_path):
+    from experiments.gemma4_methods.selection_adapter import file_identity
+    def save(name,value):
+        path=tmp_path/name;path.write_text(json.dumps(value));return file_identity(path)
+    p=plan();record=save('plan.json',p)
+    contract=save('contract.json',{'source_commit':'a'*40,'model':'/model/'+REVISION,
+        'approval_reference':'explicit','population':{'sha256':'b'*64}})
+    gate=save('gate.json',{'plan':record})
+    start=save('start.json',{'contract':contract,'native_plan':record,'native_rl_gate':gate,'source_commit':'a'*40})
+    assert approved_plan(record,start,contract,python='/venv/bin/python')==p
+    changed=plan();changed['argv'][changed['argv'].index('--n-train-rollouts')+1]='1'
+    bad=save('different.json',changed)
+    with pytest.raises(ValueError,match='native-gate-approved'):
+        approved_plan(bad,start,contract)
+    with pytest.raises(ValueError,match='96-rollout'):
+        command(changed,progress(0,0),next_slice(progress(0,0),64),None)
+    # Even consistently rebound records cannot bless a changed recipe.
+    gate2=save('gate2.json',{'plan':bad})
+    start2=save('start2.json',{'contract':contract,'native_plan':bad,'native_rl_gate':gate2,'source_commit':'a'*40})
+    with pytest.raises(ValueError,match='unchanged frozen'):
+        approved_plan(bad,start2,contract)
