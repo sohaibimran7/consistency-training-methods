@@ -89,3 +89,14 @@ def test_supplied_plan_is_native_gate_bound_before_launch(tmp_path):
     start2=save('start2.json',{'contract':contract,'native_plan':bad,'native_rl_gate':gate2,'source_commit':'a'*40})
     with pytest.raises(ValueError,match='unchanged frozen'):
         approved_plan(bad,start2,contract)
+
+
+def test_rmct_final_evaluation_uses_its_native_fresh_training_policy(tmp_path):
+    from experiments.gemma4_methods.evaluate import training_identity
+    p=plan();path=tmp_path/'plan.json';path.write_text(json.dumps(p))
+    contract,prompt=training_identity(tmp_path,'rmct')
+    assert contract==path and prompt=={'enable_thinking':True}
+    p['policy']['initialization']['resume_from']='legacy'
+    path.write_text(json.dumps(p))
+    with pytest.raises(ValueError,match='Fresh native'):
+        training_identity(tmp_path,'rmct')

@@ -142,6 +142,21 @@ class RMCTVerifiers(GemmaVerifiers):
         return self.runtime(value,contract)
 
 
+def create(args):
+    """Native RMCT hooks for shared terminal-checkpoint evaluation preparation."""
+    import types
+    from transformers import AutoProcessor
+    from ctm.evals.local_model import Gemma4UnifiedTextProcessor
+    contract=read_verified(file_identity(args.selection_contract))
+    if contract['method']!='rmct':raise ValueError('Native RMCT hook method mismatch')
+    processor=Gemma4UnifiedTextProcessor(AutoProcessor.from_pretrained(contract['model'],local_files_only=True))
+    def normalize_run(run_dir,c):
+        return normalized(read_verified(file_identity(Path(run_dir)/'latest.json')),c)
+    return types.SimpleNamespace(adapter=RMCTVerifiers(processor=processor),
+        normalized_progress=normalize_run,start_record=file_identity(os.environ['GEMMA_NATIVE_START_RECORD']),
+        verify_start=verify_start)
+
+
 def verify_start(start,contract):
     from experiments.gemma4_methods.native_method_probe import verify_context
     import types

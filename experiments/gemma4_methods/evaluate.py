@@ -48,6 +48,23 @@ def save(path, value):
         stream.write('\n')
 
 
+def training_identity(root,method):
+    if method=='rmct':
+        path=root/'plan.json'
+        policy=json.loads(path.read_text())['policy']
+        if (policy['schema']!='gemma-rmct-fresh-thinking-v1'
+            or policy['initialization']!={'weights':'original_base','optimizer':'fresh',
+                'resume_from':None,'reuse_target_cache':False}):
+            raise ValueError('Fresh native RMCT training policy required')
+        prompt={'enable_thinking':policy['chat_template_kwargs'].get('enable_thinking')}
+    else:
+        path=root/'contract.json'
+        prompt=json.loads(path.read_text()).get('contract',{}).get('prompt_mode')
+    if prompt is None or prompt.get('enable_thinking') is not True:
+        raise ValueError('Fresh thinking-enabled training contract required')
+    return path,prompt
+
+
 def prepare(args):
     workers=getattr(args,'workers',WORKERS)
     if workers not in WORKER_CHOICES:
@@ -55,7 +72,7 @@ def prepare(args):
     approval = evaluation_approval(args.output, getattr(args, 'approval', None))
     from experiments.gemma4_methods.reference import train, plan
     from infra.isambard import run_gemma4_12b_base_two_bias_evals_16gpu as base
-    contract = args.train_root / 'contract.json'
+    contract,training_prompt_mode = training_identity(args.train_root,args.method)
     from experiments.gemma4_methods.selection_adapter import file_identity, load_native_hooks
     hooks = load_native_hooks(args.verifier_factory,args)
     selected = hooks.adapter.selected_manifest(args.selection_folder,file_identity(args.selection_contract))
@@ -66,9 +83,6 @@ def prepare(args):
         raise ValueError('Selected checkpoint method/model mismatch')
     checkpoint = Path(selected['checkpoint'])
     state = {'step': selected['actual_optimizer_step'], 'selection_status': 'terminal'}
-    training_prompt_mode = json.loads(contract.read_text()).get('contract', {}).get('prompt_mode')
-    if training_prompt_mode is None or training_prompt_mode.get('enable_thinking') is not True:
-        raise ValueError('Fresh thinking-enabled training contract required')
     specs = base._load_specs(args.deployment_manifest)
     cells = []
     for index, spec in enumerate(specs, 1):
