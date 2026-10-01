@@ -84,6 +84,7 @@ def inference_view(adapter_dir, *, model, version):
     translated = dict(raw)
     mapping = {}
     by_layer = {}
+    source_modules = {}
     for name, value in raw.items():
         match = KEY.search(name)
         if not match or int(match[1]) not in layers:
@@ -95,6 +96,10 @@ def inference_view(adapter_dir, *, model, version):
             raise ValueError('Invalid tied-KV LoRA tensor')
         mapping[name] = destination
         by_layer.setdefault(int(match[1]), set()).add(match[2])
+        full_module = name.rsplit('.lora_', 1)[0].removeprefix('base_model.model.')
+        if int(match[1]) in source_modules and source_modules[int(match[1])] != full_module:
+            raise ValueError('Ambiguous tied-KV module identity')
+        source_modules[int(match[1])] = full_module
         translated[destination] = value.clone()
     if not mapping:
         return str(adapter_dir)
@@ -109,10 +114,15 @@ def inference_view(adapter_dir, *, model, version):
         raise ValueError('Explicit target-module list required for tied-KV compatibility')
     additions = []
     for layer in sorted(by_layer):
-        matches = [t for t in targets if t.endswith(f'.layers.{layer}.self_attn.k_proj')]
-        if len(matches) != 1:
-            raise ValueError('Tied K target must be explicit and unique')
-        additions.append(matches[0].replace('.self_attn.k_proj', '.self_attn.v_proj'))
+        # PEFT can reduce a long explicit target list to common suffixes on
+        # save (e.g. "k_proj"). Match its literal list/suffix semantics, while
+        # deriving each exact tied module from the checkpoint tensor keys.
+        full = source_modules[layer]
+        if not any(full == t or full.endswith('.' + t) for t in targets):
+            raise ValueError('Tied K tensor is not covered by target modules')
+        view_target = full.replace('.self_attn.k_proj', '.self_attn.v_proj')
+        if not any(view_target == t or view_target.endswith('.' + t) for t in targets):
+            additions.append(view_target)
     config['target_modules'] = [*targets, *additions]
     if identities != {'model_config': digest(config_path), 'raw_config': digest(source_config),
                       'raw_weights': digest(source_weights)}:

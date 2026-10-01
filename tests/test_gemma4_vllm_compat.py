@@ -103,10 +103,18 @@ def test_unaffected_model_does_not_read_adapter():
     assert inference_view('missing-adapter',model='unrelated-model',version=1)=='missing-adapter'
 
 
-def test_nonexplicit_target_refused(fixture):
+def test_peft_saved_suffix_targets_supported(fixture):
     model,raw,_=fixture
-    (raw/'adapter_config.json').write_text(json.dumps({'target_modules':['k_proj']}))
-    with pytest.raises(ValueError,match='explicit and unique'):
+    (raw/'adapter_config.json').write_text(json.dumps({'target_modules':['k_proj','v_proj']}))
+    view=Path(inference_view(raw,model=str(model),version=1))
+    assert json.loads((view/'adapter_config.json').read_text())['target_modules']==['k_proj','v_proj']
+    assert len(load_file(str(view/'adapter_model.safetensors')))==4
+
+
+def test_unmatched_target_refused(fixture):
+    model,raw,_=fixture
+    (raw/'adapter_config.json').write_text(json.dumps({'target_modules':['unrelated.k_proj']}))
+    with pytest.raises(ValueError,match='not covered'):
         inference_view(raw,model=str(model),version=1)
 
 
