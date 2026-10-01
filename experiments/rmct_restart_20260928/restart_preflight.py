@@ -91,7 +91,9 @@ def main():
         git('ls-files', '--error-unmatch', str(relative))
     tracked = git('ls-files', '-z').split('\0')
     source_files = [identity(root / name) for name in tracked if name and
-                    name.startswith(('ctm/', 'ctm_data/', 'scripts/', 'infra/', 'experiments/rmct_restart_20260928/'))]
+                    name.startswith(('ctm/', 'ctm_data/', 'scripts/', 'infra/',
+                                     'experiments/rmct_restart_20260928/',
+                                     'experiments/gemma4_methods/', 'experiments/gemma4_rmct/'))]
     indices = list(args.model.glob('*.safetensors.index.json'))
     if args.family == 'gemma':
         if indices:

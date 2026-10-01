@@ -24,7 +24,14 @@ def main():
         raise ValueError('Allocated native restoration required')
     checkpoint=Path(a.checkpoint).resolve()
     manifest=json.loads((checkpoint/'manifest.json').read_text())
-    if manifest['model']!=a.model or manifest['loop_state']['method']!=a.method:
+    if manifest['model']!=a.model:
+        raise ValueError('Checkpoint method/model mismatch')
+    if a.method=='rmct':
+        from ctm.training.resume_state import load_strict_local_rl_resume_state
+        state=load_strict_local_rl_resume_state(checkpoint)
+        if manifest['kind']!='both' or manifest['loop_state']['accumulated_grads']!=0:
+            raise ValueError('RMCT checkpoint is not an optimizer boundary')
+    elif manifest['loop_state']['method']!=a.method:
         raise ValueError('Checkpoint method/model mismatch')
     import torch
     from transformers import AutoModelForImageTextToText
@@ -33,7 +40,7 @@ def main():
     from peft import get_peft_model_state_dict
     from safetensors.torch import load_file
     from experiments.gemma4_methods.checkpoint import restore_coordinator_rng
-    online=a.method in ('bct','opct')
+    online=a.method in ('bct','opct','rmct')
     model=AutoModelForImageTextToText.from_pretrained(a.model,dtype=torch.bfloat16,local_files_only=True,
         **({'attn_implementation':'eager'} if not online else {}))
     targets=[n for n,m in model.named_modules() if isinstance(m,torch.nn.Linear)
