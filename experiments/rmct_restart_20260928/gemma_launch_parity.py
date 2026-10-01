@@ -1,6 +1,6 @@
 """Two-process native parity probe; synthetic nonzero adapter, no optimizer.
 
-Synthetic diagnostic prompts are other-dataset generation: exact65536 cap.
+An explicitly approved one-token tail is unused; only fixed input tokens score.
 This gate is not scientific launch clearance or full multiworker validation.
 """
 import argparse
@@ -38,11 +38,11 @@ def save(path, data):
 
 
 def score_records(sampler, records, *, use_base, termination):
-    """Exact-token teacher forcing with an explicitly capped diagnostic tail."""
+    """Score every fixed completion token; discard the approved one-token tail."""
     if not records or any(not r['prompt'] or not r['completion'] for r in records):
         raise RuntimeError('Nonempty prompt/completion records required')
     sampler.wake_up()
-    params = sampler._api.SamplingParams(n=1, max_tokens=65536, temperature=0.0, prompt_logprobs=0)
+    params = sampler._api.SamplingParams(n=1, max_tokens=1, temperature=0.0, prompt_logprobs=0)
     combined = [r['prompt'] + r['completion'] for r in records]
     outputs = sampler.engine.generate([sampler._api.TokensPrompt(prompt_token_ids=t) for t in combined],
         params, lora_request=None if use_base else sampler._policy_lora_request(), use_tqdm=False)
@@ -57,9 +57,14 @@ def score_records(sampler, records, *, use_base, termination):
             raise RuntimeError('Expected exactly one diagnostic tail')
         seq = result.outputs[0]
         termination.append({'base': use_base, 'finish_reason': seq.finish_reason,
-                            'generated_tokens': len(seq.token_ids), 'cap': 65536})
-        if seq.finish_reason != 'stop' or not 0 < len(seq.token_ids) <= 65536:
-            raise RuntimeError('Truncated/unknown/invalid diagnostic tail: parity fails closed')
+                            'generated_tokens': len(seq.token_ids), 'cap': 1,
+                            'generated_token_ids': list(seq.token_ids),
+                            'used_for_scores_or_training': False})
+        # Length termination is expected here, never accepted for a scientific
+        # response. Scores below cover only supplied completion tokens.
+        if (seq.finish_reason not in ('stop', 'length') or len(seq.token_ids) != 1
+                or any(type(t) is not int or t < 0 for t in seq.token_ids)):
+            raise RuntimeError('Unknown/invalid one-token diagnostic tail: parity fails closed')
         values = []
         for i in range(len(record['prompt']), len(ids)):
             entry = result.prompt_logprobs[i]
@@ -76,7 +81,10 @@ def main():
     p.add_argument('--model', required=True)
     p.add_argument('--cpu-receipt', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--scoring-tail-approval-reference', required=True)
     a = p.parse_args()
+    if not a.scoring_tail_approval_reference.strip():
+        raise RuntimeError('Explicit scoped one-token diagnostic approval required')
     receipt = json.loads(a.cpu_receipt.read_text())
     if (receipt.get('schema'), receipt.get('status'), receipt.get('optimizer_work_authorized')) != (
             'rmct-restart-cpu-v1', 'cpu_checks_passed', False):
@@ -152,25 +160,36 @@ def main():
              'engine_options': ENGINE_OPTIONS,
              'context_limit': 'model configuration; no probe override',
              'sampling_temperature': 0.0,
+             'diagnostic_generation': {'max_tokens': 1, 'tail_used_for_scores_or_training': False,
+                 'length_termination': 'allowed only for unused diagnostic tail',
+                 'approval_reference': a.scoring_tail_approval_reference},
              'production_equivalence': 'teacher-forced per-engine parity only; not rollout distribution/topology parity',
              'adapter': 'synthetic random nonzero LoRA, no optimizer, never a scientific parent'})
         return
     provenance = json.loads((a.output / 'provenance.json').read_text())
     if provenance['cpu_receipt_sha256'] != hashlib.sha256(a.cpu_receipt.read_bytes()).hexdigest():
         raise RuntimeError('HF and vLLM CPU provenance differ')
+    if provenance.get('diagnostic_generation') != {
+            'max_tokens': 1, 'tail_used_for_scores_or_training': False,
+            'length_termination': 'allowed only for unused diagnostic tail',
+            'approval_reference': a.scoring_tail_approval_reference}:
+        raise RuntimeError('HF and vLLM scoped diagnostic approval differ')
     from ctm.backends.local.vllm_sampler import VLLMSampler
     sampler = VLLMSampler(a.model, **ENGINE_OPTIONS)
     sampler.advance_policy(str(a.output / 'disposable-adapter'))
     records = json.loads((a.output / 'hf.json').read_text())
     termination = []
-    for use_base, key in [(True, 'vllm_base'), (False, 'vllm_policy')]:
-        try:
-            scores = score_records(sampler, records, use_base=use_base, termination=termination)
-        except Exception:
-            save(a.output / 'failed-termination.json', termination)
-            raise
-        for record, values in zip(records, scores):
-            record[key] = values
+    try:
+        for use_base, key in [(True, 'vllm_base'), (False, 'vllm_policy')]:
+            try:
+                scores = score_records(sampler, records, use_base=use_base, termination=termination)
+            except Exception:
+                save(a.output / 'failed-termination.json', termination)
+                raise
+            for record, values in zip(records, scores):
+                record[key] = values
+    finally:
+        sampler.shutdown()
     def flat(k):
         return np.array([v for r in records for v in r[k]], dtype=float)
     hb, hp, vb, vp = [flat(k) for k in ('hf_base', 'hf_policy', 'vllm_base', 'vllm_policy')]

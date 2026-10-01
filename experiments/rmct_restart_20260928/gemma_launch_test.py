@@ -20,7 +20,7 @@ class FakeSampler:
         return 'nonzero-adapter'
 
     def generate(self, prompts, params, **kwargs):
-        assert self.awake and params.max_tokens == 65536 and params.prompt_logprobs == 0
+        assert self.awake and params.max_tokens == 1 and params.prompt_logprobs == 0
         self.request = kwargs['lora_request']
         rows = [NS(prompt_token_ids=p['prompt_token_ids'],
                    prompt_logprobs=[{token: NS(logprob=-float(i))} for i, token in enumerate(p['prompt_token_ids'])],
@@ -59,9 +59,17 @@ class ParityTests(unittest.TestCase):
             self.assertEqual(termination[0]['generated_tokens'], 1)
 
     def test_bad_termination_fails(self):
-        for reason in ('length', None, 'unknown'):
+        for reason in (None, 'unknown', 'abort'):
             with self.subTest(reason=reason), self.assertRaises(RuntimeError):
                 self.run_case(lambda rows: setattr(rows[0].outputs[0], 'finish_reason', reason))
+
+    def test_unused_length_tail_does_not_change_fixed_token_scores(self):
+        _, scores, termination = self.run_case(
+            lambda rows: setattr(rows[0].outputs[0], 'finish_reason', 'length'))
+        self.assertEqual(scores, [[-2., -3.]])
+        self.assertEqual(termination[0]['cap'], 1)
+        self.assertEqual(termination[0]['generated_token_ids'], [106])
+        self.assertFalse(termination[0]['used_for_scores_or_training'])
 
     def test_token_mismatch_fails(self):
         with self.assertRaisesRegex(RuntimeError, 'token mismatch'):
@@ -81,4 +89,9 @@ class ParityTests(unittest.TestCase):
 
     def test_cap_overrun_fails(self):
         with self.assertRaises(RuntimeError):
-            self.run_case(lambda rows: setattr(rows[0].outputs[0], 'token_ids', [1]*65537))
+            self.run_case(lambda rows: setattr(rows[0].outputs[0], 'token_ids', [1, 2]))
+
+    def test_empty_or_invalid_tail_fails(self):
+        for tokens in ([], [-1], [True]):
+            with self.subTest(tokens=tokens), self.assertRaises(RuntimeError):
+                self.run_case(lambda rows: setattr(rows[0].outputs[0], 'token_ids', tokens))
