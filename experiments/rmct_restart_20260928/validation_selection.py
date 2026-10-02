@@ -12,6 +12,36 @@ from experiments.rmct_restart_20260928.qwen_checkpoint import identity
 
 POLICY = dict(metric='tbsr', interval=64, patience=2, min_delta=0,
               tie='earliest', max_optimizer_updates=4096)
+# Encounter cadence (user-approved 2026-10-02 for the Gemma one-bias campaign):
+# validate every 256 encountered QID/bias examples, counting sampled batches
+# that produced no optimizer update. Batches are 4 QIDs, so 64 attempts.
+ENCOUNTER_POLICY = dict(metric='tbsr', interval_encounters=256, qids_per_attempt=4, patience=2,
+                        min_delta=0, tie='earliest', max_encounters=7680)
+SCHEMAS = {'ctm-tbsr-selection-contract-v1': POLICY,
+           'ctm-tbsr-selection-contract-v2-encounters': ENCOUNTER_POLICY}
+
+
+def encounter_mode(contract):
+    return contract.get('schema') == 'ctm-tbsr-selection-contract-v2-encounters'
+
+
+def interval_attempts():
+    return ENCOUNTER_POLICY['interval_encounters'] // ENCOUNTER_POLICY['qids_per_attempt']
+
+
+def max_attempts():
+    return ENCOUNTER_POLICY['max_encounters'] // ENCOUNTER_POLICY['qids_per_attempt']
+
+
+def position(progress, contract):
+    """Selection coordinate: optimizer step (v1) or consumed attempts incl. trailing skips (v2)."""
+    return progress['encounter_attempt'] if encounter_mode(contract) else progress['actual_optimizer_step']
+
+
+def boundary_name(progress, contract):
+    if encounter_mode(contract):
+        return f"encounter-{ENCOUNTER_POLICY['qids_per_attempt'] * progress['encounter_attempt']:06d}.json"
+    return f"step-{progress['actual_optimizer_step']:06d}.json"
 
 
 def read_verified(record):
@@ -31,7 +61,7 @@ def write_exclusive(path, value):
 
 
 def check_contract(contract):
-    if contract.get('schema') != 'ctm-tbsr-selection-contract-v1' or contract.get('policy') != POLICY:
+    if contract.get('schema') not in SCHEMAS or contract.get('policy') != SCHEMAS[contract['schema']]:
         raise ValueError('Unknown selection policy')
     for field in ('campaign_id', 'method', 'model', 'source_commit'):
         if not isinstance(contract.get(field), str) or not contract[field]:
@@ -58,6 +88,19 @@ def check_progress(progress, contract):
         raise ValueError('Invalid separate progress counters')
     if step > POLICY['max_optimizer_updates']:
         raise ValueError('Optimizer maximum exceeded')
+    if encounter_mode(contract):
+        # Weights are those of the last update; every later attempt up to the
+        # encounter cursor must be an evidenced skipped/no-signal batch.
+        cursor = progress.get('encounter_attempt')
+        if type(cursor) is not int or not attempts <= cursor <= max_attempts():
+            raise ValueError('Invalid encounter cursor')
+        if progress.get('encountered_qid_bias_examples') != ENCOUNTER_POLICY['qids_per_attempt'] * cursor:
+            raise ValueError('Encounter count disagrees with cursor')
+        if len(progress.get('trailing_skip_files', [])) != cursor - attempts:
+            raise ValueError('Trailing consumed attempts lack skip evidence')
+        for record in progress['trailing_skip_files']:
+            if identity(record['path']) != record:
+                raise ValueError('Skip evidence changed')
     sampled = progress.get('sampled_batches')
     if sampled is not None and (type(sampled) is not int or not 0 <= sampled <= attempts):
         raise ValueError('Invalid sampled batch count')
@@ -87,7 +130,11 @@ def _verified_entry(entry, contract_record, verify_checkpoint, verify_validation
     read_verified(entry['validation'])
     metrics = verify_validation(entry['validation'], progress, contract)
     step = progress['actual_optimizer_step']
-    if type(step) is not int or step < 64 or step % 64:
+    if encounter_mode(contract):
+        cursor = progress['encounter_attempt']
+        if cursor <= 0 or (cursor % interval_attempts() and cursor != max_attempts()):
+            raise ValueError('Validation requires a 256-encounter boundary')
+    elif type(step) is not int or step < 64 or step % 64:
         raise ValueError('Validation requires actual 64-update boundary')
     for key, expected in [('step', step), ('campaign_id', contract['campaign_id']),
                           ('response_count', 600), ('checkpoint_files', progress['checkpoint_files'])]:
@@ -104,7 +151,8 @@ def _verified_entry(entry, contract_record, verify_checkpoint, verify_validation
 
 
 def replay(entries, contract_record, *, verify_checkpoint, verify_validation):
-    check_contract(read_verified(contract_record))
+    contract = read_verified(contract_record)
+    check_contract(contract)
     best = latest = None
     stale = 0
     history = []
@@ -114,28 +162,43 @@ def replay(entries, contract_record, *, verify_checkpoint, verify_validation):
             raise ValueError('Validation after the first stopping event')
         progress, metrics = _verified_entry(entry, contract_record, verify_checkpoint, verify_validation)
         step = progress['actual_optimizer_step']
-        if step != (index + 1) * 64 or progress['next_attempt_index'] <= previous_attempts:
-            raise ValueError('Nonchronological validation or consumed-data cursor')
-        previous_attempts = progress['next_attempt_index']
+        if encounter_mode(contract):
+            cursor = progress['encounter_attempt']
+            expected = min((index + 1) * interval_attempts(), max_attempts())
+            if cursor != expected or cursor <= previous_attempts:
+                raise ValueError('Nonchronological validation or consumed-data cursor')
+            previous_attempts = cursor
+        else:
+            if step != (index + 1) * 64 or progress['next_attempt_index'] <= previous_attempts:
+                raise ValueError('Nonchronological validation or consumed-data cursor')
+            previous_attempts = progress['next_attempt_index']
         latest = entry
         if (best is None or metrics['towards_switches'] * best['metrics']['eligible_pairs']
                 < best['metrics']['towards_switches'] * metrics['eligible_pairs']):
             best, stale = entry, 0
         else:
             stale += 1
-        history.append(dict(step=step, best_step=best['metrics']['step'], nonimproving_checks=stale))
-    reached_maximum = bool(latest and latest['metrics']['step'] == POLICY['max_optimizer_updates'])
+        history.append(dict(step=step, best_step=best['metrics']['step'], nonimproving_checks=stale,
+                            **({'encounter_attempt': progress['encounter_attempt']} if encounter_mode(contract) else {})))
+    if encounter_mode(contract):
+        reached_maximum = bool(latest and read_verified(latest['progress'])['encounter_attempt'] == max_attempts())
+    else:
+        reached_maximum = bool(latest and latest['metrics']['step'] == POLICY['max_optimizer_updates'])
     return dict(schema='ctm-tbsr-selection-state-v1', contract=contract_record,
                 latest=latest, selected=best, history=history,
                 stopped=stale >= POLICY['patience'] or reached_maximum,
-                stop_reason='patience' if stale >= POLICY['patience'] else 'maximum' if reached_maximum else None)
+                stop_reason='patience' if stale >= POLICY['patience'] else
+                ('pool_exhausted' if encounter_mode(contract) else 'maximum') if reached_maximum else None)
 
 
-def entries_from_folder(folder):
-    paths = sorted((Path(folder) / 'validation').glob('step-*.json'))
+def entries_from_folder(folder, contract=None):
+    encounters = contract is not None and encounter_mode(contract)
+    paths = sorted((Path(folder) / 'validation').glob('encounter-*.json' if encounters else 'step-*.json'))
     entries = []
     for index, path in enumerate(paths):
-        if path.name != f'step-{64 * (index + 1):06d}.json':
+        expected = (f"encounter-{min(256 * (index + 1), ENCOUNTER_POLICY['max_encounters']):06d}.json"
+                    if encounters else f'step-{64 * (index + 1):06d}.json')
+        if path.name != expected:
             raise ValueError('Missing or unexpected selection receipt')
         entries.append(read_verified(identity(path)))
     return entries
@@ -152,9 +215,8 @@ def accept_validation(folder, contract_record, progress_record, validation_recor
     metrics = verify_validation(validation_record, progress, contract)
     entry = dict(schema='ctm-tbsr-selection-entry-v1', contract=contract_record,
                  progress=progress_record, validation=validation_record, metrics=metrics)
-    entries = entries_from_folder(folder)
-    step = progress['actual_optimizer_step']
-    path = Path(folder) / 'validation' / f'step-{step:06d}.json'
+    entries = entries_from_folder(folder, contract)
+    path = Path(folder) / 'validation' / boundary_name(progress, contract)
     if path.exists():
         if json.loads(path.read_text()) != entry:
             raise ValueError('Conflicting receipt for an already accepted checkpoint')
@@ -172,6 +234,17 @@ def continuation_budget(progress, state, *, requested_updates):
     contract=read_verified(state['contract'])
     check_contract(contract)
     check_progress(progress, contract)
+    if encounter_mode(contract):
+        # Budget unit is sampled-batch attempts (4 encounters each), not updates.
+        cursor = progress['encounter_attempt']
+        if state['stopped'] or cursor >= max_attempts():
+            return 0
+        accepted = read_verified(state['latest']['progress'])['encounter_attempt'] if state['latest'] else 0
+        if cursor < accepted or cursor > accepted + interval_attempts():
+            raise ValueError('Progress outside the currently authorized window')
+        if cursor == accepted + interval_attempts():
+            raise ValueError('Current boundary still requires validation')
+        return min(requested_updates, accepted + interval_attempts() - cursor, max_attempts() - cursor)
     step = progress['actual_optimizer_step']
     if type(step) is not int or not 0 <= step <= POLICY['max_optimizer_updates']:
         raise ValueError('Invalid actual optimizer progress')
@@ -208,7 +281,7 @@ def bootstrap_budget(contract_record, start_record, *, requested_updates, verify
         raise ValueError('Fresh start evidence not verified')
     if type(requested_updates) is not int or requested_updates <= 0:
         raise ValueError('Positive actual-update budget required')
-    return min(requested_updates,64)
+    return min(requested_updates, interval_attempts() if encounter_mode(contract) else 64)
 
 
 def selected_evaluation_manifest(state):

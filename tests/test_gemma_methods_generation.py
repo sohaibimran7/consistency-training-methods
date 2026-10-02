@@ -27,7 +27,9 @@ class GenerationPolicyTests(unittest.TestCase):
             shard_question_ids(qids,16,16)
     def test_actual_updates_and_attempts_remain_distinct(self):
         from experiments.gemma4_methods.progress import record_update, bounded_end
-        s = record_update({'step': 12, 'pending': []}, attempt=16, loss=.2, question_ids=['a','b'])
+        s = record_update({'step': 12, 'pending': []}, attempt=16, loss=.2, question_ids=['a','b','c','d'])
+        with self.assertRaises(ValueError):
+            record_update({'step': 12, 'pending': []}, attempt=16, loss=.2, question_ids=['a','b'])
         self.assertEqual((s['step'], s['attempts']), (13, 17))
         self.assertEqual(bounded_end(60, 16), 64)
         with self.assertRaises(RuntimeError):

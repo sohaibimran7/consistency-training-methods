@@ -1,7 +1,25 @@
 import unittest
-from experiments.gemma4_methods.train import recipe, CAP, validate_completion
+from experiments.gemma4_methods.train import recipe as _recipe, CAP, validate_completion
 from types import SimpleNamespace
 from experiments.gemma4_methods.reference import plan
+from ctm_data.adapters.mcq_bias import shared_qid_one_bias as one
+from ctm_data.adapters.mcq_bias.shared_qid_two_bias import DATUM_SCHEMA, SCHEMA_VERSION
+
+
+def _manifest():
+    def msg(text):
+        return [{'role': 'user', 'content': text}]
+    rows = [{'datum_schema': DATUM_SCHEMA, 'schema_version': SCHEMA_VERSION, 'question_id': f'q{i}',
+             'source_dataset': ('logiqa', 'hellaswag')[i % 2], 'question': 'q', 'ground_truth': 'A',
+             'prompt_style': 'none', 'clean_messages': msg('clean'),
+             'biased_options': {b: 'B' for b in plan.BIASES},
+             'variants': {b: {'messages': msg(b), 'biased_option': 'B', 'biasing_text': b} for b in plan.BIASES},
+             'provenance': {'wrong_argument_source_line_number': i + 1}} for i in range(8)]
+    return one.build_manifest(rows, seed=42, source={'pool_sha256': 'x'})
+
+
+def recipe():
+    return _recipe(_manifest())
 
 
 class GemmaMethodsTests(unittest.TestCase):
@@ -43,8 +61,19 @@ class GemmaMethodsTests(unittest.TestCase):
         self.assertEqual(state['decision'], 'plateau')
 
     def test_scientific_estimator_unchanged(self):
-        for key in ['batch', 'optimizer', 'opct', 'bct', 'loss_options', 'data']:
+        for key in ['optimizer', 'opct', 'loss_options', 'data']:
             self.assertEqual(recipe()[key], plan.contract()[key])
+        # One-bias protocol (user-approved 2026-10-02): 4 distinct QIDs x 1 assigned bias.
+        batch = recipe()['batch']
+        self.assertEqual((batch['qids_per_update'], batch['biases_per_qid'], batch['paired_rows_per_update']), (4, 1, 4))
+        self.assertFalse(batch['repeat_after_pool_exhaustion'])
+        bct = recipe()['bct']
+        self.assertEqual(bct['supervised_bias'], 'assigned_bias_only')
+        self.assertEqual(bct['target_representation'], plan.contract()['bct']['target_representation'])
+        exposure = recipe()['exposure']
+        self.assertFalse(exposure['cycling_allowed'])
+        self.assertTrue(exposure['skipped_batches_consume_encounters'])
+        self.assertEqual(recipe()['convergence']['every_encountered_qid_bias_examples'], 256)
         self.assertEqual(recipe()['execution']['training_gpus']['opct'], 4)
 
 

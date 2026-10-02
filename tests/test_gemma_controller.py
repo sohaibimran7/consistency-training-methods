@@ -1,8 +1,13 @@
 import json
 import types
 import pytest
-from experiments.rmct_restart_20260928.gemma_controller import command,seal,verify_seal,normalized,approved_plan
-from experiments.rmct_restart_20260928.qwen_progress import progress,next_slice
+from experiments.rmct_restart_20260928.gemma_controller import (
+    command,seal,verify_seal,normalized,approved_plan,next_encounter_slice)
+from experiments.rmct_restart_20260928.qwen_progress import progress
+
+
+def next_slice(state,boundary):
+    return next_encounter_slice(state,boundary,1920)
 from experiments.rmct_restart_20260928.gemma_production_plan import build,REVISION
 from experiments.gemma4_methods.validation import saved_response
 
@@ -10,17 +15,19 @@ from experiments.gemma4_methods.validation import saved_response
 def plan():
     return build(repo='/source',python='/venv/bin/python',model='/model/'+REVISION,
         targets=['model.language_model.layers.0.self_attn.q_proj'],data='/data/pool',manifest='/data/manifest',
-        commit='a'*40,run_name='fresh',approval_reference='explicit',validation_sha256='b'*64)
+        one_bias_manifest='/data/one-bias.json',one_bias_manifest_sha256='c'*64,commit='a'*40,run_name='fresh',approval_reference='explicit',validation_sha256='b'*64)
 
 
 def test_rmct_native_slice_uses_absolute_attempt_cursor_not_segment_offset():
     before=progress(70,62)
-    selected=next_slice(before,64)
+    selected=next_slice(before,128)
+    assert selected['batch_count']==10  # stops at the segment end (80), never crossing 128
     parent={'progress':before,'checkpoint':'/checkpoint','files':{}}
     argv=command(plan(),before,selected,parent)
     load=json.loads(argv[argv.index('--load-config')+1])
-    assert load=={'n_datapoints':4,'segment_index':4,'batch_offset':70}
-    assert argv[argv.index('--n-datapoints')+1]=='4'
+    assert load=={'n_datapoints':40,'attempt_offset':70}
+    assert argv[argv.index('--n-datapoints')+1]=='40'
+    assert argv[argv.index('--batch-size')+1]=='4'
     assert argv[argv.index('--resume-from')+1]=='file:///checkpoint'
 
 
@@ -64,6 +71,7 @@ def test_native_seal_preserves_skips_and_detects_changed_checkpoint(tmp_path):
     contract={'method':'rmct','model':'/model/'+REVISION,'source_commit':'a'*40,'campaign_id':'fresh'}
     value=normalized(receipt,contract)
     assert (value['actual_optimizer_step'],value['next_attempt_index'])==(2,3)
+    assert (value['encounter_attempt'],value['encountered_qid_bias_examples'],value['trailing_skip_files'])==(3,12,[])
     (checkpoint/'optimizer.pt').write_text('changed-payload')
     with pytest.raises(ValueError,match='bytes changed'):verify_seal(receipt)
 
@@ -100,3 +108,12 @@ def test_rmct_final_evaluation_uses_its_native_fresh_training_policy(tmp_path):
     path.write_text(json.dumps(p))
     with pytest.raises(ValueError,match='Fresh native'):
         training_identity(tmp_path,'rmct')
+
+
+def test_encounter_slices_stop_at_boundaries_and_pool_end():
+    assert next_slice(progress(60,10),64)['batch_count']==4
+    assert next_encounter_slice(progress(1915,900),1920,1920)['batch_count']==5
+    with pytest.raises(ValueError,match='boundary'):
+        next_slice(progress(64,10),64)
+    with pytest.raises(ValueError):
+        next_encounter_slice(progress(1920,900),1984,1920)

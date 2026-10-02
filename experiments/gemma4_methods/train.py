@@ -17,6 +17,7 @@ import time
 
 from experiments.gemma4_methods.reference import plan as reference
 from experiments.gemma4_methods.reference import train as helpers
+from experiments.gemma4_methods import one_bias
 
 MODEL = 'google/gemma-4-12B-it'
 REVISION = '707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7'
@@ -38,15 +39,30 @@ def ordered_pool(root):
     return [by_id[qid] for qid in ids]
 
 
-def recipe():
+def exposure_manifest(root):
+    return one_bias.manifest_for(ordered_pool(root), pool_sha256=reference.POOL_SHA,
+                                 manifest_sha256=reference.MANIFEST_SHA, order_sha256=ORDER_SHA)
+
+
+def recipe(manifest):
     contract = reference.contract()
+    contract['exposure'] = one_bias.contract_block(manifest)
+    contract['batch'] = {'qids_per_update': one_bias.QIDS_PER_UPDATE, 'biases_per_qid': one_bias.BIASES_PER_QID,
+        'paired_rows_per_update': one_bias.QIDS_PER_UPDATE * one_bias.BIASES_PER_QID,
+        'physical_rows_per_backward': 1, 'gradient_accumulations_per_update': one_bias.QIDS_PER_UPDATE,
+        'ordering': 'frozen_rmct_interleaved_logiqa_hellaswag', 'shuffle': False,
+        'repeat_after_pool_exhaustion': False}
+    contract['bct']['reuse_identical_target_for_both_biases'] = False
+    contract['bct']['supervised_bias'] = 'assigned_bias_only'
     contract['model'] = {'repo_id': MODEL, 'revision': REVISION}
     contract['prompt_mode'] = {'enable_thinking': True, 'fresh_training_required': True,
                              'legacy_thinking_off_resume_allowed': False}
     contract['convergence'] = {'owner': 'shared_validation_controller', 'metric': 'TBSR',
-        'every_actual_optimizer_updates': 64, 'patience': 2, 'min_delta': 0,
+        'every_encountered_qid_bias_examples': 256, 'counts_no_update_batches': True,
+        'patience': 2, 'min_delta': 0,
         'strict_decrease': True, 'loss_selects_or_stops': False,
-        'adapter_status': 'ctm-tbsr-selection-contract-v1; native_hooks_required'}
+        'adapter_status': 'ctm-tbsr-selection-contract-v2-encounters; native_hooks_required',
+        'user_approval': '2026-10-02: validation/checkpoint every 256 encountered QIDs incl. no-update batches'}
     contract['generation'].update(output_token_cap=CAP, sampler='vllm',
         length_stop_policy='exclude_entire_incomplete_group_before_any_backward_no_resampling',
         user_approval='requires thinking-run-approval.json scoped to the new run; legacy approval not inherited')
@@ -64,13 +80,15 @@ def recipe():
 def freeze(root, runtime):
     from ctm.backends.gemma_thinking import require_run_approval
     approval = require_run_approval(root, scope='training', cap=CAP)
-    ordered_pool(root)
+    manifest_path, manifest = one_bias.freeze(root, ordered_pool(root), pool_sha256=reference.POOL_SHA,
+        manifest_sha256=reference.MANIFEST_SHA, order_sha256=ORDER_SHA)
     files = sorted((runtime / 'experiments/gemma4_methods').rglob('*.py'))
     files += sorted((runtime / 'experiments/rmct_restart_20260928').rglob('*.py'))
     files += sorted((runtime / 'ctm').rglob('*.py'))
     files += sorted((runtime / 'ctm_data').rglob('*.py'))
     sources = {str(p.resolve()): reference.sha256(p) for p in files}
-    value = {'contract': recipe(), 'sources': sources, 'qid_order_sha256': ORDER_SHA,
+    value = {'contract': recipe(manifest), 'sources': sources, 'qid_order_sha256': ORDER_SHA,
+             'one_bias_manifest': {'path': str(manifest_path), 'sha256': reference.sha256(manifest_path)},
              'thinking_run_approval': approval}
     reference.immutable_json(root / 'contract.json', value)
 
@@ -79,7 +97,9 @@ def verify(root):
     from ctm.backends.gemma_thinking import require_run_approval
     document = json.loads((root / 'contract.json').read_text())
     assert document['thinking_run_approval'] == require_run_approval(root, scope='training', cap=CAP)
-    assert document['contract'] == recipe()
+    manifest = exposure_manifest(root)
+    assert document['contract'] == recipe(manifest)
+    assert reference.sha256(Path(document['one_bias_manifest']['path'])) == document['one_bias_manifest']['sha256']
     for name, expected in document['sources'].items():
         assert reference.sha256(Path(name)) == expected, f'Frozen source changed: {name}'
     return reference.sha256(root / 'contract.json')
@@ -172,8 +192,16 @@ async def run(args):
         if resume is None:
             # Native hook checks original weights, fresh optimizer, new lineage,
             # exact data/source/cap approvals and initialization gates.
-            end_step = verified_bootstrap(selection_contract,hooks.start_record,
-                                         args.updates,hooks.verify_start)
+            # Budgets are sampled-batch attempts (4 encounters each), incl. skips.
+            budget = verified_bootstrap(selection_contract,hooks.start_record,
+                                        args.updates,hooks.verify_start)
+            # Before the first sealed update, earlier jobs may only have written
+            # skip records; continue after them instead of replaying the same budget.
+            prior = 0
+            while (run_dir / 'skips' / f'attempt-{prior:07d}.json').exists():
+                prior += 1
+            from experiments.rmct_restart_20260928.validation_selection import interval_attempts
+            end_attempt = min(prior + budget, interval_attempts())
         else:
             progress = hooks.normalized_progress(run_dir,scientific_contract)
             if (progress['actual_optimizer_step'],progress['next_attempt_index']) != (state['step'],state.get('attempts',state['step'])):
@@ -181,9 +209,11 @@ async def run(args):
             budget = verified_budget(hooks.adapter,args.selection_folder,selection_contract,progress,args.updates)
             if not budget:
                 return
-            end_step = state['step']+budget
+            end_attempt = progress['encounter_attempt']+budget
         state.setdefault('attempts', state['step'])
         pool = ordered_pool(root)
+        manifest = exposure_manifest(root)
+        by_id = {row['question_id']: row for row in pool}
         # Fail template/control checks before starting any rollout workers.
         official_processor = AutoProcessor.from_pretrained(args.model, local_files_only=True)
         tokenizer, evidence = training_processors(official_processor)
@@ -260,15 +290,17 @@ async def run(args):
         if resume is not None:
             restore_coordinator_rng(resume)
         starting_step = state['step']
-        last_usable_attempt = state['attempts']
         began = time.monotonic()
         try:
-            while state['decision'] == 'continue' and state['step'] < end_step:
+            while state['decision'] == 'continue' and state['attempts'] < end_attempt:
                 if time.monotonic() - began > 9*3600:
                     break
                 attempt = state['attempts']
-                if attempt - last_usable_attempt >= 3840:
-                    raise RuntimeError('No usable groups in a complete training-pool pass')
+                if attempt >= one_bias.max_attempts(manifest):
+                    # Finite one-pass pool: report exhaustion, never cycle QIDs.
+                    state['decision'] = 'exhausted'
+                    print(json.dumps({'method': method, 'exhausted_at_attempt': attempt, **state}), flush=True)
+                    break
                 skip_path = run_dir / 'skips' / f'attempt-{attempt:07d}.json'
                 if skip_path.exists():
                     skip = json.loads(skip_path.read_text())
@@ -277,9 +309,8 @@ async def run(args):
                     continue
                 random.seed(42 + state['step'])
                 torch.manual_seed(42 + state['step'])
-                offset = 2*(attempt % 3840)
-                qids = pool[offset:offset+2]
-                pairs = reference.paired_rows(qids, method=method)
+                qids, biases = one_bias.update_rows(manifest, by_id, attempt)
+                pairs = reference.one_bias_pairs(qids, biases, method=method)
                 update_began=time.perf_counter()
                 sample_wall_seconds=0.0
                 try:
@@ -302,18 +333,19 @@ async def run(args):
                     else:
                         datums, audit = build_consistency_datums_with_audit(tokenizer, pairs)
                         require_full_reference_suffix_alignment(audit)
-                        assert len(datums) == 4
+                        assert len(datums) == len(pairs)
                         losses = []
                         for datum in datums:
                             pending = await backend.submit_forward_backward([datum], loss_fn=METHOD_LOSS_FNS[method])
                             output = await pending.result()
                             losses.append(float(output.metrics['loss']))
-                    assert len(losses) == 4 and all(math.isfinite(x) for x in losses)
+                    assert len(losses) == len(pairs) and all(math.isfinite(x) for x in losses)
                 except TruncatedGroup:
                     assert local._gradient_accumulations == 0, 'Excluded group already changed gradients'
                     reference.immutable_json(skip_path, {'step': state['step'], 'attempt': attempt,
                         'plan_sha256': plan_hash, 'question_ids': [r['question_id'] for r in qids],
-                        'reason': 'incomplete_generation_group', 'optimizer_update': False})
+                        'biases': biases, 'reason': 'incomplete_generation_group', 'optimizer_update': False,
+                        'encounters_consumed': len(qids)})
                     state['attempts'] += 1
                     print(f'Skipped truncated group {attempt}; optimizer remains {state["step"]}', flush=True)
                     continue
@@ -323,12 +355,11 @@ async def run(args):
                 await pending.result()
                 optimizer_seconds=time.perf_counter()-before_optimizer
                 prepare_score_backward_seconds=max(0.0,before_optimizer-update_began-sample_wall_seconds)
-                state = record_update(state, attempt=attempt, loss=math.fsum(losses)/4,
+                state = record_update(state, attempt=attempt, loss=math.fsum(losses)/len(losses),
                                       question_ids=[r['question_id'] for r in qids])
-                last_usable_attempt = state['attempts']
-                metric = {'step': state['step'], 'attempt': attempt, 'loss': math.fsum(losses)/4,
+                metric = {'step': state['step'], 'attempt': attempt, 'loss': math.fsum(losses)/len(losses),
                           'variant_metrics': losses, 'gradient_report': gradients,
-                          'question_ids': [r['question_id'] for r in qids]}
+                          'question_ids': [r['question_id'] for r in qids], 'biases': biases}
                 window_metrics.append(metric)
                 helpers.append_json(run_dir / 'metrics.jsonl', metric)
                 checkpoint_began=time.perf_counter()
@@ -352,10 +383,12 @@ async def run(args):
                     'attempted_batches': state['attempts'], 'sampled_batches': None,
                     'sampled_batches_note': 'derive from generation events; attempts can include cached skip replay',
                     'ordered_pool_sha256': ORDER_SHA,
-                    'consumed_qid_position': 2*state['attempts'],
+                    'consumed_qid_position': one_bias.QIDS_PER_UPDATE*state['attempts'],
+                    'encountered_qid_bias_examples': one_bias.QIDS_PER_UPDATE*state['attempts'],
+                    'one_bias_manifest_sha256': one_bias.protocol.manifest_identity(manifest),
                     'last_update_question_ids': state['last_update_question_ids'],
                     'latest_checkpoint': sealed['checkpoint'], 'checkpoint_files': sealed['checkpoint_files'],
-                    'selected_checkpoint': None, 'validation_required': state['step'] % 64 == 0,
+                    'selected_checkpoint': None, 'validation_required': state['attempts'] % 64 == 0,
                     'rng_metadata': 'manifest coordinator RNG saved/read-back restored; private vLLM worker RNG not serialized; native resume gate required',
                     'controller_adapter': 'pending; not authorization to continue past boundary'})
                 if state['step'] % 16 == 0:

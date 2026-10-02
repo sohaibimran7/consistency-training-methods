@@ -57,16 +57,59 @@ def build(baseline, *, repo, python, python_prefix, commit, run_name, data, mani
                     'durable receipt saved before optimizer work'])
 
 
+POOL_MANIFEST_SHA = 'e50396d8fb2188f5959f9ced378a8f813922b6015f1a1a73887cfbccc52b43d1'
+ONE_BIAS_FACTORY = 'ctm_data.adapters.mcq_bias.shared_qid_one_bias:SharedQidOneBiasSetting'
+
+
+def build_one_bias(baseline, *, one_bias_manifest, one_bias_manifest_sha256, **kwargs):
+    """Fresh one-bias Qwen RMCT recipe (user-approved 2026-10-02).
+
+    Same RMCT recipe, but the shared 7,680-QID pool (``data``/``manifest`` must be
+    that pool), four distinct QIDs x one assigned cue per batch, one finite pass.
+    Each child loads an absolute sampled-batch slice of the shared manifest.
+    """
+    if not Path(one_bias_manifest).is_absolute() or not re.fullmatch(r'[0-9a-f]{64}', one_bias_manifest_sha256):
+        raise ValueError('Absolute frozen one-bias manifest and its identity required')
+    plan = build(baseline, **kwargs)
+    argv = plan['argv']
+    def replace(flag, value):
+        if argv.count(flag) != 1:
+            raise ValueError(f'Expected unique {flag}')
+        argv[argv.index(flag)+1] = value
+    replace('--experiment-name', 'rmct-one-bias-20261002')
+    replace('--setting-factory', ONE_BIAS_FACTORY)
+    replace('--setting-config', json.dumps(dict(
+        data_path=kwargs['data'], manifest_path=kwargs['manifest'], expected_manifest_sha256=POOL_MANIFEST_SHA,
+        expected_qids_per_dataset=3840, expected_qids_per_dataset_per_segment=16,
+        one_bias_manifest_path=one_bias_manifest, one_bias_manifest_sha256=one_bias_manifest_sha256)))
+    replace('--load-config', json.dumps(dict(n_datapoints=16, attempt_offset=0)))
+    replace('--n-datapoints', '16')
+    replace('--batch-size', '4')
+    plan.update(schema='rmct-one-bias-preparation-v1', one_bias_manifest_sha256=one_bias_manifest_sha256,
+                first_validation_step=None, first_validation_encounters=256,
+                exposure=dict(qids_per_attempted_batch=4, biases_per_qid=1, max_attempted_batches=1920,
+                              no_update_batches_consume_encounters=True, pool_cycling=False))
+    plan['validation'].update(interval=None, interval_encounters=256,
+                              selection_contract='ctm-tbsr-selection-contract-v2-encounters')
+    return plan
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('baseline','repo','python','python-prefix','commit','run-name','data','manifest','attestation','output'):
         p.add_argument('--'+name, required=True)
+    p.add_argument('--one-bias-manifest'); p.add_argument('--one-bias-manifest-sha256')
     a=p.parse_args()
     raw=Path(a.baseline).read_bytes()
     if hashlib.sha256(raw).hexdigest()!=BASELINE_SHA:
         raise ValueError('Historical recipe identity mismatch')
-    result=build(json.loads(raw), repo=a.repo, python=a.python, python_prefix=a.python_prefix, commit=a.commit,
-                 run_name=a.run_name, data=a.data, manifest=a.manifest, attestation=a.attestation)
+    kwargs=dict(repo=a.repo, python=a.python, python_prefix=a.python_prefix, commit=a.commit,
+                run_name=a.run_name, data=a.data, manifest=a.manifest, attestation=a.attestation)
+    if a.one_bias_manifest:
+        result=build_one_bias(json.loads(raw), one_bias_manifest=a.one_bias_manifest,
+                              one_bias_manifest_sha256=a.one_bias_manifest_sha256, **kwargs)
+    else:
+        result=build(json.loads(raw), **kwargs)
     with Path(a.output).open('x') as f:
         json.dump(result,f,indent=2);f.write('\n')
 

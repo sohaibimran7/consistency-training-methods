@@ -63,7 +63,16 @@ def normalize(run_dir,contract):
     prefix=[r for r in rows if r['step']<=step]
     if [r['step'] for r in prefix]!=list(range(1,step+1)):
         raise ValueError('Metrics prefix does not match durable optimizer history')
-    evidence_dir=run_dir/'normalized'/f'step-{step:06d}'
+    # Consumed batches after the last update (no weight change) still advance
+    # the encounter cursor; each must have its immutable skip record.
+    trailing=[]
+    while (run_dir/'skips'/f'attempt-{attempt+len(trailing):07d}.json').is_file():
+        path=run_dir/'skips'/f'attempt-{attempt+len(trailing):07d}.json'
+        row=json.loads(path.read_text())
+        if row['attempt']!=attempt+len(trailing) or row['step']!=step or row.get('optimizer_update') is not False:
+            raise ValueError('Trailing skip record disagrees with durable progress')
+        trailing.append(file_identity(path))
+    evidence_dir=run_dir/'normalized'/f'step-{step:06d}-attempt-{attempt+len(trailing):07d}'
     evidence_dir.mkdir(parents=True,exist_ok=True)
     metrics=evidence_dir/'metrics.jsonl'
     payload=''.join(json.dumps(r,sort_keys=True,allow_nan=False)+'\n' for r in prefix)
@@ -78,6 +87,7 @@ def normalize(run_dir,contract):
         row=json.loads(path.read_text())
         if row['attempt']<attempt:
             skips.append(file_identity(path))
+    from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
     exposure={'metric_files':[file_identity(metrics)],'skip_files':skips}
     exposure_path=evidence_dir/'exposure.json'
     from experiments.gemma4_methods.reference.plan import immutable_json
@@ -85,6 +95,8 @@ def normalize(run_dir,contract):
     progress={'schema':'ctm-training-progress-v1',
         **{k:contract[k] for k in ('campaign_id','method','model','source_commit')},
         'actual_optimizer_step':step,'next_attempt_index':attempt,'sampled_batches':None,
+        'encounter_attempt':attempt+len(trailing),'encountered_qid_bias_examples':QIDS_PER_UPDATE*(attempt+len(trailing)),
+        'trailing_skip_files':trailing,
         'checkpoint':str(checkpoint),'checkpoint_files':{k:file_identity(checkpoint/k) for k in pointer['checkpoint_files']},
         'gemma_original_progress':file_identity(original),'gemma_exposure':file_identity(exposure_path)}
     immutable_json(evidence_dir/'progress.json',progress)
@@ -139,7 +151,9 @@ def verify_start(start,contract,args):
         actual=file_identity(item['path'])
         if any(actual[k]!=item[k] for k in ('sha256','bytes')):
             raise ValueError('Native CPU source bytes changed')
-    expected_samples={'bct':2,'opct':16}.get(contract['method'],0)
+    from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
+    # First one-bias batch: one BCT target per QID; four OPCT rollouts per pair.
+    expected_samples={'bct':QIDS_PER_UPDATE,'opct':4*QIDS_PER_UPDATE}.get(contract['method'],0)
     if len(update['samples'])!=expected_samples:
         raise ValueError('Native rollout sample coverage changed')
     if expected_samples and update['generation_cap_including_reasoning']!=20480:

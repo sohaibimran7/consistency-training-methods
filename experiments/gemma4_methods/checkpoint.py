@@ -49,15 +49,17 @@ async def seal_checkpoint(backend, **kwargs):
 
 def make_progress(receipt):
     from experiments.gemma4_methods.train import ORDER_SHA
+    from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
     state=receipt['convergence']
     return {'schema':'gemma-trainer-progress-draft-v1','plan_sha256':receipt['plan_sha256'],
         'actual_optimizer_step':state['step'],'next_attempt_index':state['attempts'],
         'attempted_batches':state['attempts'],'sampled_batches':None,
         'sampled_batches_note':'derive from generation events; attempts can include cached skip replay',
-        'ordered_pool_sha256':ORDER_SHA,'consumed_qid_position':2*state['attempts'],
+        'ordered_pool_sha256':ORDER_SHA,'consumed_qid_position':QIDS_PER_UPDATE*state['attempts'],
+        'encountered_qid_bias_examples':QIDS_PER_UPDATE*state['attempts'],
         'last_update_question_ids':state['last_update_question_ids'],
         'latest_checkpoint':receipt['checkpoint'],'checkpoint_files':receipt['checkpoint_files'],
-        'selected_checkpoint':None,'validation_required':state['step']%64==0,
+        'selected_checkpoint':None,'validation_required':state['attempts']%64==0,
         'rng_metadata':'manifest coordinator RNG saved/read-back restored; private vLLM worker RNG not serialized; native resume gate required',
         'controller_adapter':'pending; not authorization to continue past boundary'}
 

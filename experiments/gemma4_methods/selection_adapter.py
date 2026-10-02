@@ -90,9 +90,15 @@ class GemmaVerifiers:
         from experiments.gemma4_methods.reference.plan import canonical
         if hashlib.sha256(canonical(qids)).hexdigest() != pool['ordered_qids_sha256']:
             raise ValueError('Order hash disagreement')
-        for row in [*rows, *skipped]:
-            offset = 2*(row['attempt'] % (len(qids)//2))
-            if row['question_ids'] != qids[offset:offset+2]:
+        trailing = [read_verified(record) for record in progress.get('trailing_skip_files', [])]
+        if [r['attempt'] for r in trailing] != list(range(attempt, attempt + len(trailing))):
+            raise ValueError('Trailing consumed batches are not this run\'s contiguous skips')
+        if any(r['step'] != step or r.get('optimizer_update') is not False for r in trailing):
+            raise ValueError('Trailing skip changed weights or belongs to another update')
+        for row in [*rows, *skipped, *trailing]:
+            from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
+            offset = QIDS_PER_UPDATE*row['attempt']  # one finite pass; never wraps
+            if offset + QIDS_PER_UPDATE > len(qids) or row['question_ids'] != qids[offset:offset+QIDS_PER_UPDATE]:
                 raise ValueError('Consumed QIDs differ from immutable order')
         # Required gate restores and reads back actual optimizer/RNG state;
         # it must raise on failure. A recorded passed=True is not sufficient.
@@ -186,7 +192,7 @@ class GemmaVerifiers:
 
     def replay(self, folder, contract_record):
         from experiments.rmct_restart_20260928.validation_selection import replay, entries_from_folder
-        return replay(entries_from_folder(folder), contract_record,
+        return replay(entries_from_folder(folder, read_verified(contract_record)), contract_record,
                       verify_checkpoint=self.verify_checkpoint, verify_validation=self.verify_validation)
 
     def selected_manifest(self, folder, contract_record):

@@ -18,8 +18,14 @@ def check_boundary(progress, contract):
     from experiments.rmct_restart_20260928.validation_selection import check_progress, check_contract
     check_contract(contract)
     check_progress(progress, contract)
+    from experiments.rmct_restart_20260928.validation_selection import (
+        encounter_mode, interval_attempts, max_attempts)
     step=progress['actual_optimizer_step']
-    if step<64 or step%64:
+    if encounter_mode(contract):
+        cursor=progress['encounter_attempt']
+        if step<1 or cursor<=0 or (cursor%interval_attempts() and cursor!=max_attempts()):
+            raise ValueError('Validation requires a 256-encounter boundary with a saved update')
+    elif step<64 or step%64:
         raise ValueError('Validation requires an actual64-update boundary')
     return step
 

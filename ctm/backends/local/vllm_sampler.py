@@ -88,6 +88,7 @@ class VLLMSampler:
                 max_model_len, tensor_parallel_size, max_lora_rank, ...).
         """
         self._api = api if api is not None else _load_vllm_api()
+        self._model_name = model
         self.enable_lora = enable_lora
         # Keep this option in ``engine_kwargs``: vLLM must be constructed with
         # sleep support enabled before its EngineCore is launched.  Treat it as
@@ -215,7 +216,8 @@ class VLLMSampler:
             raise ValueError(
                 f"adapter version must increase (current={self.adapter_version}, requested={next_version})"
             )
-        self.adapter_dir = adapter_dir
+        from ctm.backends.local.gemma4_vllm_compat import inference_view
+        self.adapter_dir = inference_view(adapter_dir, model=self._model_name, version=next_version)
         self.adapter_version = next_version
 
     def _policy_lora_request(self):

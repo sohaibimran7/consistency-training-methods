@@ -29,12 +29,16 @@ class GuardTests(unittest.TestCase):
                 'variants':{bias:{'messages':[{'role':'user','content':'Cue Question'}],
                                  'biasing_text':'Cue'}
                             for bias in ('wrong_argument','suggested_answer')}})
-        result=probe(Processor(),rows)
+        rows=rows*2
+        rows=[{**r,'question_id':r['question_id']+str(i)} for i,r in enumerate(rows)]
+        biases=['suggested_answer','wrong_argument','suggested_answer','wrong_argument']
+        result=probe(Processor(),rows,biases)
         self.assertEqual(len(result),40)
         self.assertEqual({r['method'] for r in result},{'bct','opct','act','attct','mlpct'})
         internal=[r for r in result if r['method']=='act' and r['bias']=='suggested_answer'
                   and r['side']=='variant_messages']
-        self.assertTrue(all(r['messages'][0]['content']=='Cue\n\nQuestion' for r in internal))
+        self.assertTrue(internal and all(r['messages'][0]['content']=='Cue\n\nQuestion' for r in internal))
+        self.assertEqual({(r['question_id'],r['bias']) for r in result},{(r['question_id'],b) for r,b in zip(rows,biases)})
 
     def test_missing_environment_fails_before_runtime(self):
         result = subprocess.run(['bash','-c',

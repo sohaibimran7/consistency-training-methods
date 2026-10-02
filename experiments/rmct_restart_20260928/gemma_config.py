@@ -30,7 +30,7 @@ def fresh_config(*, source_commit, approval_reference, validation_manifest_sha25
                        'length_termination': 'exclude_from_gradients_and_rate_estimates'},
         'validation': {'manifest_sha256': validation_manifest_sha256,
                        'question_ids': 200, 'native_prompts': 600,
-                       'every_optimizer_updates': 64, 'metric': 'TBSR',
+                       'every_encountered_qids': 256, 'counts_no_update_batches': True, 'metric': 'TBSR',
                        'patience': 2, 'min_delta': 0, 'improvement': 'strict_decrease',
                        'diagnostics_select_or_stop': False, 'history': 'new'},
         'execution': {'nodes': 1, 'gpus': 4, 'trainer_gpus': 1,
