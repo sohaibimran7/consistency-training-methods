@@ -363,6 +363,17 @@ async def train(args) -> dict:
                                     parent_plan_hash=plan.PARENT_PLAN_SHA if amendment else None)
         if state["decision"] != "continue":
             return state
+        if one_bias:
+            # Before loading any model: a fresh first window, or only a window
+            # opened by accepted 256-encounter validation; never past a boundary.
+            from experiments.rmct_restart_20260928.qwen_one_bias_validation import gated_budget
+            one_bias_budget = min(gated_budget(
+                run_dir=run_dir, step=state["step"], requested=args.updates_this_job,
+                contract_path=args.selection_contract, folder=args.selection_folder,
+                manifest=args.validation_manifest, model_path=args.model_snapshot,
+            ), (state["step"] // 64 + 1) * 64 - state["step"])
+            if one_bias_budget <= 0:
+                return state
         pool = plan.ordered_pool(repository)
         by_id = {row["question_id"]: row for row in pool}
         limit = exposure.max_updates(manifest) if one_bias else plan.MAX_UPDATES
@@ -418,8 +429,7 @@ async def train(args) -> dict:
         starting_step = state["step"]
         job_end = min(limit, starting_step + args.updates_this_job)
         if one_bias:
-            # Never train past an unvalidated 256-encounter boundary in one job.
-            job_end = min(job_end, (starting_step // 64 + 1) * 64)
+            job_end = min(job_end, starting_step + one_bias_budget)
         window_metrics = resume_window_metrics(run_dir, state)
         last_saved_step = state["step"]
         try:
@@ -496,6 +506,9 @@ def main() -> None:
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--alignment-audit", type=Path)
     parser.add_argument("--updates-this-job", type=int, default=128)
+    parser.add_argument("--selection-contract", type=Path, help="One-bias: shared v2 encounter selection contract")
+    parser.add_argument("--selection-folder", type=Path, help="One-bias: accepted validation receipts")
+    parser.add_argument("--validation-manifest", type=Path, help="One-bias: frozen 600-prompt validation population")
     args = parser.parse_args()
     print(json.dumps(asyncio.run(train(args)), sort_keys=True))
 

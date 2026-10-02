@@ -50,6 +50,33 @@ def five_method_progress(run_dir, receipt_path, *, campaign_id, source_commit, m
                 checkpoint=str(checkpoint), checkpoint_files=files)
 
 
+def selection_contract(*, campaign_id, method, model, source_commit, population):
+    """Shared v2 encounter selection contract for one Qwen method (never overwritten)."""
+    return dict(schema='ctm-tbsr-selection-contract-v2-encounters', policy=selection.ENCOUNTER_POLICY,
+                campaign_id=campaign_id, method=method, model=model, source_commit=source_commit,
+                response_count=600, pair_count=400, settings=v.SETTINGS, population=identity(population))
+
+
+def gated_budget(*, run_dir, step, requested, contract_path, folder, manifest, model_path):
+    """Updates this job may train: first window fresh, later windows only past accepted validation."""
+    if step == 0:
+        return min(requested, selection.interval_attempts())
+    from transformers import AutoTokenizer
+    contract_record = identity(contract_path)
+    contract = selection.read_verified(contract_record)
+    selection.check_contract(contract)
+    progress = five_method_progress(run_dir, Path(run_dir) / 'receipts' / f'step-{step:06d}.json',
+                                    campaign_id=contract['campaign_id'], source_commit=contract['source_commit'],
+                                    model=contract['model'])
+    verifiers = Verifiers(manifest=manifest, tokenizer=AutoTokenizer.from_pretrained(model_path, local_files_only=True),
+                          run_dir=run_dir)
+    verifiers.verify_checkpoint(progress, contract)
+    state = selection.replay(selection.entries_from_folder(folder, contract), contract_record,
+                             verify_checkpoint=verifiers.verify_checkpoint,
+                             verify_validation=verifiers.verify_validation)
+    return selection.continuation_budget(progress, state, requested_updates=requested)
+
+
 def boundary(progress):
     encounters = progress['encountered_qid_bias_examples']
     if type(encounters) is not int or encounters <= 0 or (encounters % 256 and encounters != 7680):
@@ -173,16 +200,19 @@ class Verifiers:
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=('progress', 'prepare', 'score'))
+    p.add_argument('mode', choices=('progress', 'prepare', 'score', 'contract'))
     for name in ('folder', 'manifest', 'progress', 'reference-report', 'selection-contract', 'run-dir', 'receipt', 'output'):
         p.add_argument('--' + name, type=Path)
-    for name in ('reference-sha', 'model', 'source-commit', 'training-job', 'campaign-id', 'job'):
+    for name in ('reference-sha', 'model', 'source-commit', 'training-job', 'campaign-id', 'job', 'method'):
         p.add_argument('--' + name)
     p.add_argument('--port', type=int, default=19789)
     a = p.parse_args()
     if a.mode == 'progress':
         write(a.output, five_method_progress(a.run_dir, a.receipt, campaign_id=a.campaign_id,
                                              source_commit=a.source_commit, model=a.model))
+    elif a.mode == 'contract':
+        write(a.output, selection_contract(campaign_id=a.campaign_id, method=a.method, model=a.model,
+                                           source_commit=a.source_commit, population=a.manifest))
     elif a.mode == 'prepare':
         prepare(a)
     else:

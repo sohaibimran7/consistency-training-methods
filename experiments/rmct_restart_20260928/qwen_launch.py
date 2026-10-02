@@ -61,7 +61,9 @@ def main():
         raise RuntimeError('Launcher is not from the canonical deployment')
     subprocess.run(['git','ls-files','--error-unmatch',str(own.relative_to(repo))],cwd=repo,check=True,capture_output=True)
     if any(x.startswith('--resume') for x in argv): raise RuntimeError('Fresh-start only')
-    if json.loads(argv[argv.index('--load-config')+1])['segment_index']!=0:
+    load=json.loads(argv[argv.index('--load-config')+1])
+    # One-bias plans start at absolute sampled batch 0; two-bias plans at segment 0.
+    if (load.get('attempt_offset') if 'attempt_offset' in load else load.get('segment_index'))!=0:
         raise RuntimeError('Fresh segment0 required')
     if argv[argv.index('--max-new-tokens')+1]!='20480': raise RuntimeError('Cap mismatch')
     source_check(repo,commit)
