@@ -9,7 +9,7 @@ from experiments.gemma4_methods.reference import plan
 from experiments.gemma4_methods.selection_adapter import file_identity,read_verified
 from experiments.gemma4_methods.launch_guard import check_source
 from experiments.gemma4_methods.native_hooks import scheduler_complete
-from experiments.rmct_restart_20260928.validation_selection import POLICY,check_contract
+from experiments.rmct_restart_20260928.validation_selection import ENCOUNTER_POLICY,check_contract
 from experiments.rmct_restart_20260928.qwen_validation import population
 
 
@@ -47,7 +47,7 @@ def prepare(args):
         if r['optimizer_parameter_states']<=0 or r['actual_adapter_tensors']<=0:
             raise ValueError('Actual native restore evidence missing')
         folder=root/'selection'/method;folder.mkdir(parents=True)
-        contract={'schema':'ctm-tbsr-selection-contract-v1','policy':POLICY,
+        contract={'schema':'ctm-tbsr-selection-contract-v2-encounters','policy':ENCOUNTER_POLICY,
             'campaign_id':args.campaign+'-'+method,'method':method,'model':str(args.model),
             'source_commit':args.commit,'population':file_identity(args.population),'response_count':600,'pair_count':400,
             'data_order':file_identity(root/'data-order.json'),'approval_reference':args.approval_reference,
@@ -57,6 +57,7 @@ def prepare(args):
         plan.immutable_json(folder/'start.json',{'schema':'ctm-training-start-v1',
             **{k:contract[k] for k in ('campaign_id','method','model','source_commit')},
             'contract':file_identity(folder/'contract.json'),'actual_optimizer_step':0,'next_attempt_index':0,
+            'encounter_attempt':0,'one_bias_manifest':json.loads((root/'contract.json').read_text())['one_bias_manifest'],
             'resume_from':None,'optimizer':'fresh','training_contract':file_identity(root/'contract.json'),
             'cpu_receipt':file_identity(args.cpu_receipt),'native_update':file_identity(update),'native_restore':file_identity(restore)})
     return {'root':str(root),'source_commit':args.commit,'methods':list(plan.METHODS)}

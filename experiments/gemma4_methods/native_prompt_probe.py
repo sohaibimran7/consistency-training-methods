@@ -1,4 +1,4 @@
-"""Reproduce40real training prompt checks; no weights, generation or optimizer.
+"""Reproduce40real training prompt checks (5 methods x 4 QIDs x 1 assigned bias x 2 sides); no weights, generation or optimizer.
 
 Consumes the shared restart_preflight receipt, never promotes the older
 gemma_preflight draft or fabricates successful GPU evidence.
@@ -15,10 +15,10 @@ from experiments.gemma4_methods.launch_guard import check_source
 from experiments.gemma4_methods.reference import plan
 
 
-def probe(processor, qids):
+def probe(processor, qids, biases):
     records=[]
     for method in plan.METHODS:
-        for pair in plan.paired_rows(qids,method=method):
+        for pair in plan.one_bias_pairs(qids,biases,method=method):
             for side in ('reference_messages','variant_messages'):
                 messages=pair[side]
                 enabled=native_prompt(processor,messages)
@@ -75,9 +75,11 @@ def main():
     manifest=Path(a.data_root)/plan.MANIFEST
     if plan.sha256(data)!=plan.POOL_SHA or plan.sha256(manifest)!=plan.MANIFEST_SHA:
         raise ValueError('Frozen training data differs')
-    rows={row['question_id']:row for row in map(json.loads,data.read_text().splitlines())}
-    order=json.loads(manifest.read_text())['datasets']
-    qids=[rows[order[d]['permutation'][0]] for d in ('logiqa','hellaswag')]
+    # First real update of the shared one-bias campaign: 4 QIDs x 1 assigned bias.
+    from experiments.gemma4_methods import train, one_bias
+    manifest_value=train.exposure_manifest(Path(a.data_root))
+    pool=train.ordered_pool(Path(a.data_root))
+    qids,biases=one_bias.update_rows(manifest_value,{r['question_id']:r for r in pool},0)
     from transformers import AutoProcessor
     from ctm.evals.local_model import Gemma4UnifiedTextProcessor
     processor=Gemma4UnifiedTextProcessor(AutoProcessor.from_pretrained(str(model),local_files_only=True))
@@ -88,7 +90,8 @@ def main():
         'data_manifest':file_identity(manifest),'model':str(model.resolve()),
         'slurm_job_id':os.environ.get('SLURM_JOB_ID'),
         'scope':'CPU prompt parity only; not GPU/generation/optimizer proof',
-        'cases':probe(processor,qids),'generation_performed':False,'optimizer_updates':0}
+        'one_bias_manifest_sha256':one_bias.protocol.manifest_identity(manifest_value),
+        'cases':probe(processor,qids,biases),'generation_performed':False,'optimizer_updates':0}
     with Path(a.output).open('x') as stream:
         json.dump(result,stream,indent=2,allow_nan=False)
         stream.write('\n')

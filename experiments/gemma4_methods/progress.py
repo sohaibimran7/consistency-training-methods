@@ -3,6 +3,8 @@ import hashlib
 import json
 import math
 
+from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
+
 
 def bounded_end(step, budget):
     if type(step) is not int or step < 0 or type(budget) is not int or budget < 1:
@@ -13,7 +15,7 @@ def bounded_end(step, budget):
 
 
 def record_update(state, *, attempt, loss, question_ids):
-    if not math.isfinite(loss) or attempt < state['step'] or len(set(question_ids)) != 2:
+    if not math.isfinite(loss) or attempt < state['step'] or len(set(question_ids)) != QIDS_PER_UPDATE or len(question_ids) != QIDS_PER_UPDATE:
         raise ValueError('Invalid actual optimizer update')
     step = state['step'] + 1
     pending = [*state.get('pending', []), loss]

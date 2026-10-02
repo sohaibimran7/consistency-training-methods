@@ -175,6 +175,21 @@ def project_datum(datum: Mapping[str, Any], assignment: Mapping[str, Any]) -> di
     }
 
 
+def encounter_slice(manifest: Mapping[str, Any], attempt: int, per_update: int) -> list[dict]:
+    """Assignments for a zero-based sampled-batch ``attempt`` of ``per_update`` QIDs.
+
+    Stateless view of the same finite cursor for drivers whose attempt counter
+    already advances on skipped/no-signal batches: encounters = attempt * per_update.
+    """
+
+    if type(attempt) is not int or attempt < 0 or type(per_update) is not int or per_update <= 0:
+        raise ValueError("attempt and per_update must be nonnegative/positive ints")
+    start = attempt * per_update
+    if start + per_update > manifest["max_encounters"]:
+        raise ValueError("finite population exhausted; QIDs are never cycled or reused")
+    return copy.deepcopy(manifest["assignments"][start:start + per_update])
+
+
 def initial_state(manifest: Mapping[str, Any]) -> dict[str, Any]:
     validate_manifest(manifest)
     return {"schema": STATE_SCHEMA, "manifest_sha256": manifest_identity(manifest), "encounters": 0,
@@ -264,6 +279,6 @@ def _check_state(manifest: Mapping[str, Any], state: Mapping[str, Any]) -> None:
 
 __all__ = [
     "DATUM_SCHEMA", "PRIMARY_BUDGET", "PROTOCOL", "PROTOCOL_VERSION", "assign_bias", "build_manifest",
-    "checkpoint_record", "claim", "commit", "digest", "freeze_manifest", "initial_state", "load_manifest",
+    "checkpoint_record", "claim", "commit", "digest", "encounter_slice", "freeze_manifest", "initial_state", "load_manifest",
     "manifest_identity", "project_datum", "validate_manifest",
 ]

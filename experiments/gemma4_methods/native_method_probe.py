@@ -137,8 +137,11 @@ async def run(args):
             return
         processor=train.alignment_processor(AutoProcessor.from_pretrained(args.model,local_files_only=True))
         renderer=HuggingFaceChatTemplateRenderer(processor,chat_template_kwargs={'enable_thinking':True})
-        qids=train.ordered_pool(args.data_root)[:2]
-        pairs=plan.paired_rows(qids,method=args.method)
+        from experiments.gemma4_methods import one_bias
+        pool=train.ordered_pool(args.data_root)
+        qids,biases=one_bias.update_rows(train.exposure_manifest(args.data_root),
+                                         {r['question_id']:r for r in pool},0)
+        pairs=plan.one_bias_pairs(qids,biases,method=args.method)
         prompts=[{'messages':pair[side],'tokens':native_prompt(processor,pair[side])}
                  for pair in pairs for side in ('reference_messages','variant_messages')]
         plan.OUTPUT_TOKEN_CAP=train.CAP
@@ -186,13 +189,13 @@ async def run(args):
         else:
             datums,audit=build_consistency_datums_with_audit(processor,pairs)
             require_full_reference_suffix_alignment(audit)
-            if len(datums)!=4:
+            if len(datums)!=len(pairs):
                 raise ValueError('Native paired-row coverage changed')
             losses=[]
             for datum in datums:
                 pending=await backend.submit_forward_backward([datum],loss_fn=METHOD_LOSS_FNS[args.method])
                 losses.append(float((await pending.result()).metrics['loss']))
-        if len(losses)!=4 or not all(math.isfinite(x) for x in losses):
+        if len(losses)!=len(pairs) or not all(math.isfinite(x) for x in losses):
             raise ValueError('Invalid native method losses')
         gradients=helpers.assert_gradients(backend)
         await (await backend.submit_optim_step(learning_rate=1e-4,adam=AdamConfig(**plan.contract()['optimizer']))).result()
