@@ -1143,6 +1143,30 @@ class TestLocalCheckpoint:
         for p1, p2 in zip(backend.model.state_dict().values(), other.model.state_dict().values()):
             assert torch.equal(p1, p2)
 
+    def test_resumed_segment_without_optimizer_step_keeps_optimizer_state(self, tmp_path):
+        backend = make_backend()
+        asyncio.run(step(backend, [sft_datum()], "cross_entropy"))
+        parent = asyncio.run(backend.save_checkpoint(name="parent", log_dir=tmp_path, loop_state={}, kind="both"))
+
+        resumed = LocalBackend(device="cpu", use_lora=False, model_instance=tiny_model())
+        resumed.setup(
+            model="tiny-gpt2-test",
+            lora=LoRAConfig(rank=4),
+            resume_from=parent["sampler_path"],
+            resume_with_optimizer=True,
+        )
+        # Zero-signal segment: no optimizer step, so the optimizer is never built.
+        child = asyncio.run(resumed.save_checkpoint(name="child", log_dir=tmp_path, loop_state={}, kind="both"))
+
+        assert child["state_path"] is not None
+        saved = torch.load(tmp_path / "checkpoints" / "child" / "optimizer.pt")
+        expected = torch.load(tmp_path / "checkpoints" / "parent" / "optimizer.pt")
+        assert saved["param_groups"] == expected["param_groups"]
+        assert saved["state"].keys() == expected["state"].keys()
+        for key, value in expected["state"].items():
+            for name, tensor in value.items():
+                assert torch.equal(saved["state"][key][name], tensor)
+
     def test_sampler_kind_skips_optimizer(self, tmp_path):
         backend = make_backend()
         asyncio.run(step(backend, [sft_datum()], "cross_entropy"))

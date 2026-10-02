@@ -3097,9 +3097,15 @@ class LocalBackend:
         else:
             torch.save(model.state_dict(), ckpt_dir / "weights.pt")
         state_saved = False
-        if kind in ("state", "both") and self._optimizer is not None:
-            torch.save(self._optimizer.state_dict(), ckpt_dir / "optimizer.pt")
-            state_saved = True
+        if kind in ("state", "both"):
+            # A resumed segment that never steps still holds the restored Adam
+            # state only in staged form; it must survive into this checkpoint.
+            optimizer_state = (
+                self._optimizer.state_dict() if self._optimizer is not None else self._pending_optimizer_state
+            )
+            if optimizer_state is not None:
+                torch.save(optimizer_state, ckpt_dir / "optimizer.pt")
+                state_saved = True
         (ckpt_dir / "manifest.json").write_text(
             json.dumps(
                 {
