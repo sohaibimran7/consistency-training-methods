@@ -101,8 +101,9 @@ def main():
             raise RuntimeError('CPU-attested module changed')
     from ctm.backends import renderers, gemma_thinking
     from ctm.backends.local import vllm_sampler
+    from experiments.rmct_restart_20260928 import gemma_lora_application
     checked_modules = verify_module_origins(receipt, [__file__, renderers.__file__,
-        gemma_thinking.__file__, vllm_sampler.__file__])
+        gemma_thinking.__file__, vllm_sampler.__file__, gemma_lora_application.__file__])
     pins = json.loads(Path(__file__).with_name('gemma_launch_pins.json').read_text())
     if Path(a.model).name != pins['revision']:
         raise RuntimeError('Wrong original snapshot')
@@ -175,12 +176,19 @@ def main():
             'approval_reference': a.scoring_tail_approval_reference}:
         raise RuntimeError('HF and vLLM scoped diagnostic approval differ')
     from ctm.backends.local.vllm_sampler import VLLMSampler
-    sampler = VLLMSampler(a.model, **ENGINE_OPTIONS)
+    from safetensors import safe_open
+    from experiments.rmct_restart_20260928.gemma_lora_application import (
+        ACCEPTANCE, effect_verdict, tensor_verdict)
+    adapter_config = json.loads((a.output / 'disposable-adapter' / 'adapter_config.json').read_text())
+    scaling = adapter_config['lora_alpha'] / adapter_config['r']
+    sampler = VLLMSampler(a.model, **ENGINE_OPTIONS, worker_extension_cls=(
+        'experiments.rmct_restart_20260928.gemma_lora_application.LoRAInspectionExtension'))
     sampler.advance_policy(str(a.output / 'disposable-adapter'))
+    view = Path(sampler.adapter_dir) / 'adapter_model.safetensors'
     records = json.loads((a.output / 'hf.json').read_text())
     termination = []
     try:
-        for use_base, key in [(True, 'vllm_base'), (False, 'vllm_policy')]:
+        for use_base, key in [(True, 'vllm_base'), (False, 'vllm_policy'), (False, 'vllm_policy_repeat')]:
             try:
                 scores = score_records(sampler, records, use_base=use_base, termination=termination)
             except Exception:
@@ -188,27 +196,43 @@ def main():
                 raise
             for record, values in zip(records, scores):
                 record[key] = values
+            if key == 'vllm_policy':
+                inspection = sampler.engine.collective_rpc(
+                    'verify_active_lora', args=(sampler.adapter_version, str(view), scaling))[0]
     finally:
         sampler.shutdown()
+    with safe_open(str(view), 'pt') as f:
+        expected = {k.rsplit('.lora_', 1)[0] for k in f.keys()}
+    with safe_open(str(a.output / 'disposable-adapter' / 'adapter_model.safetensors'), 'pt') as f:
+        raw_keys = set(f.keys())
+    tensors = tensor_verdict(inspection, expected, raw_keys)
     def flat(k):
         return np.array([v for r in records for v in r[k]], dtype=float)
-    hb, hp, vb, vp = [flat(k) for k in ('hf_base', 'hf_policy', 'vllm_base', 'vllm_policy')]
+    hb, hp, vb, vp, vr = [flat(k) for k in ('hf_base', 'hf_policy', 'vllm_base', 'vllm_policy', 'vllm_policy_repeat')]
     hd, vd = hp-hb, vp-vb
     hn, vn = np.linalg.norm(hd), np.linalg.norm(vd)
+    effect = effect_verdict(hd, vd, vr-vb)
     metrics = dict(max_abs_raw_error=float(max(np.max(abs(hb-vb)), np.max(abs(hp-vp)))),
         raw_correlation=float(np.corrcoef(np.r_[hb,hp], np.r_[vb,vp])[0,1]),
         hf_effect_norm=float(hn), effect_cosine=float(hd@vd/(hn*vn)) if hn*vn else 0,
         effect_norm_ratio=float(vn/hn) if hn else 0,
         effect_relative_error=float(np.linalg.norm(hd-vd)/hn) if hn else 1)
-    passed = (all(np.isfinite(v) for v in metrics.values()) and metrics['max_abs_raw_error'] <= .5
-              and metrics['raw_correlation'] >= .999 and hn >= .5 and metrics['effect_cosine'] >= .9
-              and .8 <= metrics['effect_norm_ratio'] <= 1.25 and metrics['effect_relative_error'] <= .25)
+    # Original numerical thresholds, recorded unchanged as information only.
+    numerical = (all(np.isfinite(v) for v in metrics.values()) and metrics['max_abs_raw_error'] <= .5
+                 and metrics['raw_correlation'] >= .999 and hn >= .5 and metrics['effect_cosine'] >= .9
+                 and .8 <= metrics['effect_norm_ratio'] <= 1.25 and metrics['effect_relative_error'] <= .25)
+    passed = tensors['tensors_ok'] and effect['effect_ok']
     save(a.output / 'scores.json', records)
-    save(a.output / 'gpu-parity.json', {'status': 'passed' if passed else 'failed', 'metrics': metrics,
+    save(a.output / 'gpu-parity.json', {'status': 'passed' if passed else 'failed',
+         'acceptance_criterion': ACCEPTANCE, 'adapter_application': {**tensors, 'effect': effect,
+         'scaling': scaling, 'inference_view': str(view)},
+         'informational_numerical_metrics': metrics,
+         'informational_numerical_parity_within_original_thresholds': bool(numerical),
+         'numerical_parity_claimed': False,
          'termination': termination, 'provenance': provenance, 'optimizer_work_authorized': False,
          'remaining_gates': ['production_multiworker_regression', 'validation_semantics', 'coordinator_clearance']})
     if not passed:
-        raise SystemExit('Native GPU parity failed')
+        raise SystemExit('Native LoRA adapter application gate failed')
 
 
 if __name__ == '__main__':
