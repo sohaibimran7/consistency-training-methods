@@ -1167,6 +1167,19 @@ class TestLocalCheckpoint:
             for name, tensor in value.items():
                 assert torch.equal(saved["state"][key][name], tensor)
 
+    def test_fresh_never_stepped_checkpoint_resumes_a_fresh_optimizer(self, tmp_path):
+        backend = make_backend()
+        # Fresh lineage whose first segment had only no-signal batches.
+        first = asyncio.run(backend.save_checkpoint(name="first", log_dir=tmp_path, loop_state={}, kind="both"))
+        assert first["state_path"] is not None
+        assert torch.load(tmp_path / "checkpoints" / "first" / "optimizer.pt") == {"ctm_never_stepped": True}
+        resumed = LocalBackend(device="cpu", use_lora=False, model_instance=tiny_model())
+        resumed.setup(model="tiny-gpt2-test", lora=LoRAConfig(rank=4),
+                      resume_from=first["sampler_path"], resume_with_optimizer=True)
+        assert resumed._pending_optimizer_state is None
+        asyncio.run(step(resumed, [sft_datum()], "cross_entropy"))
+        assert resumed._optimizer is not None and resumed._optimizer.state
+
     def test_sampler_kind_skips_optimizer(self, tmp_path):
         backend = make_backend()
         asyncio.run(step(backend, [sft_datum()], "cross_entropy"))

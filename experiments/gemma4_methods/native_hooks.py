@@ -151,7 +151,9 @@ def verify_start(start,contract,args):
         actual=file_identity(item['path'])
         if any(actual[k]!=item[k] for k in ('sha256','bytes')):
             raise ValueError('Native CPU source bytes changed')
-    expected_samples={'bct':2,'opct':16}.get(contract['method'],0)
+    from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
+    # First one-bias batch: one BCT target per QID; four OPCT rollouts per pair.
+    expected_samples={'bct':QIDS_PER_UPDATE,'opct':4*QIDS_PER_UPDATE}.get(contract['method'],0)
     if len(update['samples'])!=expected_samples:
         raise ValueError('Native rollout sample coverage changed')
     if expected_samples and update['generation_cap_including_reasoning']!=20480:

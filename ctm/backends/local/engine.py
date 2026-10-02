@@ -3103,9 +3103,13 @@ class LocalBackend:
             optimizer_state = (
                 self._optimizer.state_dict() if self._optimizer is not None else self._pending_optimizer_state
             )
-            if optimizer_state is not None:
-                torch.save(optimizer_state, ckpt_dir / "optimizer.pt")
-                state_saved = True
+            if optimizer_state is None:
+                # A fresh lineage that has not stepped yet (e.g. only no-signal
+                # batches) has no Adam state. Record that explicitly so a strict
+                # optimizer resume restarts the same fresh optimizer.
+                optimizer_state = {"ctm_never_stepped": True}
+            torch.save(optimizer_state, ckpt_dir / "optimizer.pt")
+            state_saved = True
         (ckpt_dir / "manifest.json").write_text(
             json.dumps(
                 {
@@ -3144,5 +3148,6 @@ class LocalBackend:
                     f"optimizer-state resume was requested but optimizer.pt is missing: {opt_path}"
                 )
             # Optimizer is created lazily at the first optim_step; stage the state.
-            self._pending_optimizer_state = torch.load(opt_path, map_location=self.device)
+            staged = torch.load(opt_path, map_location=self.device)
+            self._pending_optimizer_state = None if staged == {"ctm_never_stepped": True} else staged
         print(f"LocalBackend: loaded checkpoint from {ckpt_dir} (optimizer: {with_optimizer})")

@@ -193,8 +193,15 @@ async def run(args):
             # Native hook checks original weights, fresh optimizer, new lineage,
             # exact data/source/cap approvals and initialization gates.
             # Budgets are sampled-batch attempts (4 encounters each), incl. skips.
-            end_attempt = verified_bootstrap(selection_contract,hooks.start_record,
-                                             args.updates,hooks.verify_start)
+            budget = verified_bootstrap(selection_contract,hooks.start_record,
+                                        args.updates,hooks.verify_start)
+            # Before the first sealed update, earlier jobs may only have written
+            # skip records; continue after them instead of replaying the same budget.
+            prior = 0
+            while (run_dir / 'skips' / f'attempt-{prior:07d}.json').exists():
+                prior += 1
+            from experiments.rmct_restart_20260928.validation_selection import interval_attempts
+            end_attempt = min(prior + budget, interval_attempts())
         else:
             progress = hooks.normalized_progress(run_dir,scientific_contract)
             if (progress['actual_optimizer_step'],progress['next_attempt_index']) != (state['step'],state.get('attempts',state['step'])):

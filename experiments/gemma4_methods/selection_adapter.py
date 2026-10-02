@@ -90,7 +90,12 @@ class GemmaVerifiers:
         from experiments.gemma4_methods.reference.plan import canonical
         if hashlib.sha256(canonical(qids)).hexdigest() != pool['ordered_qids_sha256']:
             raise ValueError('Order hash disagreement')
-        for row in [*rows, *skipped]:
+        trailing = [read_verified(record) for record in progress.get('trailing_skip_files', [])]
+        if [r['attempt'] for r in trailing] != list(range(attempt, attempt + len(trailing))):
+            raise ValueError('Trailing consumed batches are not this run\'s contiguous skips')
+        if any(r['step'] != step or r.get('optimizer_update') is not False for r in trailing):
+            raise ValueError('Trailing skip changed weights or belongs to another update')
+        for row in [*rows, *skipped, *trailing]:
             from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
             offset = QIDS_PER_UPDATE*row['attempt']  # one finite pass; never wraps
             if offset + QIDS_PER_UPDATE > len(qids) or row['question_ids'] != qids[offset:offset+QIDS_PER_UPDATE]:

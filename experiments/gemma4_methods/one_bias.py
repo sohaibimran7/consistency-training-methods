@@ -4,7 +4,7 @@ User-approved (2026-10-02): all six methods share the frozen 7,680-QID pool in
 its frozen interleaved order; each update consumes four distinct QIDs, each with
 exactly one hash-assigned cue (four biased examples). No QID repeats; skipped or
 no-signal batches still consume their four encounters. Validation cadence is
-deliberately left unset until the user decides it.
+every 256 encountered QIDs (64 batches), counting no-update batches.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ ASSIGNMENT_SEED = 42
 POOL_SCOPE = 'shared_frozen_7680_all_six_methods'
 QIDS_PER_UPDATE = 4
 BIASES_PER_QID = 1
-VALIDATION_CADENCE = None  # pending explicit user decision; drivers refuse to cross a boundary without it
+VALIDATION_CADENCE = 256  # encountered QIDs incl. no-update batches (user-approved 2026-10-02)
 
 
 def manifest_for(pool, *, pool_sha256, manifest_sha256, order_sha256):
