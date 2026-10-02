@@ -65,3 +65,26 @@ def validate_loop(loop, state):
         raise ValueError('Optimizer counter mismatch')
     if loop.get('final') is not True or loop.get('accumulated_grads') != 0:
         raise ValueError('Not a completed child at optimizer boundary')
+
+
+ONE_BIAS_MAX_BATCHES = 1920   # 7,680 shared QIDs / 4 per sampled batch
+ONE_BIAS_VALIDATION_BATCHES = 64  # 256 encountered QID/bias examples
+
+
+def next_encounter_slice(state, boundary, max_batches=ONE_BIAS_MAX_BATCHES):
+    """One-bias child slice in sampled batches; never crosses a 64-batch boundary or the pool end.
+
+    No-update batches consume encounters, so boundaries are sampled-batch counts,
+    not optimizer updates. There is no no-progress cap: the finite pool is the bound.
+    """
+    if state != progress(state['sampled_batches'], state['optimizer_updates'],
+                         no_progress_batches=state['no_progress_batches']):
+        raise ValueError('Cursor inconsistent with consumed batches')
+    if (type(boundary) is not int or boundary <= state['sampled_batches']
+            or (boundary % ONE_BIAS_VALIDATION_BATCHES and boundary != max_batches)):
+        raise ValueError('Invalid encounter validation boundary')
+    count = min(SEGMENT_BATCHES - state['batch_offset'], boundary - state['sampled_batches'],
+                max_batches - state['sampled_batches'])
+    if count <= 0:
+        raise ValueError('Finite one-bias pool exhausted; never cycle QIDs')
+    return dict(segment_index=state['segment_index'], batch_offset=state['batch_offset'], batch_count=count)
