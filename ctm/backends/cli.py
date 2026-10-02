@@ -126,6 +126,14 @@ def add_backend_args(
         help="Optional vLLM scheduler sequence cap. Hybrid/Mamba models may require a value below their available cache-block count for CUDA graph capture.",
     )
     g.add_argument(
+        "--local-vllm-generation-config", choices=["auto", "vllm"], default=None,
+        help="Explicit vLLM generation-config source; 'vllm' avoids model-supplied sampling/length defaults.",
+    )
+    g.add_argument(
+        "--local-vllm-enforce-eager", action="store_true",
+        help="Disable vLLM compilation/CUDA graphs for an explicitly validated eager runtime.",
+    )
+    g.add_argument(
         "--local-vllm-max-num-batched-tokens",
         type=int,
         default=None,
@@ -411,6 +419,9 @@ def _vllm_options(args: argparse.Namespace, *, worker: bool) -> dict[str, object
         ),
         **({"language_model_only": True} if args.local_vllm_language_model_only else {}),
         **({"max_num_seqs": args.local_vllm_max_num_seqs} if args.local_vllm_max_num_seqs is not None else {}),
+        **({"generation_config": args.local_vllm_generation_config}
+           if getattr(args, "local_vllm_generation_config", None) is not None else {}),
+        **({"enforce_eager": True} if getattr(args, "local_vllm_enforce_eager", False) else {}),
         **(
             {"max_num_batched_tokens": args.local_vllm_max_num_batched_tokens}
             if args.local_vllm_max_num_batched_tokens is not None

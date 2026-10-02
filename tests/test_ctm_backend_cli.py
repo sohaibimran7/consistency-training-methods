@@ -119,6 +119,14 @@ class TestBackendCLI:
         with pytest.raises(ValueError, match="must be a positive integer"):
             build_backend(args)
 
+    def test_local_vllm_generation_config_and_eager_reach_worker_options(self):
+        from ctm.backends.cli import _vllm_options
+        args = parse(["--backend", "local", "--local-vllm-generation-config", "vllm", "--local-vllm-enforce-eager"])
+        options = _vllm_options(args, worker=True)
+        assert options["generation_config"] == "vllm" and options["enforce_eager"] is True
+        default = _vllm_options(parse(["--backend", "local"]), worker=True)
+        assert "generation_config" not in default and "enforce_eager" not in default
+
     def test_local_vllm_max_num_batched_tokens_must_be_positive(self):
         args = parse(["--backend", "local", "--local-vllm-max-num-batched-tokens", "0"])
         with pytest.raises(ValueError, match="must be a positive integer"):
