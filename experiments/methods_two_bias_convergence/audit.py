@@ -8,7 +8,7 @@ from pathlib import Path
 from . import plan
 
 
-def audit(repository: Path, output: Path, *, native_diagnostic: bool = False) -> dict:
+def audit(repository: Path, output: Path, *, native_diagnostic: bool = False, one_bias: bool = False) -> dict:
     from transformers import AutoTokenizer
     from huggingface_hub import snapshot_download
     from ctm.training.consistency_data import build_consistency_datums_with_audit
@@ -19,8 +19,19 @@ def audit(repository: Path, output: Path, *, native_diagnostic: bool = False) ->
     failures = []
     aligned_rows = 0
     by_bias = {bias: {"rows": 0, "unaligned": 0, "suffix_failed": 0} for bias in plan.BIASES}
-    for start in range(0, len(pool), 2):
-        pairs = plan.paired_rows(pool[start:start + 2], method=None if native_diagnostic else "act")
+    manifest = None
+    if one_bias:
+        from . import one_bias as exposure
+
+        manifest = exposure.manifest_for(pool)
+        by_id = {row["question_id"]: row for row in pool}
+        groups = [exposure.pairs(*exposure.update_rows(manifest, by_id, attempt),
+                                 method=None if native_diagnostic else "act")
+                  for attempt in range(exposure.max_updates(manifest))]
+    else:
+        groups = [plan.paired_rows(pool[start:start + 2], method=None if native_diagnostic else "act")
+                  for start in range(0, len(pool), 2)]
+    for pairs in groups:
         for pair in pairs:
             datums, alignment = build_consistency_datums_with_audit(tokenizer, [pair])
             aligned_rows += len(datums)
@@ -35,10 +46,13 @@ def audit(repository: Path, output: Path, *, native_diagnostic: bool = False) ->
     result = {"schema": "ctm-expanded-all-pair-token-alignment-v1", "model": plan.MODEL,
               "revision": plan.REVISION, "data_sha256": plan.POOL_SHA, "unique_qids": len(pool),
               "pair_transform": "native_shared_pool" if native_diagnostic else plan.INTERNAL_PAIR_TRANSFORM,
-              "paired_rows": len(pool) * 2, "unaligned_rows": len(pool) * 2 - aligned_rows,
+              "paired_rows": sum(map(len, groups)), "unaligned_rows": sum(map(len, groups)) - aligned_rows,
               "full_reference_suffix_alignment": not failures, "prompt_tokens_min": min(lengths),
               "prompt_tokens_max": max(lengths), "generation_performed": False,
               "by_bias": by_bias, "failures": failures}
+    if one_bias:
+        result.update(pair_set="one_bias_assigned",
+                      one_bias_manifest_sha256=exposure.protocol.manifest_identity(manifest))
     plan.immutable_json(output, result)
     return result
 
@@ -49,8 +63,10 @@ def main() -> None:
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--native-diagnostic", action="store_true", help="Audit original placement for comparison, not internal-method training")
+    parser.add_argument("--one-bias", action="store_true", help="Audit only each QID's assigned one-bias pair")
     args = parser.parse_args()
-    result = audit(args.repository.resolve(), args.output.resolve(), native_diagnostic=args.native_diagnostic)
+    result = audit(args.repository.resolve(), args.output.resolve(), native_diagnostic=args.native_diagnostic,
+                   one_bias=args.one_bias)
     print(json.dumps({k: v for k, v in result.items() if k != "failures"}, sort_keys=True))
     if not result["full_reference_suffix_alignment"]:
         raise SystemExit(1)

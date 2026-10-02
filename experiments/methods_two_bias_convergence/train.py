@@ -22,6 +22,7 @@ import time
 import uuid
 from pathlib import Path
 
+from . import one_bias as exposure
 from . import plan
 
 
@@ -48,7 +49,7 @@ def require_cuda() -> None:
         raise RuntimeError("production training requires a scheduled CUDA GPU")
 
 
-def require_alignment_audit(path: Path | None) -> None:
+def require_alignment_audit(path: Path | None, manifest: dict | None = None) -> None:
     if path is None:
         raise ValueError("internal-consistency training requires a passing full-pool --alignment-audit")
     audit = json.loads(path.read_text())
@@ -56,6 +57,10 @@ def require_alignment_audit(path: Path | None) -> None:
                 "unique_qids": 7680, "paired_rows": 15360, "unaligned_rows": 0,
                 "full_reference_suffix_alignment": True,
                 "pair_transform": plan.contract()["data"]["internal_pair_transform"]}
+    if manifest is not None:
+        # One-bias campaigns train only the assigned pair of each QID.
+        required.update(paired_rows=7680, pair_set="one_bias_assigned",
+                        one_bias_manifest_sha256=exposure.protocol.manifest_identity(manifest))
     if any(audit.get(key) != value for key, value in required.items()):
         raise ValueError("full-pool alignment audit failed or belongs to a different prompt contract")
 
@@ -282,7 +287,7 @@ async def opct_update(trainer, pairs, *, backend):
     return metrics, {"variant_reverse_kl": metrics, "rollouts": records}
 
 
-async def seal_checkpoint(backend, *, run_dir, method, state, plan_hash, window_metrics):
+async def seal_checkpoint(backend, *, run_dir, method, state, plan_hash, window_metrics, exposure_state=None):
     checkpoint = run_dir / "checkpoints" / f"step-{state['step']:06d}"
     if checkpoint.exists():
         raise FileExistsError(f"refusing to overwrite an existing checkpoint: {checkpoint}")
@@ -290,7 +295,8 @@ async def seal_checkpoint(backend, *, run_dir, method, state, plan_hash, window_
     await backend.save_checkpoint(
         name=checkpoint.name, log_dir=staging, kind="both",
         loop_state={"step": state["step"], "convergence": state, "plan_sha256": plan_hash,
-                    "final": state["decision"] != "continue", "method": method},
+                    "final": state["decision"] != "continue", "method": method,
+                    **({"exposure": exposure_state} if exposure_state is not None else {})},
     )
     staged_checkpoint = staging / "checkpoints" / checkpoint.name
     plan.immutable_json(staged_checkpoint / "window-metrics.json", window_metrics)
@@ -298,6 +304,8 @@ async def seal_checkpoint(backend, *, run_dir, method, state, plan_hash, window_
                "plan_sha256": plan_hash, "convergence": state,
                "checkpoint": str(checkpoint.relative_to(run_dir)),
                "checkpoint_files": checkpoint_identity(staged_checkpoint)}
+    if exposure_state is not None:
+        receipt["exposure"] = exposure_state
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     os.rename(staged_checkpoint, checkpoint)
     shutil.rmtree(staging)
@@ -334,8 +342,12 @@ async def train(args) -> dict:
     document = plan.verify(repository, args.plan)
     amendment = document.get("execution_amendment") if args.method in {"bct", "opct"} else None
     plan_hash = plan.sha256(args.plan)
+    one_bias = "one_bias_manifest" in document
+    manifest = exposure.manifest_for(plan.ordered_pool(repository)) if one_bias else None
+    if one_bias and amendment is not None:
+        raise ValueError("a fresh one-bias campaign cannot carry the two-bias execution amendment")
     if args.method in {"act", "attct", "mlpct"}:
-        require_alignment_audit(args.alignment_audit)
+        require_alignment_audit(args.alignment_audit, manifest)
     if args.model_snapshot.name != plan.REVISION or not (args.model_snapshot / "config.json").is_file():
         raise ValueError("model must be the pinned offline Qwen3.5-9B snapshot")
     require_cuda()
@@ -352,6 +364,8 @@ async def train(args) -> dict:
         if state["decision"] != "continue":
             return state
         pool = plan.ordered_pool(repository)
+        by_id = {row["question_id"]: row for row in pool}
+        limit = exposure.max_updates(manifest) if one_bias else plan.MAX_UPDATES
         backend = LocalBackend(
             device="cuda", dtype=torch.bfloat16, sampler="hf", gradient_checkpointing=True,
             hf_streaming_sampling=True,
@@ -371,7 +385,8 @@ async def train(args) -> dict:
             "alignment_audit_sha256": plan.sha256(args.alignment_audit) if args.method in plan.INTERNAL_METHODS else None,
             "runtime_versions": {name: importlib.metadata.version(name) for name in
                                  ("torch", "transformers", "peft", "tinker", "tinker-cookbook", "mcq-bias")},
-            "contract": plan.contract(),
+            "contract": document["contract"] if one_bias else plan.contract(),
+            "one_bias_manifest": document.get("one_bias_manifest"),
             "execution_amendment": amendment,
             "trainable_names": [n for n, p in backend.model.named_parameters() if p.requires_grad],
         })
@@ -401,7 +416,7 @@ async def train(args) -> dict:
 
         prior_signal = signal.signal(signal.SIGUSR1, request_boundary_stop)
         starting_step = state["step"]
-        job_end = min(plan.MAX_UPDATES, starting_step + args.updates_this_job)
+        job_end = min(limit, starting_step + args.updates_this_job)
         window_metrics = resume_window_metrics(run_dir, state)
         last_saved_step = state["step"]
         try:
@@ -410,8 +425,12 @@ async def train(args) -> dict:
                     break
                 random.seed(42 + step)
                 torch.manual_seed(42 + step)
-                qids = plan.update_rows(pool, step)
-                pairs = plan.paired_rows(qids, method=args.method)
+                if one_bias:
+                    qids, biases = exposure.update_rows(manifest, by_id, step)
+                    pairs = exposure.pairs(qids, biases, method=args.method)
+                else:
+                    qids = plan.update_rows(pool, step)
+                    pairs = plan.paired_rows(qids, method=args.method)
                 started = time.monotonic()
                 if trainer is None:
                     variant_metrics, detail = await supervised_update(
@@ -428,20 +447,27 @@ async def train(args) -> dict:
                 await pending.result()
                 if trainer is not None:
                     trainer.sampling_client = await backend.refresh_policy_sampler(name=f"opct-step-{step+1}")
-                state = plan.observe(state, step=step + 1, loss=math.fsum(variant_metrics) / 4)
+                if one_bias:
+                    state = exposure.observe(state, step=step + 1, loss=math.fsum(variant_metrics) / 4, limit=limit)
+                else:
+                    state = plan.observe(state, step=step + 1, loss=math.fsum(variant_metrics) / 4)
                 metric = {"step": step + 1, "loss": math.fsum(variant_metrics) / 4,
                           "lr": 1e-4, "epoch": step // plan.QIDS_PER_DATASET,
                           "question_ids": [r["question_id"] for r in qids],
                           "variant_metrics": variant_metrics, "seconds": time.monotonic() - started,
                           "gradient_report": gradient_report}
+                if one_bias:
+                    metric["biases"] = [pair["bias"] for pair in pairs]
+                    metric["encountered_qid_bias_examples"] = exposure.QIDS_PER_UPDATE * (step + 1)
                 append_json(attempt_dir / "metrics.jsonl", metric)
                 if "rollouts" in detail:
                     append_json(attempt_dir / "rollouts.jsonl", {"step": step + 1, **detail})
                 window_metrics.append(metric)
                 print(json.dumps({**metric, "decision": state["decision"]}), flush=True)
-                if amendment or (step + 1) % plan.WINDOW == 0:
+                if amendment or (step + 1) % plan.WINDOW == 0 or (one_bias and state["decision"] != "continue"):
                     await seal_checkpoint(backend, run_dir=run_dir, method=args.method, state=state,
-                                          plan_hash=plan_hash, window_metrics=window_metrics)
+                                          plan_hash=plan_hash, window_metrics=window_metrics,
+                                          exposure_state=exposure.exposure(manifest, step + 1) if one_bias else None)
                     if amendment:
                         prune_recovery_checkpoint(run_dir, previous_step=last_saved_step, current_step=state["step"],
                                                   plan_hash=plan_hash, method=args.method)

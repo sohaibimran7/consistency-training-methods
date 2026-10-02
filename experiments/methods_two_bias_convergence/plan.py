@@ -148,6 +148,34 @@ def contract() -> dict:
     }
 
 
+def one_bias_contract(manifest: dict) -> dict:
+    """Fresh one-bias campaign: same recipe, new exposure/stopping contract."""
+    from . import one_bias
+
+    result = copy.deepcopy(contract())
+    result["schema"] = "ctm-methods-one-bias-v5"
+    result["exposure"] = one_bias.contract_block(manifest)
+    result["data"]["biases"] = list(BIASES)
+    result["data"]["biases_per_qid"] = one_bias.BIASES_PER_QID
+    result["batch"] = {"qids_per_update": one_bias.QIDS_PER_UPDATE, "biases_per_qid": one_bias.BIASES_PER_QID,
+                       "paired_rows_per_update": one_bias.QIDS_PER_UPDATE * one_bias.BIASES_PER_QID,
+                       "physical_rows_per_backward": 1,
+                       "gradient_accumulations_per_update": one_bias.QIDS_PER_UPDATE,
+                       "ordering": "frozen_rmct_interleaved_logiqa_hellaswag", "shuffle": False,
+                       "repeat_after_pool_exhaustion": False}
+    result["bct"].update(reuse_identical_target_for_both_biases=False, supervised_bias="assigned_bias_only")
+    result["convergence"] = {"owner": "shared_validation_controller", "metric": "TBSR",
+                             "every_encountered_qid_bias_examples": one_bias.VALIDATION_INTERVAL_ENCOUNTERS,
+                             "counts_no_update_batches": True, "patience": 2, "min_delta": 0,
+                             "strict_decrease": True, "loss_selects_or_stops": False,
+                             "selection_contract": "ctm-tbsr-selection-contract-v2-encounters",
+                             "max_optimizer_steps": one_bias.max_updates(manifest),
+                             "save_every_updates": WINDOW, "exhaustion": "stop_and_report_never_cycle"}
+    result["execution"]["job_slice_updates"] = 64
+    result["fresh_training_required"] = True
+    return result
+
+
 def ordered_pool(repository: Path) -> list[dict]:
     from ctm_data.adapters.mcq_bias.shared_qid_two_bias import SharedQidTwoBiasSetting
 
@@ -184,27 +212,26 @@ def paired_rows(qids: list[dict], *, method: str | None = None) -> list[dict]:
         raise ValueError(f"unknown method: {method}")
     if len(qids) != 2 or qids[0]["question_id"] == qids[1]["question_id"]:
         raise ValueError("an update requires two distinct QIDs")
-    pairs = []
-    for row in qids:
-        for bias in BIASES:
-            reference = copy.deepcopy(row["clean_messages"])
-            variant = copy.deepcopy(row["variants"][bias]["messages"])
-            if method in INTERNAL_METHODS and bias == "suggested_answer":
-                cue = row["variants"][bias].get("biasing_text")
-                if not isinstance(cue, str) or not cue.strip():
-                    raise ValueError("suggested-answer prefix requires the frozen verbatim cue")
-                if not any(cue in message["content"] for message in variant):
-                    raise ValueError("frozen suggested-answer cue is absent from the original prompt")
-                variant = copy.deepcopy(reference)
-                user_indices = [i for i, message in enumerate(variant) if message["role"] == "user"]
-                if not user_indices:
-                    raise ValueError("suggested-answer prefix requires a clean user message")
-                last_user = user_indices[-1]
-                variant[last_user]["content"] = cue + "\n\n" + reference[last_user]["content"]
-            pairs.append({"question_id": row["question_id"], "source_dataset": row["source_dataset"],
-                          "bias": bias, "reference_messages": reference, "variant_messages": variant})
-    return pairs
+    return [training_pair(row, bias, method) for row in qids for bias in BIASES]
 
+
+def training_pair(row: dict, bias: str, method: str | None) -> dict:
+    reference = copy.deepcopy(row["clean_messages"])
+    variant = copy.deepcopy(row["variants"][bias]["messages"])
+    if method in INTERNAL_METHODS and bias == "suggested_answer":
+        cue = row["variants"][bias].get("biasing_text")
+        if not isinstance(cue, str) or not cue.strip():
+            raise ValueError("suggested-answer prefix requires the frozen verbatim cue")
+        if not any(cue in message["content"] for message in variant):
+            raise ValueError("frozen suggested-answer cue is absent from the original prompt")
+        variant = copy.deepcopy(reference)
+        user_indices = [i for i, message in enumerate(variant) if message["role"] == "user"]
+        if not user_indices:
+            raise ValueError("suggested-answer prefix requires a clean user message")
+        last_user = user_indices[-1]
+        variant[last_user]["content"] = cue + "\n\n" + reference[last_user]["content"]
+    return {"question_id": row["question_id"], "source_dataset": row["source_dataset"],
+            "bias": bias, "reference_messages": reference, "variant_messages": variant}
 
 def observe(state: dict, *, step: int, loss: float) -> dict:
     """Pure, replayable patience controller; called only after real updates."""
@@ -260,13 +287,21 @@ def verify_amendment(repository: Path, document: dict) -> None:
             raise ValueError(f"unrelated parent source changed: {relative}")
 
 
-def prepare(repository: Path, output: Path, *, parent_plan: Path | None = None) -> dict:
+def prepare(repository: Path, output: Path, *, parent_plan: Path | None = None, one_bias: bool = False) -> dict:
     rows = ordered_pool(repository)
     document = {
         "contract": contract(),
         "qid_order_sha256": hashlib.sha256(canonical([r["question_id"] for r in rows])).hexdigest(),
         "sources": {str(p.relative_to(repository)): sha256(p) for p in source_files(repository)},
     }
+    if one_bias:
+        from . import one_bias as exposure
+
+        if parent_plan is not None:
+            raise ValueError("a fresh one-bias campaign has no parent plan")
+        path, manifest = exposure.freeze(output.parent, rows)
+        document["contract"] = one_bias_contract(manifest)
+        document["one_bias_manifest"] = {"path": str(path), "sha256": sha256(path)}
     if parent_plan is not None:
         if sha256(parent_plan) != PARENT_PLAN_SHA:
             raise ValueError("wrong parent plan")
@@ -279,14 +314,27 @@ def prepare(repository: Path, output: Path, *, parent_plan: Path | None = None) 
 
 def verify(repository: Path, plan: Path) -> dict:
     document = json.loads(plan.read_text())
-    if document["contract"] != contract():
+    rows = ordered_pool(repository)
+    if "one_bias_manifest" in document:
+        from . import one_bias as exposure
+        from ctm_data.adapters.mcq_bias import shared_qid_one_bias
+
+        manifest = exposure.manifest_for(rows)
+        frozen = Path(document["one_bias_manifest"]["path"])
+        if frozen.is_symlink() or sha256(frozen) != document["one_bias_manifest"]["sha256"]:
+            raise ValueError("frozen one-bias manifest bytes changed")
+        if shared_qid_one_bias.load_manifest(frozen, expected_sha256=shared_qid_one_bias.manifest_identity(manifest)) != manifest:
+            raise ValueError("frozen one-bias manifest differs from the deterministic assignment")
+        expected = one_bias_contract(manifest)
+    else:
+        expected = contract()
+    if document["contract"] != expected:
         raise ValueError("saved plan differs from the authored scientific contract")
     verify_amendment(repository, document)
     for relative, expected in document["sources"].items():
         path = repository / relative
         if path.is_symlink() or sha256(path) != expected:
             raise ValueError(f"source changed since plan was frozen: {relative}")
-    rows = ordered_pool(repository)
     if hashlib.sha256(canonical([r["question_id"] for r in rows])).hexdigest() != document["qid_order_sha256"]:
         raise ValueError("shared QID order differs from the frozen plan")
     return document
@@ -298,8 +346,9 @@ def main() -> None:
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--parent-plan", type=Path)
+    parser.add_argument("--one-bias", action="store_true", help="Freeze a fresh one-QID-once, one-bias campaign")
     args = parser.parse_args()
-    kwargs = {"parent_plan": args.parent_plan} if args.action == "prepare" else {}
+    kwargs = {"parent_plan": args.parent_plan, "one_bias": args.one_bias} if args.action == "prepare" else {}
     result = globals()[args.action](args.repository.resolve(), args.plan.resolve(), **kwargs)
     print(json.dumps({"plan": str(args.plan), "methods": result["contract"]["methods"],
                       "qid_order_sha256": result["qid_order_sha256"], "verified": True}))
