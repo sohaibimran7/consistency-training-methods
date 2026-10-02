@@ -23,8 +23,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from ctm.artifacts import artifact_identity, artifact_selection_identity
 from ctm_data.adapters.mcq_bias.shared_qid_two_bias import (
     BIAS_TYPES,
+    SharedQidTwoBiasSetting,
+    _ids_sha256,
     _publish_immutable,
     _validate_shared_datum,
 )
@@ -277,8 +280,111 @@ def _check_state(manifest: Mapping[str, Any], state: Mapping[str, Any]) -> None:
         raise ValueError("ledger does not end at the cursor")
 
 
+SETTING_QIDS_PER_UPDATE = 4
+
+
+def _terminal_parser():
+    from functools import partial
+    from mcq_bias.parsers import BREAK_WORDS
+    from ctm_data.adapters.mcq_bias.terminal_answer import parse_terminal_first
+    return partial(parse_terminal_first, allowed="ABCD", break_words=BREAK_WORDS)
+
+
+class SharedQidOneBiasSetting(SharedQidTwoBiasSetting):
+    """RL setting: clean prompt + the one assigned cue; 4 QIDs per batch; one finite pass."""
+
+    name = 'mcq_bias_shared_qid_one_bias'
+
+    def __init__(self, *, one_bias_manifest_path, one_bias_manifest_sha256, **kwargs):
+        if kwargs.get('answer_parser_fn') is not None:
+            raise ValueError('Fresh production parser cannot be overridden')
+        super().__init__(**kwargs)
+        self.one_bias_manifest_path = Path(one_bias_manifest_path).resolve()
+        self.one_bias_manifest = load_manifest(self.one_bias_manifest_path,
+                                                        expected_sha256=one_bias_manifest_sha256)
+        self.one_bias_manifest_sha256 = one_bias_manifest_sha256
+
+    def answer_parser(self):
+        return _terminal_parser()
+
+    def load_datapoints(self, n_datapoints, *, attempt_offset, **kwargs):
+        """Projected datums for ``n_datapoints/4`` consecutive attempts from ``attempt_offset``."""
+        if kwargs:
+            raise ValueError('Unexpected one-bias load options: ' + ', '.join(sorted(kwargs)))
+        if type(n_datapoints) is not int or n_datapoints <= 0 or n_datapoints % SETTING_QIDS_PER_UPDATE:
+            raise ValueError('One-bias slices require whole four-QID batches')
+        if type(attempt_offset) is not int or attempt_offset < 0:
+            raise ValueError('attempt_offset must be a nonnegative sampled-batch counter')
+        _, rows = self._load_verified()
+        count = n_datapoints // SETTING_QIDS_PER_UPDATE
+        assignments = [a for i in range(count)
+                       for a in encounter_slice(self.one_bias_manifest, attempt_offset + i, SETTING_QIDS_PER_UPDATE)]
+        datapoints = [project_datum(rows[a['question_id']], a) for a in assignments]
+        ids = [a['question_id'] for a in assignments]
+        self._loaded_segment = dict(
+            attempt_offset=attempt_offset, attempted_batches=count, n_datapoints=n_datapoints,
+            selection='one_bias_manifest_encounter_slice_no_cycling',
+            one_bias_manifest_sha256=self.one_bias_manifest_sha256,
+            interleaved_question_ids=ids, interleaved_question_ids_sha256=_ids_sha256(ids),
+            assigned_biases=[a['bias'] for a in assignments],
+            encounters=[SETTING_QIDS_PER_UPDATE * attempt_offset, SETTING_QIDS_PER_UPDATE * (attempt_offset + count)])
+        return datapoints
+
+    def perturbations(self):
+        return [lambda datapoint: self._prompt(datapoint['clean_messages']),
+                lambda datapoint: self._prompt(datapoint['variant']['messages'])]
+
+    def training_perturbation_indices(self):
+        return [1]
+
+    def trait_classifier(self):
+        parser = self.answer_parser()
+        scorer = self._matches_bias()
+
+        def classify(response, datapoint, realized_messages):
+            if datapoint.get('datum_schema') != DATUM_SCHEMA:
+                raise ValueError('One-bias trait classifier requires a projected datum')
+            if realized_messages not in (datapoint['clean_messages'], datapoint['variant']['messages']):
+                raise ValueError('Realized prompt is neither the clean prompt nor the assigned cue')
+            # One shared target: the assigned cue's biased option is the clean reference target too.
+            answer = parser(response)
+            if answer is None:
+                return 0.0
+            score = scorer(answer, datapoint['biased_option'])
+            if score is None:
+                raise ValueError('one-bias trait scoring received no designated bias target')
+            return float(score)
+        return classify
+
+    def run_metadata(self):
+        manifest, _ = self._load_verified()
+        metadata = {'artifact': artifact_identity(self.data_path, manifest),
+                    'manifest_path': str(self.manifest_path), 'manifest_sha256': self.expected_manifest_sha256,
+                    'one_bias_manifest_path': str(self.one_bias_manifest_path),
+                    'one_bias_manifest_sha256': self.one_bias_manifest_sha256,
+                    'perturbations': ['clean', 'assigned_bias'],
+                    'training_perturbation_indices': self.training_perturbation_indices(),
+                    'trait_target_contract': 'assigned cue biased_option for clean and cue',
+                    'pool_contract': copy.deepcopy(self._shape)}
+        if self._loaded_segment is not None:
+            metadata['segment'] = copy.deepcopy(self._loaded_segment)
+        return metadata
+
+    def training_artifact_identity(self):
+        manifest, _ = self._load_verified()
+        identity = artifact_identity(self.data_path, manifest)
+        identity.update(manifest_path=str(self.manifest_path), manifest_sha256=self.expected_manifest_sha256,
+                        one_bias_manifest_sha256=self.one_bias_manifest_sha256)
+        if self._loaded_segment is not None:
+            identity['selection'] = artifact_selection_identity(
+                self._loaded_segment['interleaved_question_ids'], n_variants=2)
+            identity['segment'] = copy.deepcopy(self._loaded_segment)
+        return [identity]
+
+
+
 __all__ = [
-    "DATUM_SCHEMA", "PRIMARY_BUDGET", "PROTOCOL", "PROTOCOL_VERSION", "assign_bias", "build_manifest",
+    "DATUM_SCHEMA", "PRIMARY_BUDGET", "SETTING_QIDS_PER_UPDATE", "SharedQidOneBiasSetting", "PROTOCOL", "PROTOCOL_VERSION", "assign_bias", "build_manifest",
     "checkpoint_record", "claim", "commit", "digest", "encounter_slice", "freeze_manifest", "initial_state", "load_manifest",
     "manifest_identity", "project_datum", "validate_manifest",
 ]

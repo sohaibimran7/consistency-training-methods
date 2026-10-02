@@ -10,13 +10,14 @@ from pathlib import Path
 import re
 
 from experiments.gemma4_rmct.plan import segment_args, REVISION
-from experiments.rmct_convergence.plan import DATA_SHA256, MANIFEST_SHA256
+from experiments.gemma4_methods.reference.plan import POOL_SHA as DATA_SHA256, MANIFEST_SHA as MANIFEST_SHA256
+from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
 from experiments.rmct_restart_20260928.gemma_config import fresh_config
 
 
-def build(*, repo, python, model, targets, data, manifest, commit, run_name,
-          approval_reference, validation_sha256):
-    for path in (repo, python, model, data, manifest):
+def build(*, repo, python, model, targets, data, manifest, one_bias_manifest, one_bias_manifest_sha256,
+          commit, run_name, approval_reference, validation_sha256):
+    for path in (repo, python, model, data, manifest, one_bias_manifest):
         if not Path(path).is_absolute():
             raise ValueError('Absolute deployment paths required')
     if Path(model).name != REVISION:
@@ -29,12 +30,18 @@ def build(*, repo, python, model, targets, data, manifest, commit, run_name,
     # supplies the historical one-trainer/three-worker native Gemma topology.
     args = segment_args(Path(repo), 0, model=model, target_modules=targets)
     args.pop('no_max_new_tokens', None)
-    args.update(max_new_tokens=20480, experiment_name='gemma-rmct-restart-20260928',
-        run_name=run_name, checkpoint_every=1,
-        setting_factory='experiments.rmct_restart_20260928.gemma_production_setting:create_setting',
+    # User-approved one-bias campaign (2026-10-02): shared 7,680-QID pool, four
+    # distinct QIDs x one assigned cue per update, one finite pass.
+    args.update(max_new_tokens=20480, experiment_name='gemma-rmct-one-bias-20261002',
+        run_name=run_name, checkpoint_every=1, batch_size=QIDS_PER_UPDATE,
+        n_datapoints=4 * QIDS_PER_UPDATE,
+        setting_factory='experiments.rmct_restart_20260928.gemma_production_setting:create_one_bias_setting',
         setting_config={'data_path': data, 'manifest_path': manifest,
-                        'expected_manifest_sha256': MANIFEST_SHA256},
-        load_config={'n_datapoints': 32, 'segment_index': 0, 'batch_offset': 0})
+                        'expected_manifest_sha256': MANIFEST_SHA256,
+                        'expected_qids_per_dataset': 3840, 'expected_qids_per_dataset_per_segment': 16,
+                        'one_bias_manifest_path': one_bias_manifest,
+                        'one_bias_manifest_sha256': one_bias_manifest_sha256},
+        load_config={'n_datapoints': 4 * QIDS_PER_UPDATE, 'attempt_offset': 0})
     if any(k.startswith('resume') for k in args) or args.get('local_phase_shared'):
         raise RuntimeError('Fresh native Gemma topology violated')
     # Same scalar/dict CLI encoding as scripts.run_experiment, without its
@@ -53,13 +60,16 @@ def build(*, repo, python, model, targets, data, manifest, commit, run_name,
             'incorporated_commit': commit, 'family': 'gemma', 'policy': policy,
             'argv': argv, 'argument_map': args,
             'data_sha256': DATA_SHA256, 'manifest_sha256': MANIFEST_SHA256,
+            'one_bias_manifest_sha256': one_bias_manifest_sha256,
             'initial_optimizer_step': 0, 'initial_batch_offset': 0,
             'environment': {'VLLM_WORKER_MULTIPROC_METHOD': 'spawn',
                             'CTM_EXCLUDE_LENGTH_TERMINATED': '1'},
             'required_gates': ['incorporated_source', 'cpu_provenance', 'gemma_native_gpu_parity',
                                'gemma_production_multiworker_rl_regression',
                                'validation_controller_integration', 'coordinator_clearance'],
-            'controller_contract': {'actual_updates_per_validation': 64,
+            'controller_contract': {'encountered_qids_per_validation': 256,
+                'attempted_batches_per_validation': 64, 'qids_per_attempted_batch': QIDS_PER_UPDATE,
+                'no_update_batches_consume_encounters': True, 'pool_cycling': False,
                 'first_segment_max_attempted_batches': 16,
                 'skips_do_not_increment_optimizer_steps': True,
                 'resume_allowed_only_within_new_lineage_after_first_segment': True,
@@ -70,7 +80,7 @@ def build(*, repo, python, model, targets, data, manifest, commit, run_name,
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for name in ('repo', 'python', 'model', 'data', 'manifest', 'targets',
+    for name in ('repo', 'python', 'model', 'data', 'manifest', 'one-bias-manifest', 'one-bias-manifest-sha256', 'targets',
                  'commit', 'run-name', 'approval-reference', 'validation-sha256', 'output'):
         p.add_argument('--'+name, required=True)
     a = vars(p.parse_args())

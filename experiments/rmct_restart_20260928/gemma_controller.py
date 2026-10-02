@@ -1,7 +1,10 @@
 """Fresh native Gemma RMCT controller; no Qwen checkpoint-schema substitution.
 
-Preserves two-QID groups,96rollouts/stage and cyclic1000QID order. Durable
-sampled-batch and optimizer counters are separate. Validation owns stopping.
+One-bias campaign (user-approved 2026-10-02): four distinct QIDs x one assigned
+cue per batch over the shared frozen 7,680-QID manifest, 96 rollouts/stage, one
+finite pass. Durable sampled-batch (encounter) and optimizer counters are
+separate; validation every 256 encountered QIDs (64 batches, incl. no-update
+batches) owns stopping.
 """
 import argparse
 import fcntl
@@ -15,7 +18,20 @@ from experiments.gemma4_methods.selection_adapter import GemmaVerifiers,file_ide
 from experiments.gemma4_methods.native_hooks import runtime_restore,scheduler_complete
 from experiments.gemma4_methods.launch_guard import check_source
 from experiments.gemma4_methods.reference.plan import immutable_json
-from experiments.rmct_restart_20260928.qwen_progress import progress,next_slice,advance,validate_loop
+from experiments.rmct_restart_20260928.qwen_progress import progress,advance,validate_loop,SEGMENT_BATCHES
+from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
+
+
+def next_encounter_slice(state, boundary, max_attempts):
+    """Next child slice in sampled batches; never crosses a 64-batch boundary or the pool end."""
+    if state!=progress(state['sampled_batches'],state['optimizer_updates'],
+                       no_progress_batches=state['no_progress_batches']):
+        raise ValueError('Cursor inconsistent with consumed batches')
+    if type(boundary) is not int or boundary<=state['sampled_batches'] or (boundary%64 and boundary!=max_attempts):
+        raise ValueError('Invalid encounter validation boundary')
+    count=min(SEGMENT_BATCHES-state['batch_offset'],boundary-state['sampled_batches'],max_attempts-state['sampled_batches'])
+    if count<=0:raise ValueError('Finite one-bias pool exhausted; never cycle QIDs')
+    return dict(segment_index=state['segment_index'],batch_offset=state['batch_offset'],batch_count=count)
 
 
 def approved_plan(plan_record,start_record,contract_record,*,python=None):
@@ -36,7 +52,9 @@ def approved_plan(plan_record,start_record,contract_record,*,python=None):
     setting=args['setting_config']
     expected=build(repo=str(Path(plan['argv'][1]).resolve().parents[1]),python=plan['argv'][0],
         model=contract['model'],targets=args['lora_config']['target_modules'],data=setting['data_path'],
-        manifest=setting['manifest_path'],commit=contract['source_commit'],run_name=args['run_name'],
+        manifest=setting['manifest_path'],one_bias_manifest=setting['one_bias_manifest_path'],
+        one_bias_manifest_sha256=setting['one_bias_manifest_sha256'],
+        commit=contract['source_commit'],run_name=args['run_name'],
         approval_reference=contract['approval_reference'],validation_sha256=contract['population']['sha256'])
     if plan!=expected:raise ValueError('Approved plan is not the unchanged frozen RMCT recipe')
     return plan
@@ -51,8 +69,8 @@ def command(plan,before,selection,parent):
         raise ValueError('Slice cursor mismatch')
     count=selection['batch_count']
     if type(count) is not int or not 1<=count<=16-before['batch_offset']:
-        raise ValueError('Whole two-QID groups required')
-    for flag,value in (('--batch-size','2'),('--n-epochs','1'),('--gradient-accumulation-steps','1'),
+        raise ValueError('Whole four-QID batches required')
+    for flag,value in (('--batch-size',str(QIDS_PER_UPDATE)),('--n-epochs','1'),('--gradient-accumulation-steps','1'),
                        ('--max-new-tokens','20480')):
         if argv.count(flag)!=1 or argv[argv.index(flag)+1]!=value:
             raise ValueError('Scientific recipe changed:'+flag)
@@ -62,12 +80,11 @@ def command(plan,before,selection,parent):
             raise ValueError('Scientific96-rollout recipe changed')
     base=argv[argv.index('--run-name')+1]
     argv[argv.index('--run-name')+1]=f"{base}-b{before['sampled_batches']:06d}"
-    # Gemma's ContinuingSharedQidSetting expects an ABSOLUTE attempted cursor,
-    # unlike the Qwen segment-relative slice loader. Never interchange them.
-    load={'n_datapoints':2*count,'segment_index':before['segment_index'],
-          'batch_offset':before['sampled_batches']}
+    # The one-bias setting takes an ABSOLUTE sampled-batch cursor into the
+    # shared manifest (4 encounters per batch, including no-update batches).
+    load={'n_datapoints':QIDS_PER_UPDATE*count,'attempt_offset':before['sampled_batches']}
     argv[argv.index('--load-config')+1]=json.dumps(load,sort_keys=True)
-    argv[argv.index('--n-datapoints')+1]=str(2*count)
+    argv[argv.index('--n-datapoints')+1]=str(QIDS_PER_UPDATE*count)
     if parent is None:
         if before!=progress(0,0):raise ValueError('Missing native parent')
     else:
@@ -121,7 +138,11 @@ def normalized(receipt,contract):
     return {'schema':'ctm-training-progress-v1',
         **{k:contract[k] for k in ('campaign_id','method','model','source_commit')},
         'actual_optimizer_step':state['optimizer_updates'],'next_attempt_index':state['sampled_batches'],
-        'sampled_batches':state['sampled_batches'],'checkpoint':receipt['checkpoint'],
+        'sampled_batches':state['sampled_batches'],
+        # No-update batches are already inside the native checkpoint's global step.
+        'encounter_attempt':state['sampled_batches'],
+        'encountered_qid_bias_examples':QIDS_PER_UPDATE*state['sampled_batches'],'trailing_skip_files':[],
+        'checkpoint':receipt['checkpoint'],
         'checkpoint_files':receipt['files'],'rmct_native_seal':receipt}
 
 
@@ -189,7 +210,8 @@ def verify_start(start,contract):
 def train_window(args):
     from transformers import AutoProcessor
     from ctm.evals.local_model import Gemma4UnifiedTextProcessor
-    from experiments.rmct_restart_20260928.validation_selection import bootstrap_budget,continuation_budget
+    from experiments.rmct_restart_20260928.validation_selection import (
+        bootstrap_budget,continuation_budget,max_attempts)
     repo=Path(__file__).resolve().parents[2]
     contract_record=file_identity(args.contract)
     contract=read_verified(contract_record)
@@ -214,21 +236,23 @@ def train_window(args):
             budget=continuation_budget(value,adapter.replay(args.folder,contract_record),requested_updates=16)
             before=parent['progress']
         if not budget:return
-        target=before['optimizer_updates']+budget
-        while before['optimizer_updates']<target:
-            # next_slice bounds skips to one full pool and never crosses64.
-            boundary=((before['optimizer_updates']//64)+1)*64
-            selection=next_slice(before,boundary)
-            selection['batch_count']=min(selection['batch_count'],target-before['optimizer_updates'])
+        # Budget unit: sampled batches (encounters/4), counting no-update batches.
+        target=before['sampled_batches']+budget
+        while before['sampled_batches']<target:
+            boundary=min(((before['sampled_batches']//64)+1)*64,max_attempts())
+            selection=next_encounter_slice(before,boundary,max_attempts())
+            selection['batch_count']=min(selection['batch_count'],target-before['sampled_batches'])
             argv=command(plan,before,selection,parent)
             config=json.loads(argv[argv.index('--setting-config')+1])
-            from experiments.rmct_restart_20260928.gemma_production_setting import create_setting
-            datapoints=create_setting(**config).load_datapoints(**json.loads(argv[argv.index('--load-config')+1]))
-            if len(datapoints)!=selection['batch_count']*2:raise ValueError('Native slice size differs')
+            from experiments.rmct_restart_20260928.gemma_production_setting import create_one_bias_setting
+            setting=create_one_bias_setting(**config)
+            datapoints=setting.load_datapoints(**json.loads(argv[argv.index('--load-config')+1]))
+            if len(datapoints)!=selection['batch_count']*QIDS_PER_UPDATE:raise ValueError('Native slice size differs')
             name=argv[argv.index('--run-name')+1]
             claim=output/'claims'/f'{name}.json'
             immutable_json(claim,{'job_id':os.environ['SLURM_JOB_ID'],'argv':argv,
-                'question_ids':[r['question_id'] for r in datapoints]})
+                'question_ids':[r['question_id'] for r in datapoints],
+                'biases':[r['bias'] for r in datapoints]})
             experiment=argv[argv.index('--experiment-name')+1]
             checkpoint=repo/'logs'/experiment/name/'checkpoints'/f'{experiment}_{name}'
             if checkpoint.exists():raise ValueError('Existing unsealed child; explicit recovery required')
