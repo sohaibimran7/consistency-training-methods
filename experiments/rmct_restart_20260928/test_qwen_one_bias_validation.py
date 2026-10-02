@@ -65,3 +65,17 @@ def test_executor_accepts_one_bias_schema_only_on_grid(monkeypatch, tmp_path):
     monkeypatch.setattr(ex.subprocess, 'check_output', lambda *a, **k: 'other')
     with pytest.raises(ValueError, match='deployed source'):
         ex.check_contract(dict(base, source_commit='s'), tmp_path)
+
+
+def test_first_window_is_fresh_and_bounded_without_validation(tmp_path):
+    assert ob.gated_budget(run_dir=tmp_path, step=0, requested=128, contract_path=None, folder=None,
+                           manifest=None, model_path=None) == 64
+
+
+def test_selection_contract_is_the_shared_v2_encounter_contract(tmp_path):
+    from experiments.rmct_restart_20260928 import validation_selection as s
+    population = tmp_path / 'validation.json'
+    population.write_text('{}')
+    contract = ob.selection_contract(campaign_id='c', method='bct', model='m', source_commit='x', population=population)
+    assert s.encounter_mode(contract) and contract['policy'] == s.ENCOUNTER_POLICY
+    s.check_contract(contract)

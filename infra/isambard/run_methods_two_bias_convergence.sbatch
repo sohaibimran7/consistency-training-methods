@@ -34,6 +34,17 @@ esac
     --repository "$ctm_methods_repo" --plan "$ctm_methods_plan"
 ctm_methods_updates=128
 ctm_methods_amended=0
+ctm_methods_one_bias=0
+ctm_methods_selection=()
+if "$ctm_methods_python" -c 'import json,sys; sys.exit(0 if "one_bias_manifest" in json.load(open(sys.argv[1])) else 1)' "$ctm_methods_plan"; then
+    # Fresh one-bias campaign: one 64-update (256-encounter) window per job.
+    # Validation must be accepted before the next window, so never auto-chain.
+    ctm_methods_one_bias=1
+    ctm_methods_updates=64
+    ctm_methods_selection=(--selection-contract "${CTM_SELECTION_CONTRACT:?selection contract is required}"
+        --selection-folder "${CTM_SELECTION_FOLDER:?selection folder is required}"
+        --validation-manifest "${CTM_VALIDATION_MANIFEST:?validation manifest is required}")
+fi
 if "$ctm_methods_python" -c 'import json,sys; p=json.load(open(sys.argv[1])); sys.exit(0 if p.get("execution_amendment") and sys.argv[2] in ("bct", "opct") else 1)' \
     "$ctm_methods_plan" "$ctm_methods_method"; then
     ctm_methods_amended=1
@@ -47,9 +58,10 @@ srun --nodes=1 --ntasks=1 --gpus=1 --cpus-per-task=16 \
     "$ctm_methods_python" -m experiments.methods_two_bias_convergence.train \
     --repository "$ctm_methods_repo" --method "$ctm_methods_method" \
     --plan "$ctm_methods_plan" --model-snapshot "$ctm_methods_snapshot" \
-    --run-root "$ctm_methods_runs" --updates-this-job "$ctm_methods_updates" "${ctm_methods_alignment[@]}"
+    --run-root "$ctm_methods_runs" --updates-this-job "$ctm_methods_updates" "${ctm_methods_alignment[@]}" \
+    "${ctm_methods_selection[@]}"
 
-if [[ "$ctm_methods_amended" == 1 ]]; then
+if [[ "$ctm_methods_amended" == 1 || "$ctm_methods_one_bias" == 1 ]]; then
     exit 0
 fi
 

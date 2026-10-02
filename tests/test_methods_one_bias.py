@@ -117,6 +117,13 @@ def test_online_one_bias_loop_resumes_with_encounter_receipts(method, pool, tmp_
     monkeypatch.setattr(renderers, "get_renderer_and_tokenizer", lambda *a, **k: (Renderer(), None))
     monkeypatch.setattr(runner, "require_cuda", lambda: None)
     monkeypatch.setattr(plan, "ordered_pool", lambda *a: pool)
+    from experiments.rmct_restart_20260928 import qwen_one_bias_validation as gate
+    calls = []
+
+    def budget(**kwargs):
+        calls.append(kwargs["step"])
+        return min(kwargs["requested"], 64 - kwargs["step"] % 64)
+    monkeypatch.setattr(gate, "gated_budget", budget)
     manifest = one_bias.manifest_for(pool)
     monkeypatch.setattr(plan, "verify", lambda *a: {"contract": plan.one_bias_contract(manifest),
                                                     "one_bias_manifest": {"path": "m", "sha256": "s"}})
@@ -126,9 +133,11 @@ def test_online_one_bias_loop_resumes_with_encounter_receipts(method, pool, tmp_
     plan_path = tmp_path / "plan.json"
     plan_path.write_text("{}")
     args = SimpleNamespace(repository=tmp_path, plan=plan_path, model_snapshot=snapshot,
-                           run_root=tmp_path / "runs", method=method, updates_this_job=16)
+                           run_root=tmp_path / "runs", method=method, updates_this_job=16,
+                           selection_contract=None, selection_folder=None, validation_manifest=None)
     assert asyncio.run(runner.train(args))["step"] == 16
     assert asyncio.run(runner.train(args))["step"] == 32
+    assert calls == [0, 16]  # every job asks the validation gate before training
     run_dir = args.run_root / method
     receipts = [json.loads(p.read_text()) for p in sorted((run_dir / "receipts").glob("*.json"))]
     assert [r["exposure"]["encountered_qid_bias_examples"] for r in receipts] == [64, 128]
