@@ -177,7 +177,8 @@ async def run(args):
     with (run_dir / '.training.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         from experiments.gemma4_methods.checkpoint import recover_publication
-        recover_publication(run_dir,plan_hash,method)
+        recover_publication(run_dir,plan_hash,method,
+                            one_bias.protocol.manifest_identity(exposure_manifest(root)))
         state, resume = helpers.load_resume(run_dir, plan_hash, method)
         if state['decision'] != 'continue':
             return
@@ -377,20 +378,10 @@ async def run(args):
                         'optimizer':optimizer_seconds,'checkpoint':checkpoint_seconds},
                     'sampling_scope':'BCT includes cache reads; OPCT generation await only; internal methods zero',
                     'scope':'host wall time; excludes skipped attempts and startup; not whole-allocation throughput'})
-                reference.immutable_json(run_dir / 'progress' / f'step-{state["step"]:06d}.json', {
-                    'schema': 'gemma-trainer-progress-draft-v1', 'plan_sha256': plan_hash,
-                    'actual_optimizer_step': state['step'], 'next_attempt_index': state['attempts'],
-                    'attempted_batches': state['attempts'], 'sampled_batches': None,
-                    'sampled_batches_note': 'derive from generation events; attempts can include cached skip replay',
-                    'ordered_pool_sha256': ORDER_SHA,
-                    'consumed_qid_position': one_bias.QIDS_PER_UPDATE*state['attempts'],
-                    'encountered_qid_bias_examples': one_bias.QIDS_PER_UPDATE*state['attempts'],
-                    'one_bias_manifest_sha256': one_bias.protocol.manifest_identity(manifest),
-                    'last_update_question_ids': state['last_update_question_ids'],
-                    'latest_checkpoint': sealed['checkpoint'], 'checkpoint_files': sealed['checkpoint_files'],
-                    'selected_checkpoint': None, 'validation_required': state['attempts'] % 64 == 0,
-                    'rng_metadata': 'manifest coordinator RNG saved/read-back restored; private vLLM worker RNG not serialized; native resume gate required',
-                    'controller_adapter': 'pending; not authorization to continue past boundary'})
+                from experiments.gemma4_methods.checkpoint import make_progress
+                # One builder for trainer and recovery so resumed jobs reproduce it exactly.
+                reference.immutable_json(run_dir / 'progress' / f'step-{state["step"]:06d}.json',
+                    make_progress(sealed, one_bias.protocol.manifest_identity(manifest)))
                 if state['step'] % 16 == 0:
                     window_metrics = []
                 if trainer is not None:

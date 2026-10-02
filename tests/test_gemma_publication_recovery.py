@@ -38,11 +38,11 @@ class PublicationRecoveryTests(unittest.TestCase):
     def test_crash_after_metrics_before_checkpoint_preserves_tail_and_retries_once(self):
         original=json.dumps(self.row)+'\n'
         (self.root/'metrics.jsonl').write_text(original)
-        self.assertIsNone(c.recover_publication(self.root,'plan','act'))
+        self.assertIsNone(c.recover_publication(self.root,'plan','act','m'*64))
         self.assertEqual((self.root/'metrics.jsonl').read_text(),'')
         self.assertEqual(next((self.root/'recovery').glob('metrics-*')).read_text(),original)
         self.seal()
-        c.recover_publication(self.root,'plan','act')
+        c.recover_publication(self.root,'plan','act','m'*64)
         rows=[json.loads(x) for x in (self.root/'metrics.jsonl').read_text().splitlines()]
         self.assertEqual(rows,[self.row])
 
@@ -50,7 +50,7 @@ class PublicationRecoveryTests(unittest.TestCase):
         self.seal()
         self.assertTrue((self.root/'state.json').exists())
         self.assertFalse((self.root/'progress'/'step-000001.json').exists())
-        c.recover_publication(self.root,'plan','act')
+        c.recover_publication(self.root,'plan','act','m'*64)
         progress=json.loads((self.root/'progress'/'step-000001.json').read_text())
         self.assertEqual((progress['actual_optimizer_step'],progress['next_attempt_index']),(1,1))
         self.assertEqual(helpers.load_resume(self.root,'plan','act')[0],self.state)
@@ -66,13 +66,22 @@ class PublicationRecoveryTests(unittest.TestCase):
                 self.seal()
         self.assertTrue((self.root/'checkpoints'/'step-000001').exists())
         self.assertFalse((self.root/'state.json').exists())
-        c.recover_publication(self.root,'plan','act')
+        c.recover_publication(self.root,'plan','act','m'*64)
         self.assertEqual(helpers.load_resume(self.root,'plan','act')[0],self.state)
 
     def test_duplicate_logged_retry_is_replaced_by_authoritative_immutable_row(self):
         self.seal()
         original=json.dumps({**self.row,'loss':99})+'\n'+json.dumps(self.row)+'\n'
         (self.root/'metrics.jsonl').write_text(original)
-        c.recover_publication(self.root,'plan','act')
+        c.recover_publication(self.root,'plan','act','m'*64)
         self.assertEqual(len((self.root/'metrics.jsonl').read_text().splitlines()),1)
         self.assertEqual(next((self.root/'recovery').glob('metrics-*')).read_text(),original)
+
+
+def test_recovery_progress_builder_carries_one_bias_manifest_identity():
+    from experiments.gemma4_methods.checkpoint import make_progress
+    receipt = {'plan_sha256': 'p', 'checkpoint': 'checkpoints/step-000001', 'checkpoint_files': {},
+               'convergence': {'step': 1, 'attempts': 3, 'last_update_question_ids': ['a', 'b', 'c', 'd']}}
+    value = make_progress(receipt, 'f' * 64)
+    assert value['one_bias_manifest_sha256'] == 'f' * 64
+    assert (value['consumed_qid_position'], value['encountered_qid_bias_examples']) == (12, 12)
