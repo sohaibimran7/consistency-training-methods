@@ -47,7 +47,7 @@ async def seal_checkpoint(backend, **kwargs):
     return await original_seal(RNGCheckpointBackend(backend,publication),**kwargs)
 
 
-def make_progress(receipt):
+def make_progress(receipt, one_bias_manifest_sha256):
     from experiments.gemma4_methods.train import ORDER_SHA
     from experiments.gemma4_methods.one_bias import QIDS_PER_UPDATE
     state=receipt['convergence']
@@ -57,6 +57,7 @@ def make_progress(receipt):
         'sampled_batches_note':'derive from generation events; attempts can include cached skip replay',
         'ordered_pool_sha256':ORDER_SHA,'consumed_qid_position':QIDS_PER_UPDATE*state['attempts'],
         'encountered_qid_bias_examples':QIDS_PER_UPDATE*state['attempts'],
+        'one_bias_manifest_sha256':one_bias_manifest_sha256,
         'last_update_question_ids':state['last_update_question_ids'],
         'latest_checkpoint':receipt['checkpoint'],'checkpoint_files':receipt['checkpoint_files'],
         'selected_checkpoint':None,'validation_required':state['attempts']%64==0,
@@ -64,7 +65,7 @@ def make_progress(receipt):
         'controller_adapter':'pending; not authorization to continue past boundary'}
 
 
-def recover_publication(run_dir,plan_hash,method):
+def recover_publication(run_dir,plan_hash,method,one_bias_manifest_sha256):
     """Rebuild a complete fresh lineage ONLY from immutable checkpoints.
 
     Preserve original metrics by digest, reconstructing authoritative rows from
@@ -72,6 +73,7 @@ def recover_publication(run_dir,plan_hash,method):
     Incomplete staging directories are never counted as saved updates.
     """
     from experiments.gemma4_methods.reference import train as helpers,plan
+    # Recovery must reproduce the trainer's own progress record byte for byte.
     rows=[]
     latest=None
     for index,directory in enumerate(sorted((run_dir/'checkpoints').glob('step-*')),1):
@@ -98,7 +100,7 @@ def recover_publication(run_dir,plan_hash,method):
         latest={'schema':'ctm-grouped-qid-resume-v1','method':method,'plan_sha256':plan_hash,
             'convergence':state,'checkpoint':str(directory.relative_to(run_dir)),'checkpoint_files':files}
         plan.immutable_json(run_dir/'receipts'/f'step-{index:06d}.json',latest)
-        plan.immutable_json(run_dir/'progress'/f'step-{index:06d}.json',make_progress(latest))
+        plan.immutable_json(run_dir/'progress'/f'step-{index:06d}.json',make_progress(latest,one_bias_manifest_sha256))
     log=run_dir/'metrics.jsonl'
     payload=b''.join((json.dumps(row,sort_keys=True,allow_nan=False)+'\n').encode() for row in rows)
     original=log.read_bytes() if log.exists() else b''
