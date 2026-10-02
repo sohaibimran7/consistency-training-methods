@@ -25,9 +25,15 @@ def write(p,obj):
 
 
 def check_contract(contract,root):
-    if contract['schema']!='rmct-clean-validation-v1' or contract['settings']!=v.SETTINGS:
+    if contract['schema'] not in ('rmct-clean-validation-v1','qwen-one-bias-validation-v1') or contract['settings']!=v.SETTINGS:
         raise ValueError('Not new validation contract')
-    if not contract['campaign_id'] or contract['step']<64 or contract['step']%64:
+    if contract['schema']=='qwen-one-bias-validation-v1':
+        # Fresh one-bias campaigns validate on the 256-encounter grid instead.
+        encounters=contract['encountered_qid_bias_examples']
+        if (not contract['campaign_id'] or type(encounters) is not int or encounters<=0
+                or (encounters%256 and encounters!=7680)):
+            raise ValueError('Invalid campaign/encounter boundary')
+    elif not contract['campaign_id'] or contract['step']<64 or contract['step']%64:
         raise ValueError('Invalid campaign/checkpoint')
     if contract['validation_sha256']!=v.PROMPT_SHA: raise ValueError('Population changed')
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()

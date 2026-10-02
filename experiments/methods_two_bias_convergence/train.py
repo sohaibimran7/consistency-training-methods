@@ -417,6 +417,9 @@ async def train(args) -> dict:
         prior_signal = signal.signal(signal.SIGUSR1, request_boundary_stop)
         starting_step = state["step"]
         job_end = min(limit, starting_step + args.updates_this_job)
+        if one_bias:
+            # Never train past an unvalidated 256-encounter boundary in one job.
+            job_end = min(job_end, (starting_step // 64 + 1) * 64)
         window_metrics = resume_window_metrics(run_dir, state)
         last_saved_step = state["step"]
         try:
