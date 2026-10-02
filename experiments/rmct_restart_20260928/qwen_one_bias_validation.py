@@ -135,13 +135,22 @@ def selection_metrics(folder):
 class Verifiers:
     """Callbacks for validation_selection.replay/accept_validation."""
 
-    def __init__(self, *, manifest, tokenizer, run_dir):
-        self.manifest, self.tokenizer, self.run_dir = manifest, tokenizer, Path(run_dir)
+    def __init__(self, *, manifest, tokenizer, run_dir=None, rmct_plan=None, rmct_binding=None):
+        self.manifest, self.tokenizer = manifest, tokenizer
+        self.run_dir = None if run_dir is None else Path(run_dir)
+        self.rmct_plan, self.rmct_binding = rmct_plan, rmct_binding
 
     def verify_checkpoint(self, progress, contract):
         selection.check_progress(progress, contract)
-        fresh = five_method_progress(self.run_dir, progress['receipt']['path'], campaign_id=contract['campaign_id'],
-                                     source_commit=contract['source_commit'], model=contract['model'])
+        identity_args = dict(campaign_id=contract['campaign_id'], source_commit=contract['source_commit'],
+                             model=contract['model'])
+        if contract['method'] == 'rmct':
+            from experiments.rmct_restart_20260928.qwen_one_bias_rmct import normalized_progress, verify_lineage
+            # Reseal the whole one-bias RMCT lineage from bytes before trusting counters.
+            head = verify_lineage(progress['rmct_seal'], self.rmct_plan, self.rmct_binding)
+            fresh = normalized_progress(head, **identity_args)
+        else:
+            fresh = five_method_progress(self.run_dir, progress['receipt']['path'], **identity_args)
         if fresh != progress:
             raise ValueError('Progress differs from the sealed receipt')
         return progress
