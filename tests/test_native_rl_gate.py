@@ -57,3 +57,21 @@ def test_bad_evidence_rejected(changes):
 def test_excluded_length_may_lack_reward():
     validate_rollout_records([record(), record(skipped_from_training=True,
         finish_reason='length', parsed_successfully=False, reward=None, advantage=None)])
+
+
+@pytest.mark.parametrize('family', ['shared', 'gemma'])
+def test_one_bias_gate_trains_first_four_qids_for_both_families(family):
+    from ctm_data.adapters.mcq_bias.shared_qid_one_bias import SharedQidOneBiasSetting
+    from experiments.rmct_restart_20260928.gemma_production_setting import OneBiasGemmaSetting
+    from experiments.rmct_restart_20260928.native_rl_worker import select_first_batch
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class Prepared:
+        setting: object
+        datapoints: list
+
+    cls = SharedQidOneBiasSetting if family == 'shared' else OneBiasGemmaSetting
+    assert select_first_batch(Prepared(cls.__new__(cls), list(range(16)))).datapoints == [0, 1, 2, 3]
+    with pytest.raises(ValueError, match='16-QID'):
+        select_first_batch(Prepared(cls.__new__(cls), list(range(32))))

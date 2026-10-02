@@ -14,8 +14,10 @@ sys.path.insert(0, str(ROOT))
 
 def select_first_batch(prepared):
     from ctm_data.adapters.mcq_bias.shared_qid_two_bias import SharedQidTwoBiasSetting
-    from experiments.rmct_restart_20260928.gemma_production_setting import OneBiasGemmaSetting, QIDS_PER_UPDATE
-    if isinstance(prepared.setting, OneBiasGemmaSetting):
+    from ctm_data.adapters.mcq_bias.shared_qid_one_bias import (
+        SETTING_QIDS_PER_UPDATE as QIDS_PER_UPDATE, SharedQidOneBiasSetting)
+    # Shared base class: Qwen binds it directly, Gemma through a parser subclass.
+    if isinstance(prepared.setting, SharedQidOneBiasSetting):
         # One-bias campaign: validate a 16-QID slice, train its first 4-QID batch.
         if len(prepared.datapoints) != 4 * QIDS_PER_UPDATE:
             raise ValueError('Disposable gate requires a fully validated 16-QID one-bias slice')
