@@ -7,9 +7,12 @@ QIDs x one assigned cue per batch, one finite pass. Boundaries are counted in
 sampled batches (64 = 256 encountered QIDs), including no-update batches.
 No submission, retries or historical resumes.
 """
+import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 
 from experiments.rmct_restart_20260928.qwen_checkpoint import seal_v2
 from experiments.rmct_restart_20260928.qwen_progress import (
@@ -132,3 +135,68 @@ def normalized_progress(seal, *, method='rmct', model, source_commit, campaign_i
             'encountered_qid_bias_examples': QIDS_PER_BATCH * state['sampled_batches'],
             'trailing_skip_files': [], 'checkpoint': seal['checkpoint'],
             'checkpoint_files': seal['files'], 'rmct_seal': seal}
+
+
+def run(a):
+    """One scheduled window: gates, encounter budget, then children up to the budget."""
+    from experiments.rmct_restart_20260928 import validation_selection as selection
+    from experiments.rmct_restart_20260928.qwen_checkpoint import identity
+    from experiments.rmct_restart_20260928.qwen_one_bias_validation import Verifiers
+    from experiments.rmct_restart_20260928.qwen_train_window import gates, plan_binding
+    from experiments.rmct_restart_20260928.qwen_validation_executor import read
+    if not os.environ.get('SLURM_JOB_ID'):
+        raise ValueError('Scheduled allocation required')
+    plan = read(a.plan)
+    if os.path.abspath(sys.executable) != os.path.abspath(plan['argv'][0]):
+        raise ValueError('Wrong interpreter')
+    checked = gates(plan, a.plan, a.gates / 'preflight/preflight-results.json',
+                    a.gates / 'disposable-rl/receipt.json', a.gates / 'regressions/receipt.json',
+                    Path(plan['argv'][1]).resolve().parents[1])
+    binding = plan_binding(plan, a.plan)
+    contract_record = identity(a.selection_contract)
+    contract = selection.read_verified(contract_record)
+    selection.check_contract(contract)
+    if not selection.encounter_mode(contract) or contract['method'] != 'rmct':
+        raise ValueError('RMCT v2 encounter selection contract required')
+    if contract['source_commit'] != plan['incorporated_commit']:
+        raise ValueError('Selection contract bound to different source')
+    head = a.campaign / 'head.json'
+    parent = verify_lineage(read(head), plan, binding) if head.exists() else None
+    if parent is None:
+        if any((a.campaign / 'batches').glob('*')):
+            raise ValueError('Fresh start requested over existing children')
+        budget = selection.interval_attempts()
+    else:
+        from transformers import AutoTokenizer
+        args = dict(model=contract['model'], source_commit=contract['source_commit'], campaign_id=contract['campaign_id'])
+        progress = normalized_progress(parent, **args)
+        verifiers = Verifiers(manifest=a.validation_manifest, rmct_plan=plan, rmct_binding=binding,
+                              tokenizer=AutoTokenizer.from_pretrained(contract['model'], local_files_only=True))
+        verifiers.verify_checkpoint(progress, contract)
+        state = selection.replay(selection.entries_from_folder(a.selection_folder, contract), contract_record,
+                                 verify_checkpoint=verifiers.verify_checkpoint,
+                                 verify_validation=verifiers.verify_validation)
+        budget = selection.continuation_budget(progress, state, requested_updates=selection.interval_attempts())
+    if not budget:
+        return parent
+    start = parent['progress']['sampled_batches'] if parent else 0
+    env = dict(os.environ, PYTHONPATH=binding['source_root'], PYTHONNOUSERSITE='1', PYTHONDONTWRITEBYTECODE='1')
+    env.pop('PYTHONHOME', None)
+    parent = train_to_encounters(plan, binding, a.campaign, start + budget, checked, parent, env)
+    seal = a.campaign / 'seals' / f"batches-{parent['progress']['sampled_batches']:06d}.json"
+    write(seal, parent)
+    os.replace(write_head(a.campaign, seal), head)
+    return parent
+
+
+def write_head(campaign, seal):
+    temporary = Path(campaign) / f'.head-{os.getpid()}.json'
+    temporary.write_text(Path(seal).read_text())
+    return temporary
+
+
+if __name__ == '__main__':
+    p = argparse.ArgumentParser(description=__doc__)
+    for name in ('plan', 'gates', 'campaign', 'selection-contract', 'selection-folder', 'validation-manifest'):
+        p.add_argument('--' + name, type=Path, required=True)
+    run(p.parse_args())
