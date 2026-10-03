@@ -43,11 +43,26 @@ def test_boundaries_count_no_update_batches_and_budget_in_attempts(c):
     state = c['accept'](55, 60, 64, 10)
     assert state['latest'] and not state['stopped']
     assert (c['root'] / 'validation' / 'encounter-000256.json').is_file()
+    # Best accepted at 64 -> patience horizon 64 + 2*64 = 192 (train ahead of
+    # the unvalidated 128 boundary, never past what patience could require).
+    assert s.encounter_horizon(state) == 192
     _, progress = c['progress'](70, 100, 100)
-    assert s.continuation_budget(progress, state, requested_updates=999) == 28
+    assert s.continuation_budget(progress, state, requested_updates=999) == 92
     _, at_boundary = c['progress'](80, 128, 128)
-    with pytest.raises(ValueError, match='requires validation'):
-        s.continuation_budget(at_boundary, state, requested_updates=10)
+    assert s.continuation_budget(at_boundary, state, requested_updates=10) == 10
+    _, at_horizon = c['progress'](150, 192, 192)
+    assert s.continuation_budget(at_horizon, state, requested_updates=10) == 0
+    _, beyond = c['progress'](160, 200, 200)
+    with pytest.raises(ValueError, match='outside'):
+        s.continuation_budget(beyond, state, requested_updates=10)
+
+
+def test_horizon_tracks_best_not_latest(c):
+    c['accept'](60, 64, 64, 10)
+    state = c['accept'](120, 128, 128, 30)  # worse: best stays at 64
+    assert s.encounter_horizon(state) == 192
+    state = c['accept'](180, 192, 192, 5)   # better: horizon moves to 192 + 128
+    assert s.encounter_horizon(state) == 320
 
 
 def test_non_boundary_and_missing_skip_evidence_rejected(c):

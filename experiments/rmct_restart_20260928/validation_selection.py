@@ -240,11 +240,12 @@ def continuation_budget(progress, state, *, requested_updates):
         if state['stopped'] or cursor >= max_attempts():
             return 0
         accepted = read_verified(state['latest']['progress'])['encounter_attempt'] if state['latest'] else 0
-        if cursor < accepted or cursor > accepted + interval_attempts():
+        horizon = encounter_horizon(state)
+        if cursor < accepted or cursor > horizon:
             raise ValueError('Progress outside the currently authorized window')
-        if cursor == accepted + interval_attempts():
-            raise ValueError('Current boundary still requires validation')
-        return min(requested_updates, accepted + interval_attempts() - cursor, max_attempts() - cursor)
+        # Train ahead to the patience horizon; boundary validations run on the
+        # saved boundary checkpoints and are accepted in order meanwhile.
+        return min(requested_updates, horizon - cursor, max_attempts() - cursor)
     step = progress['actual_optimizer_step']
     if type(step) is not int or not 0 <= step <= POLICY['max_optimizer_updates']:
         raise ValueError('Invalid actual optimizer progress')
@@ -258,6 +259,20 @@ def continuation_budget(progress, state, *, requested_updates):
     if accepted and progress['next_attempt_index'] < read_verified(state['latest']['progress'])['next_attempt_index']:
         raise ValueError('Consumed-data cursor moved backwards')
     return min(requested_updates, accepted + 64 - step, POLICY['max_optimizer_updates'] - step)
+
+
+def encounter_horizon(state):
+    """Furthest attempt patience can still require: best accepted boundary + patience windows.
+
+    Before any acceptance the first boundary is necessarily the best, so the
+    horizon is (1 + patience) windows. Training never passes this point, so
+    stopping/selection are identical to validating before every window.
+    """
+    if state['selected'] is None:
+        best = interval_attempts()
+    else:
+        best = read_verified(state['selected']['progress'])['encounter_attempt']
+    return min(best + ENCOUNTER_POLICY['patience'] * interval_attempts(), max_attempts())
 
 
 def bootstrap_budget(contract_record, start_record, *, requested_updates, verify_start):
@@ -281,7 +296,9 @@ def bootstrap_budget(contract_record, start_record, *, requested_updates, verify
         raise ValueError('Fresh start evidence not verified')
     if type(requested_updates) is not int or requested_updates <= 0:
         raise ValueError('Positive actual-update budget required')
-    return min(requested_updates, interval_attempts() if encounter_mode(contract) else 64)
+    if encounter_mode(contract):
+        return min(requested_updates, (1 + ENCOUNTER_POLICY['patience']) * interval_attempts())
+    return min(requested_updates, 64)
 
 
 def selected_evaluation_manifest(state):
