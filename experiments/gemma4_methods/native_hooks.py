@@ -47,9 +47,23 @@ def runtime_restore(progress,contract):
     return progress
 
 
-def normalize(run_dir,contract):
+def normalize(run_dir,contract,at_attempt=None):
+    """Normalized progress at the latest checkpoint, or at encounter boundary ``at_attempt``.
+
+    With ``at_attempt`` (training may have run ahead to the patience horizon),
+    use the last update before that boundary; the attempts after it up to the
+    boundary must all be immutable skip records.
+    """
     from experiments.gemma4_methods.reference import train as helpers
     pointer=json.loads((run_dir/'state.json').read_text())
+    if at_attempt is not None:
+        logged=[json.loads(line) for line in (run_dir/'metrics.jsonl').read_text().splitlines()]
+        before=[r for r in logged if r['attempt']<at_attempt]
+        if not before or [r['step'] for r in before]!=list(range(1,len(before)+1)):
+            raise ValueError('No contiguous saved update before the requested boundary')
+        pointer=json.loads((run_dir/'receipts'/f'step-{len(before):06d}.json').read_text())
+        if pointer['convergence']['attempts']!=before[-1]['attempt']+1:
+            raise ValueError('Boundary receipt cursor differs from its update')
     state=pointer['convergence']
     step,attempt=state['step'],state['attempts']
     checkpoint=(run_dir/pointer['checkpoint']).resolve()
@@ -66,12 +80,15 @@ def normalize(run_dir,contract):
     # Consumed batches after the last update (no weight change) still advance
     # the encounter cursor; each must have its immutable skip record.
     trailing=[]
-    while (run_dir/'skips'/f'attempt-{attempt+len(trailing):07d}.json').is_file():
+    while ((at_attempt is None or attempt+len(trailing)<at_attempt)
+           and (run_dir/'skips'/f'attempt-{attempt+len(trailing):07d}.json').is_file()):
         path=run_dir/'skips'/f'attempt-{attempt+len(trailing):07d}.json'
         row=json.loads(path.read_text())
         if row['attempt']!=attempt+len(trailing) or row['step']!=step or row.get('optimizer_update') is not False:
             raise ValueError('Trailing skip record disagrees with durable progress')
         trailing.append(file_identity(path))
+    if at_attempt is not None and attempt+len(trailing)!=at_attempt:
+        raise ValueError('Training has not yet consumed the requested boundary')
     evidence_dir=run_dir/'normalized'/f'step-{step:06d}-attempt-{attempt+len(trailing):07d}'
     evidence_dir.mkdir(parents=True,exist_ok=True)
     metrics=evidence_dir/'metrics.jsonl'

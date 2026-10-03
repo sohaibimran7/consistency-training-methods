@@ -4,14 +4,34 @@
     {
       "parent": "5d21b950da42c8a6a97539ce5bc0ddc950ac9295",
       "campaign": "gemma-onebias-20261002-c2 (BCT, ACT, AttCT, MLPCT, OPCT)",
-      "reason": "Sharded multi-GPU validation and recovery that ignores inference-only adapter views; training code, data, losses, optimizer, sampling and prompts unchanged.",
-      "user_approval": "2026-10-03 user in Claude Code session: write the new code but resume from current checkpoints",
+      "reason": "Sharded multi-GPU validation; recovery ignores inference-only adapter views; train ahead to the patience horizon with boundary validations on saved boundary checkpoints (stopping/selection unchanged). Training code, data, losses, optimizer, sampling and prompts unchanged.",
+      "user_approval": "2026-10-03 user in Claude Code session: 'write the new code but resume from current checkpoints'; 'are you not training up to the patience horizon?'",
       "execution_only_paths": [
         "experiments/gemma4_methods/validation.py",
         "experiments/gemma4_methods/validation.sbatch",
         "experiments/gemma4_methods/checkpoint.py",
         "experiments/gemma4_methods/launch_guard.py",
-        "experiments/gemma4_methods/execution_amendments.json"
+        "experiments/gemma4_methods/execution_amendments.json",
+        "experiments/gemma4_methods/native_hooks.py",
+        "experiments/rmct_restart_20260928/validation_selection.py",
+        "experiments/rmct_restart_20260928/test_validation_selection_encounters.py"
+      ]
+    },
+    {
+      "parent": "d0c88abf42be454779024a994fbf3e033c7c81c7",
+      "campaign": "gemma-onebias-20261002-c1-rmct (RMCT)",
+      "reason": "Train ahead to the patience horizon with boundary validations on saved boundary seals; sharded validation. experiments/gemma4_methods/train.py and checkpoint.py changed only in five-method trainer/recovery paths that RMCT does not execute.",
+      "user_approval": "2026-10-03 user in Claude Code session: 'write the new code but resume from current checkpoints'; 'are you not training up to the patience horizon?'",
+      "execution_only_paths": [
+        "experiments/gemma4_methods/validation.py",
+        "experiments/gemma4_methods/validation.sbatch",
+        "experiments/gemma4_methods/checkpoint.py",
+        "experiments/gemma4_methods/launch_guard.py",
+        "experiments/gemma4_methods/execution_amendments.json",
+        "experiments/gemma4_methods/native_hooks.py",
+        "experiments/rmct_restart_20260928/validation_selection.py",
+        "experiments/rmct_restart_20260928/test_validation_selection_encounters.py",
+        "experiments/gemma4_methods/train.py"
       ]
     }
   ]
