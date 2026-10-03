@@ -14,7 +14,11 @@
         "experiments/gemma4_methods/execution_amendments.json",
         "experiments/gemma4_methods/native_hooks.py",
         "experiments/rmct_restart_20260928/validation_selection.py",
-        "experiments/rmct_restart_20260928/test_validation_selection_encounters.py"
+        "experiments/rmct_restart_20260928/test_validation_selection_encounters.py",
+        "experiments/gemma4_methods/selection_adapter.py"
+      ],
+      "scoring_amendments": [
+        "2026-10-04 user decision: completed validation responses with an unclosed thinking channel score as unanswered (same as length-capped); applies identically to all methods; previously accepted boundaries had no such responses, so their recomputed metrics are unchanged."
       ]
     },
     {
@@ -31,7 +35,11 @@
         "experiments/gemma4_methods/native_hooks.py",
         "experiments/rmct_restart_20260928/validation_selection.py",
         "experiments/rmct_restart_20260928/test_validation_selection_encounters.py",
-        "experiments/gemma4_methods/train.py"
+        "experiments/gemma4_methods/train.py",
+        "experiments/gemma4_methods/selection_adapter.py"
+      ],
+      "scoring_amendments": [
+        "2026-10-04 user decision: completed validation responses with an unclosed thinking channel score as unanswered (same as length-capped); applies identically to all methods; previously accepted boundaries had no such responses, so their recomputed metrics are unchanged."
       ]
     }
   ]

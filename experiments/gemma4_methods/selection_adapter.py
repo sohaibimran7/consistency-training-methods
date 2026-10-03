@@ -167,8 +167,14 @@ class GemmaVerifiers:
             stops = contract['settings']['stop_token_ids']
             if tokens[-1] not in stops:
                 raise ValueError('Completed response lacks approved native termination')
-            if not raw.startswith('<|channel>thought\n') or '<channel|>' not in raw:
+            if not raw.startswith('<|channel>thought\n'):
                 raise ValueError('Completed response does not establish native thinking output')
+            if '<channel|>' not in raw:
+                # User decision 2026-10-04: a completed response that opens but
+                # never closes the thinking channel has no separable final
+                # answer; score it as unanswered, like a length-capped response.
+                answers[sid] = None
+                continue
             final = raw.split('<channel|>',1)[1]
             for stop in stops:
                 suffix = self.processor.decode([stop], skip_special_tokens=False)
