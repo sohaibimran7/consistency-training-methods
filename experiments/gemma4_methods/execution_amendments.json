@@ -1,0 +1,18 @@
+{
+  "schema": "gemma-execution-amendments-v1",
+  "amendments": [
+    {
+      "parent": "5d21b950da42c8a6a97539ce5bc0ddc950ac9295",
+      "campaign": "gemma-onebias-20261002-c2 (BCT, ACT, AttCT, MLPCT, OPCT)",
+      "reason": "Sharded multi-GPU validation and recovery that ignores inference-only adapter views; training code, data, losses, optimizer, sampling and prompts unchanged.",
+      "user_approval": "2026-10-03 user in Claude Code session: write the new code but resume from current checkpoints",
+      "execution_only_paths": [
+        "experiments/gemma4_methods/validation.py",
+        "experiments/gemma4_methods/validation.sbatch",
+        "experiments/gemma4_methods/checkpoint.py",
+        "experiments/gemma4_methods/launch_guard.py",
+        "experiments/gemma4_methods/execution_amendments.json"
+      ]
+    }
+  ]
+}

@@ -9,14 +9,37 @@ import subprocess
 import sys
 
 
+AMENDMENTS = Path(__file__).with_name('execution_amendments.json')
+INCORPORATION_BASE = '45f27c24855c82f3dc81019bd246a6f7641a13ec'
+
+
 def check_source(repository, commit):
+    """Require the run's exact clean commit, or a reviewed execution-only successor.
+
+    A successor may continue a run frozen at ``commit`` only if an entry in the
+    tracked ``execution_amendments.json`` names ``commit`` as parent and every
+    file changed since then is on that entry's execution-only allowlist, so all
+    training/scientific code is byte-identical to the frozen commit.
+    """
     repository = Path(repository).resolve()
     def git(*args):
         return subprocess.check_output(['git','-C',str(repository),*args],text=True).strip()
-    if git('rev-parse','HEAD') != commit or git('status','--porcelain','--untracked-files=all'):
+    if git('status','--porcelain','--untracked-files=all'):
         raise ValueError('Exact clean canonical deployment required')
+    head = git('rev-parse','HEAD')
+    if head != commit:
+        entries = [e for e in json.loads(AMENDMENTS.read_text())['amendments'] if e['parent'] == commit] \
+            if AMENDMENTS.is_file() else []
+        if len(entries) != 1:
+            raise ValueError('Exact clean canonical deployment required')
+        subprocess.run(['git','-C',str(repository),'merge-base','--is-ancestor',commit,head],check=True)
+        changed = set(filter(None, git('diff','--name-only',commit,head).splitlines()))
+        allowed = set(entries[0]['execution_only_paths'])
+        outside = sorted(p for p in changed if p not in allowed and not p.startswith('tests/'))
+        if outside:
+            raise ValueError('Amended deployment changed non-execution files: ' + ', '.join(outside))
     subprocess.run(['git','-C',str(repository),'merge-base','--is-ancestor',
-                    '45f27c24855c82f3dc81019bd246a6f7641a13ec',commit],check=True)
+                    INCORPORATION_BASE,commit],check=True)
     return repository
 
 

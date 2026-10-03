@@ -43,51 +43,50 @@ def saved_response(request, sequence, processor, stops, cap):
             'raw_text':processor.decode(tokens,skip_special_tokens=False),'finish_reason':reason}
 
 
-def generate(args):
-    if not os.environ.get('SLURM_JOB_ID'):
-        raise ValueError('Scheduled validation required')
+def _sha(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _load(args):
     contract=read_verified(file_identity(args.contract))
     check_source(Path(__file__).resolve().parents[2],contract['source_commit'])
     progress=read_verified(file_identity(args.progress))
     step=check_boundary(progress,contract)
+    rows=read_verified(contract['population'])['rows']
+    if len(rows)!=600 or len({r['sample_id'] for r in rows})!=600:
+        raise ValueError('Exact600response population required')
+    settings=contract['settings']
+    required={'enable_thinking':True,'max_tokens':20480,'temperature':1.0,'top_p':.95,'top_k':20}
+    if any(settings.get(k)!=v for k,v in required.items()):
+        raise ValueError('Approved validation settings changed')
+    return contract,progress,step,rows
+
+
+def _generate_rows(contract,progress,rows,output):
+    """Generate and immutably save one response per row (fixed per-sample seed)."""
     from transformers import AutoProcessor
     from ctm.evals.local_model import Gemma4UnifiedTextProcessor
     from ctm.backends.local.vllm_sampler import VLLMSampler
     from vllm import SamplingParams
     processor=Gemma4UnifiedTextProcessor(AutoProcessor.from_pretrained(contract['model'],local_files_only=True))
-    from experiments.gemma4_methods.native_hooks import runtime_restore
-    if contract['method']=='rmct':
-        from experiments.rmct_restart_20260928.gemma_controller import runtime_restore
-    runtime_restore(progress,contract)
-    rows=read_verified(contract['population'])['rows']
-    if len(rows)!=600 or len({r['sample_id'] for r in rows})!=600:
-        raise ValueError('Exact600response population required')
-    output=args.output.resolve()
-    output.mkdir(parents=True,exist_ok=False)
-    immutable_json(output/'claim.json',{'job_id':os.environ['SLURM_JOB_ID'],
-        'contract':file_identity(args.contract),'progress':file_identity(args.progress),'step':step})
+    settings=contract['settings']
     sampler=VLLMSampler(contract['model'],enable_lora=True,dtype='bfloat16',
         gpu_memory_utilization=.85,max_num_seqs=32,max_num_batched_tokens=8192,
         max_lora_rank=8,enforce_eager=False,generation_config='vllm')
     try:
         sampler.advance_policy(progress['checkpoint'])
-        settings=contract['settings']
-        required={'enable_thinking':True,'max_tokens':20480,'temperature':1.0,'top_p':.95,'top_k':20}
-        if any(settings.get(k)!=v for k,v in required.items()):
-            raise ValueError('Approved validation settings changed')
         config=json.loads((Path(contract['model'])/'generation_config.json').read_text())
         bad_words=[processor.decode([t],skip_special_tokens=False) for t in config.get('suppress_tokens',[])]
-        samples={}
-        for offset in range(0,600,32):
+        for offset in range(0,len(rows),32):
             group=rows[offset:offset+32]
             requests=[]
             parameters=[]
             for row in group:
-                seed=int(hashlib.sha256(row['sample_id'].encode()).hexdigest()[:8],16)%2147483647
+                seed=int(_sha(row['sample_id'])[:8],16)%2147483647
                 request={'sample_id':row['sample_id'],'prompt_token_ids':native_prompt(processor,row['messages']),
                     'model':contract['model'],'settings':settings,'checkpoint_files':progress['checkpoint_files'],
                     'seed':seed,'bad_words':bad_words}
-                path=output/'requests'/(hashlib.sha256(row['sample_id'].encode()).hexdigest()+'.json')
+                path=output/'requests'/(_sha(row['sample_id'])+'.json')
                 immutable_json(path,request)
                 requests.append((request,file_identity(path)))
                 parameters.append(SamplingParams(n=1,max_tokens=20480,temperature=1.,top_p=.95,top_k=20,
@@ -100,16 +99,71 @@ def generate(args):
                     raise ValueError('Native returned prompt/sample assignment differs')
                 response=saved_response(request,result.outputs[0],processor,settings['stop_token_ids'],20480)
                 response['request']=ref
-                path=output/'responses'/(hashlib.sha256(request['sample_id'].encode()).hexdigest()+'.json')
-                immutable_json(path,response)
-                samples[request['sample_id']]={'request':ref,'response':file_identity(path)}
-        evidence={'schema':'gemma-native-validation-evidence-v1',
-            **{k:contract[k] for k in ('campaign_id','method','model','source_commit')},
-            'checkpoint_files':progress['checkpoint_files'],'scheduler':{'job_id':os.environ['SLURM_JOB_ID']},
-            'samples':samples}
-        immutable_json(output/'evidence.json',evidence)
+                immutable_json(output/'responses'/(_sha(request['sample_id'])+'.json'),response)
     finally:
         sampler.shutdown()
+
+
+def _shard_count():
+    shards=int(os.environ.get('GEMMA_VALIDATION_SHARDS','1'))
+    visible=[d for d in os.environ.get('CUDA_VISIBLE_DEVICES','').split(',') if d]
+    if shards<1 or (shards>1 and len(visible)<shards):
+        raise ValueError('Each validation shard needs its own visible GPU')
+    return shards,visible
+
+
+def generate(args):
+    if not os.environ.get('SLURM_JOB_ID'):
+        raise ValueError('Scheduled validation required')
+    contract,progress,step,rows=_load(args)
+    from experiments.gemma4_methods.native_hooks import runtime_restore
+    if contract['method']=='rmct':
+        from experiments.rmct_restart_20260928.gemma_controller import runtime_restore
+    runtime_restore(progress,contract)
+    shards,visible=_shard_count()
+    output=args.output.resolve()
+    output.mkdir(parents=True,exist_ok=False)
+    immutable_json(output/'claim.json',{'job_id':os.environ['SLURM_JOB_ID'],
+        'contract':file_identity(args.contract),'progress':file_identity(args.progress),'step':step})
+    if shards==1:
+        _generate_rows(contract,progress,rows,output)
+    else:
+        # Same prompts, settings and fixed per-sample seeds; only the GPU that
+        # serves each prompt differs. Strided shards, one vLLM process per GPU.
+        import subprocess,sys
+        children=[]
+        for index in range(shards):
+            env={**os.environ,'CUDA_VISIBLE_DEVICES':visible[index]}
+            children.append(subprocess.Popen([sys.executable,'-B','-m','experiments.gemma4_methods.validation',
+                'generate-shard','--shard',str(index),'--shards',str(shards),'--contract',str(args.contract),
+                '--progress',str(args.progress),'--output',str(output),'--folder',str(args.folder)],env=env))
+        if any(child.wait()!=0 for child in children):
+            raise RuntimeError('A validation shard failed; no evidence published')
+    samples={}
+    for row in rows:
+        request=output/'requests'/(_sha(row['sample_id'])+'.json')
+        response=output/'responses'/(_sha(row['sample_id'])+'.json')
+        if not request.is_file() or not response.is_file():
+            raise ValueError('Missing validation request/response for '+row['sample_id'])
+        samples[row['sample_id']]={'request':file_identity(request),'response':file_identity(response)}
+    import subprocess
+    executing=subprocess.check_output(['git','-C',str(Path(__file__).resolve().parents[2]),'rev-parse','HEAD'],text=True).strip()
+    evidence={'schema':'gemma-native-validation-evidence-v1',
+        **{k:contract[k] for k in ('campaign_id','method','model','source_commit')},
+        'checkpoint_files':progress['checkpoint_files'],'scheduler':{'job_id':os.environ['SLURM_JOB_ID']},
+        'execution':{'commit':executing,'shards':shards},'samples':samples}
+    immutable_json(output/'evidence.json',evidence)
+
+
+def generate_shard(args):
+    if not os.environ.get('SLURM_JOB_ID'):
+        raise ValueError('Scheduled validation required')
+    contract,progress,step,rows=_load(args)
+    output=args.output.resolve()
+    claim=json.loads((output/'claim.json').read_text())
+    if claim['job_id']!=os.environ['SLURM_JOB_ID'] or not 0<=args.shard<args.shards:
+        raise ValueError('Shard does not belong to this validation job')
+    _generate_rows(contract,progress,rows[args.shard::args.shards],output)
 
 
 def accept(args):
@@ -134,8 +188,11 @@ def accept(args):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('action',choices=['generate','accept'])
+    p.add_argument('action',choices=['generate','generate-shard','accept'])
     for name in ('contract','progress','output','folder'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--shard',type=int,default=0)
+    p.add_argument('--shards',type=int,default=1)
     a=p.parse_args()
-    print(json.dumps(generate(a) if a.action=='generate' else accept(a),default=str))
+    actions={'generate':generate,'generate-shard':generate_shard,'accept':accept}
+    print(json.dumps(actions[a.action](a),default=str))
