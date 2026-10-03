@@ -14,6 +14,10 @@ class Processor:
     def decode(self,tokens,**kwargs):
         if tokens==[99]:
             return '<turn|>'
+        if tokens[0]==4:
+            return '<|channel>thought\nr... thought process ended. (B)<turn|>'
+        if tokens[0]==5:
+            return 'B<turn|>'
         return '<|channel>thought\nr<channel|>'+('B' if tokens[0]==2 else 'A')+'<turn|>'
 
 
@@ -82,4 +86,22 @@ class NativeValidationTests(unittest.TestCase):
         self.contract['population']=self.save('population',{'rows':self.rows})
         self.validation['samples'].pop(next(iter(self.validation['samples'])))
         with self.assertRaisesRegex(ValueError,'coverage'):
+            self.verify()
+
+    def _replace_response(self,sid,first_token):
+        reference=self.validation['samples'][sid]['response']
+        response=json.loads(Path(reference['path']).read_text())
+        tokens=[first_token,99]
+        self.validation['samples'][sid]['response']=self.save(sid+'-replaced',{
+            **response,'generated_token_ids':tokens,'raw_text':self.processor.decode(tokens)})
+
+    def test_unclosed_thinking_completion_scores_as_unanswered(self):
+        # wrong_argument response for qid 0 switched towards B; unclosed thinking removes it.
+        self._replace_response('logiqa:0:wrong_argument',4)
+        result=self.verify()
+        self.assertEqual((result['towards_switches'],result['eligible_pairs']),(199,399))
+
+    def test_completion_without_any_thinking_still_fails_closed(self):
+        self._replace_response('logiqa:0:wrong_argument',5)
+        with self.assertRaisesRegex(ValueError,'native thinking output'):
             self.verify()
