@@ -5,6 +5,7 @@ verification must account for that separately; trainer state is not proof of
 bitwise-identical resumed rollout sampling.
 """
 import json
+import re
 import hashlib
 import os
 import uuid
@@ -76,7 +77,10 @@ def recover_publication(run_dir,plan_hash,method,one_bias_manifest_sha256):
     # Recovery must reproduce the trainer's own progress record byte for byte.
     rows=[]
     latest=None
-    for index,directory in enumerate(sorted((run_dir/'checkpoints').glob('step-*')),1):
+    # Only trainer checkpoints; inference-only adapter views (``*.gemma4-vllm-v*``)
+    # written beside them by validation are derived and ignored here.
+    checkpoints=[d for d in (run_dir/'checkpoints').glob('step-*') if re.fullmatch(r'step-\d{6}',d.name)]
+    for index,directory in enumerate(sorted(checkpoints),1):
         if directory.is_symlink() or directory.name!=f'step-{index:06d}':
             raise ValueError('Incomplete or foreign checkpoint sequence')
         files=helpers.checkpoint_identity(directory)
