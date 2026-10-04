@@ -106,7 +106,25 @@ def verify(root):
 
 
 class TruncatedGroup(Exception):
-    pass
+    def __init__(self, reason='incomplete_generation_group'):
+        super().__init__(reason)
+        self.reason = reason
+
+
+INCOMPLETE = ('length', 'unclosed_reasoning')
+
+
+def reasoning_ids(renderer):
+    """Gemma reasoning open/close token ids from the renderer's tokenizer (None if unavailable)."""
+    tokenizer = getattr(renderer, 'tokenizer', None)
+    convert = getattr(tokenizer, 'convert_tokens_to_ids', None)
+    if convert is None:
+        return None
+    opened, closed = convert('<|channel>'), convert('<channel|>')
+    unknown = getattr(tokenizer, 'unk_token_id', None)
+    if not all(isinstance(t, int) and t != unknown for t in (opened, closed)):
+        raise ValueError('Gemma reasoning channel tokens missing from tokenizer')
+    return opened, closed
 
 
 def validate_completion(sequence, backend, *, renderer, max_tokens):
@@ -124,6 +142,14 @@ def validate_completion(sequence, backend, *, renderer, max_tokens):
         if len(tokens) > max_tokens:
             raise ValueError('Completion exceeds the approved cap')
     if tokens and tokens[-1] in eos:
+        # A native-EOS completion whose reasoning channel was opened but never
+        # closed has no complete reasoning/answer; never train on it (user-approved
+        # fix 2026-10-04, audit: 1 of 3,808 trained OPCT rollouts in one-bias c2).
+        ids = reasoning_ids(renderer)
+        if ids is not None:
+            opened, closed = ids
+            if opened in tokens and closed not in tokens[len(tokens) - 1 - tokens[::-1].index(opened):]:
+                return tokens, 'unclosed_reasoning'
         return tokens, 'model_eos'
     if max_tokens is not None and len(tokens) == max_tokens:
         return tokens, 'length'
@@ -278,14 +304,16 @@ async def run(args):
                     sample_wall_seconds+=time.perf_counter()-sample_began
                 records = []
                 excluded = False
+                unclosed = False
                 for group in sampled:
                     for sample in group:
                         tokens, finish = helpers.validate_completion(sample, backend, renderer=renderer, max_tokens=CAP)
-                        excluded |= finish == 'length' or sample.logprobs is None
+                        excluded |= finish in INCOMPLETE or sample.logprobs is None
+                        unclosed |= finish == 'unclosed_reasoning'
                         records.append({'tokens': tokens, 'finish_reason': finish, 'usable': sample.logprobs is not None})
                 helpers.append_json(run_dir / 'generations.jsonl', {'step': state['step'], 'attempt': state['attempts'], 'samples': records})
                 if excluded:
-                    raise TruncatedGroup()
+                    raise TruncatedGroup('incomplete_reasoning_group' if unclosed else 'incomplete_generation_group')
                 return sampled
             trainer._sample_prepared_pairs = sample_checked
         if resume is not None:
@@ -323,8 +351,9 @@ async def run(args):
                             from ctm.backends.base import SampledSequence
                             _, finish = helpers.validate_completion(SampledSequence(tokens=tokens, logprobs=[]),
                                                 backend, renderer=renderer, max_tokens=CAP)
-                            if finish == 'length':
-                                raise TruncatedGroup()
+                            if finish in INCOMPLETE:
+                                raise TruncatedGroup('incomplete_reasoning_group' if finish == 'unclosed_reasoning'
+                                                     else 'incomplete_generation_group')
                         sample_wall_seconds=time.perf_counter()-target_began
                         losses, detail = await helpers.supervised_update(method, qids, pairs,
                             backend=backend, renderer=renderer, tokenizer=tokenizer,
@@ -341,11 +370,11 @@ async def run(args):
                             output = await pending.result()
                             losses.append(float(output.metrics['loss']))
                     assert len(losses) == len(pairs) and all(math.isfinite(x) for x in losses)
-                except TruncatedGroup:
+                except TruncatedGroup as skipped:
                     assert local._gradient_accumulations == 0, 'Excluded group already changed gradients'
                     reference.immutable_json(skip_path, {'step': state['step'], 'attempt': attempt,
                         'plan_sha256': plan_hash, 'question_ids': [r['question_id'] for r in qids],
-                        'biases': biases, 'reason': 'incomplete_generation_group', 'optimizer_update': False,
+                        'biases': biases, 'reason': skipped.reason, 'optimizer_update': False,
                         'encounters_consumed': len(qids)})
                     state['attempts'] += 1
                     print(f'Skipped truncated group {attempt}; optimizer remains {state["step"]}', flush=True)
