@@ -251,7 +251,7 @@ def test_internal_alignment_gate_rejects_failed_or_unapproved_candidate_audit(tm
             runner.require_alignment_audit(path)
 
 
-def tiny_backend(method):
+def tiny_backend(method, lora=None):
     from transformers import Qwen3_5ForCausalLM, Qwen3_5TextConfig
     from ctm.backends.local.engine import LocalBackend
     from ctm.core.config import LoRAConfig
@@ -263,7 +263,7 @@ def tiny_backend(method):
     ))
     backend = LocalBackend(device="cpu", dtype=torch.float32, model_instance=model,
                            consistency_loss_options=plan.LOSS_OPTIONS[method])
-    backend.setup(model=plan.MODEL, lora=LoRAConfig(**{**plan.lora(method), "rank": 2, "alpha": 4}))
+    backend.setup(model=plan.MODEL, lora=LoRAConfig(**{**(lora or plan.lora(method)), "rank": 2, "alpha": 4}))
     return backend
 
 
@@ -287,6 +287,20 @@ def test_act_narrow_hybrid_gate_is_explicit_and_does_not_relax_historical_gate()
     assert report["lora"]["expected_trainable_parameter_count"] == 80
     assert set(report["lora"]["positive_lora_b_gradients_by_family"]) == {"self_attn", "linear_attn"}
     assert backend._gradient_accumulations == 0
+
+
+def test_act_strict_qv_scope_matches_attct_adapters_but_keeps_act_loss():
+    act_qv = {**plan.lora("act"), "target_modules": ["q_proj", "v_proj"]}
+    assert act_qv == plan.lora("attct")  # identical adapter scope to AttCT/MLPCT
+    backend = tiny_backend("act", lora=act_qv)
+    assert not backend.run_qwen35_consistency_preflight(
+        [paired_datum()] * 4, method="act", expected_group_size=4, lora_scope="act_qv_fused_qkv")["passed"]
+    report = backend.run_qwen35_consistency_preflight(
+        [paired_datum()] * 4, method="act", expected_group_size=4, lora_scope="strict_qv")
+    assert report["passed"], report["errors"]
+    names = [n for n, p in backend.model.named_parameters() if p.requires_grad]
+    assert names and all(("q_proj" in n or "v_proj" in n) and "linear_attn" not in n for n in names)
+    assert backend.consistency_loss_options["layer_selection"] == "all"  # ACT loss still all layers
 
 
 @pytest.mark.parametrize("method", ["act", "attct", "mlpct"])

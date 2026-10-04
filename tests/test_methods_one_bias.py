@@ -74,6 +74,20 @@ def test_one_bias_contract_changes_only_exposure_and_stopping(pool):
     assert new["bct"]["reuse_identical_target_for_both_biases"] is False
 
 
+def test_strict_qv_act_scope_changes_only_act_adapters(pool):
+    manifest = one_bias.manifest_for(pool)
+    fused, strict = plan.one_bias_contract(manifest), plan.one_bias_contract(manifest, "strict_qv")
+    assert fused["lora"]["act"]["target_modules"] == ["q_proj", "v_proj", "in_proj_qkv"]
+    assert strict["lora"]["act"] == plan.lora("attct")
+    assert strict["act_scope"]["preflight"] == "strict_qv"
+    assert strict["loss_options"]["act"] == fused["loss_options"]["act"]  # all-layer ACT loss kept
+    for key in set(fused) - {"lora", "act_scope"}:
+        assert strict[key] == fused[key]
+    assert {m: strict["lora"][m] for m in plan.METHODS if m != "act"} == {m: fused["lora"][m] for m in plan.METHODS if m != "act"}
+    with pytest.raises(ValueError):
+        plan.one_bias_contract(manifest, "qkv")
+
+
 def test_observe_never_stops_on_loss_and_reports_exhaustion():
     state = {"step": 0, "pending": [], "decision": "continue"}
     for step in range(1, 5):

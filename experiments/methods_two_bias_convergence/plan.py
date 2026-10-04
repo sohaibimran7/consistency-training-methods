@@ -148,11 +148,28 @@ def contract() -> dict:
     }
 
 
-def one_bias_contract(manifest: dict) -> dict:
-    """Fresh one-bias campaign: same recipe, new exposure/stopping contract."""
+ACT_LORA_SCOPES = ("fused_qkv", "strict_qv")
+
+
+def one_bias_contract(manifest: dict, act_lora_scope: str = "fused_qkv") -> dict:
+    """Fresh one-bias campaign: same recipe, new exposure/stopping contract.
+
+    ``act_lora_scope='strict_qv'`` (user decision 2026-10-04) matches AttCT/MLPCT:
+    LoRA on q_proj/v_proj of the full-attention layers only. The ACT residual-state
+    loss still spans every layer; only the adapted modules change.
+    """
     from . import one_bias
 
+    if act_lora_scope not in ACT_LORA_SCOPES:
+        raise ValueError(f"unknown ACT LoRA scope: {act_lora_scope}")
     result = copy.deepcopy(contract())
+    if act_lora_scope == "strict_qv":
+        result["lora"]["act"]["target_modules"] = ["q_proj", "v_proj"]
+        result["act_scope"] = {
+            "preflight": "strict_qv", "lora_scope": "strict_qv",
+            "difference": "Q/V LoRA on the full-attention layers only, as AttCT/MLPCT; DeltaNet "
+                          "linear attention and MLP frozen. ACT residual loss still over all layers.",
+            "user_approval": "2026-10-04: simplify Qwen ACT to the AttCT/MLPCT adapter scope; fresh restart"}
     result["schema"] = "ctm-methods-one-bias-v5"
     result["exposure"] = one_bias.contract_block(manifest)
     result["data"]["biases"] = list(BIASES)
@@ -287,7 +304,8 @@ def verify_amendment(repository: Path, document: dict) -> None:
             raise ValueError(f"unrelated parent source changed: {relative}")
 
 
-def prepare(repository: Path, output: Path, *, parent_plan: Path | None = None, one_bias: bool = False) -> dict:
+def prepare(repository: Path, output: Path, *, parent_plan: Path | None = None, one_bias: bool = False,
+            act_lora_scope: str = "fused_qkv") -> dict:
     rows = ordered_pool(repository)
     document = {
         "contract": contract(),
@@ -300,8 +318,10 @@ def prepare(repository: Path, output: Path, *, parent_plan: Path | None = None, 
         if parent_plan is not None:
             raise ValueError("a fresh one-bias campaign has no parent plan")
         path, manifest = exposure.freeze(output.parent, rows)
-        document["contract"] = one_bias_contract(manifest)
+        document["contract"] = one_bias_contract(manifest, act_lora_scope)
         document["one_bias_manifest"] = {"path": str(path), "sha256": sha256(path)}
+        if act_lora_scope != "fused_qkv":
+            document["act_lora_scope"] = act_lora_scope
     if parent_plan is not None:
         if sha256(parent_plan) != PARENT_PLAN_SHA:
             raise ValueError("wrong parent plan")
@@ -325,7 +345,7 @@ def verify(repository: Path, plan: Path) -> dict:
             raise ValueError("frozen one-bias manifest bytes changed")
         if shared_qid_one_bias.load_manifest(frozen, expected_sha256=shared_qid_one_bias.manifest_identity(manifest)) != manifest:
             raise ValueError("frozen one-bias manifest differs from the deterministic assignment")
-        expected = one_bias_contract(manifest)
+        expected = one_bias_contract(manifest, document.get("act_lora_scope", "fused_qkv"))
     else:
         expected = contract()
     if document["contract"] != expected:
@@ -347,8 +367,11 @@ def main() -> None:
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--parent-plan", type=Path)
     parser.add_argument("--one-bias", action="store_true", help="Freeze a fresh one-QID-once, one-bias campaign")
+    parser.add_argument("--act-lora-scope", choices=ACT_LORA_SCOPES, default="fused_qkv",
+                        help="One-bias ACT adapter scope (strict_qv = AttCT/MLPCT Q/V scope)")
     args = parser.parse_args()
-    kwargs = {"parent_plan": args.parent_plan, "one_bias": args.one_bias} if args.action == "prepare" else {}
+    kwargs = ({"parent_plan": args.parent_plan, "one_bias": args.one_bias, "act_lora_scope": args.act_lora_scope}
+              if args.action == "prepare" else {})
     result = globals()[args.action](args.repository.resolve(), args.plan.resolve(), **kwargs)
     print(json.dumps({"plan": str(args.plan), "methods": result["contract"]["methods"],
                       "qid_order_sha256": result["qid_order_sha256"], "verified": True}))

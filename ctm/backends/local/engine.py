@@ -1664,7 +1664,7 @@ class LocalBackend:
         }
         errors: list[str] = report["errors"]
         report["lora_scope"] = lora_scope
-        if lora_scope not in {"historical", "act_qv_fused_qkv"} or (
+        if lora_scope not in {"historical", "act_qv_fused_qkv", "strict_qv"} or (
             lora_scope == "act_qv_fused_qkv" and method != "act"
         ):
             errors.append("unsupported explicit Qwen3.5 consistency LoRA scope")
@@ -1738,7 +1738,8 @@ class LocalBackend:
             topology, topology_errors = _inspect_qwen35_consistency_topology(model)
             report["topology"] = topology
             errors.extend(topology_errors)
-            if method == "act":
+            # strict_qv: ACT adapts exactly the AttCT/MLPCT Q/V set (loss layers unchanged).
+            if method == "act" and lora_scope != "strict_qv":
                 lora_report, lora_b_parameters, lora_errors = _inspect_qwen35_act_attention_lora(
                     model,
                     self._configured_lora,
@@ -1870,7 +1871,9 @@ class LocalBackend:
                 report["lora"]["lora_b_gradients"] = gradient_report
                 if method == "act":
                     report["lora"]["positive_lora_b_gradients_by_family"] = positive_by_family
-                    for family in ("self_attn", "linear_attn"):
+                    # strict_qv adapts only full-attention Q/V; there is no linear_attn family.
+                    families = ("self_attn",) if lora_scope == "strict_qv" else ("self_attn", "linear_attn")
+                    for family in families:
                         if positive_by_family.get(family, 0) < 1:
                             errors.append(
                                 "Qwen3.5 ACT preflight requires at least one finite positive LoRA-B gradient "
