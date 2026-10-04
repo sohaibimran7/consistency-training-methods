@@ -202,7 +202,7 @@ def assert_gradients(backend) -> dict:
 
 
 async def supervised_update(method, qids, pairs, *, backend, renderer, tokenizer,
-                            cache_dir, plan_hash, preflight_path):
+                            cache_dir, plan_hash, preflight_path, lora_scope="historical"):
     from ctm.training.consistency_data import (
         build_consistency_datums_with_audit, require_full_reference_suffix_alignment,
     )
@@ -219,7 +219,7 @@ async def supervised_update(method, qids, pairs, *, backend, renderer, tokenizer
         if preflight_path is not None:
             report = backend.run_qwen35_consistency_preflight(
                 datums, method=method, expected_group_size=4,
-                lora_scope="act_qv_fused_qkv" if method == "act" else "historical",
+                lora_scope=lora_scope,
             )
             plan.immutable_json(preflight_path, report)
             if not report["passed"]:
@@ -383,7 +383,12 @@ async def train(args) -> dict:
             consistency_loss_options=plan.LOSS_OPTIONS[args.method],
             forward_microbatch_max_datums=1, forward_microbatch_max_tokens=40960, target_logprob_chunk_size=2048,
         )
-        backend.setup(model=str(args.model_snapshot), lora=LoRAConfig(**plan.lora(args.method)),
+        # The verified plan's contract is the adapter source of truth (it may
+        # carry the one-bias strict_qv ACT scope); two-bias plans are unchanged.
+        lora_config = document["contract"]["lora"][args.method] if one_bias else plan.lora(args.method)
+        lora_scope = (document["contract"]["act_scope"]["preflight"] if one_bias else "act_qv_fused_qkv") \
+            if args.method == "act" else "historical"
+        backend.setup(model=str(args.model_snapshot), lora=LoRAConfig(**lora_config),
                       resume_from=resume, resume_with_optimizer=resume is not None)
         renderer, tokenizer = get_renderer_and_tokenizer(str(args.model_snapshot), source=backend.renderer_source)
         adam = AdamConfig(**plan.contract()["optimizer"])
@@ -450,6 +455,7 @@ async def train(args) -> dict:
                         args.method, qids, pairs, backend=backend, renderer=renderer, tokenizer=tokenizer,
                         cache_dir=run_dir / "base-targets", plan_hash=plan.PARENT_PLAN_SHA if amendment else plan_hash,
                         preflight_path=attempt_dir / "preflight.json" if step == starting_step else None,
+                        lora_scope=lora_scope,
                     )
                 else:
                     variant_metrics, detail = await opct_update(trainer, pairs, backend=backend)
