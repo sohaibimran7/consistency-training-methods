@@ -166,6 +166,53 @@ def generate_shard(args):
     _generate_rows(contract,progress,rows[args.shard::args.shards],output)
 
 
+def _adapter(contract):
+    from transformers import AutoProcessor
+    from ctm.evals.local_model import Gemma4UnifiedTextProcessor
+    from experiments.gemma4_methods.selection_adapter import GemmaVerifiers
+    from experiments.gemma4_methods.native_hooks import runtime_restore,scheduler_complete
+    processor=Gemma4UnifiedTextProcessor(AutoProcessor.from_pretrained(contract['model'],local_files_only=True))
+    if contract['method']=='rmct':
+        from experiments.rmct_restart_20260928.gemma_controller import RMCTVerifiers
+        return RMCTVerifiers(processor=processor)
+    return GemmaVerifiers(processor=processor,verify_runtime_checkpoint=runtime_restore,verify_scheduler=scheduler_complete)
+
+
+def accept_or_record(args):
+    """Accept into the patience selection history, or -- once patience has stopped --
+    record a data-matched validation that never enters selection/stopping.
+
+    User decision 2026-10-04: all methods are compared at a common fixed data
+    budget (256 batches = 1,024 questions) in addition to their patience-selected
+    convergence checkpoints, which remain unchanged.
+    """
+    from experiments.rmct_restart_20260928.validation_selection import (
+        accept_validation, check_progress, entries_from_folder, replay, boundary_name)
+    contract_record=file_identity(args.contract)
+    contract=read_verified(contract_record)
+    check_source(Path(__file__).resolve().parents[2],contract['source_commit'])
+    adapter=_adapter(contract)
+    state=replay(entries_from_folder(args.folder,contract),contract_record,
+                 verify_checkpoint=adapter.verify_checkpoint,verify_validation=adapter.verify_validation)
+    if not state['stopped']:
+        return accept_validation(args.folder,contract_record,file_identity(args.progress),
+            file_identity(args.output/'evidence.json'),verify_checkpoint=adapter.verify_checkpoint,
+            verify_validation=adapter.verify_validation)
+    progress=check_progress(read_verified(file_identity(args.progress)),contract)
+    if adapter.verify_checkpoint(progress,contract)!=progress:
+        raise ValueError('Checkpoint verifier must return verified progress')
+    evidence=file_identity(args.output/'evidence.json')
+    metrics=adapter.verify_validation(evidence,progress,contract)
+    record={'schema':'gemma-data-matched-validation-v1','contract':contract_record,
+        'progress':file_identity(args.progress),'validation':evidence,'metrics':metrics,
+        'purpose':'fixed data-matched budget comparison; not part of patience selection or stopping',
+        'selection_at_record':{'stopped':True,'stop_reason':state['stop_reason'],
+            'selected_progress':state['selected']['progress'] if state['selected'] else None},
+        'user_approval':'2026-10-04: every method reaches and validates 256 consumed batches (1,024 questions)'}
+    immutable_json(Path(args.folder)/'data-matched'/boundary_name(progress,contract),record)
+    return record
+
+
 def accept(args):
     from transformers import AutoProcessor
     from ctm.evals.local_model import Gemma4UnifiedTextProcessor
@@ -188,11 +235,11 @@ def accept(args):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('action',choices=['generate','generate-shard','accept'])
+    p.add_argument('action',choices=['generate','generate-shard','accept','accept-or-record'])
     for name in ('contract','progress','output','folder'):
         p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--shard',type=int,default=0)
     p.add_argument('--shards',type=int,default=1)
     a=p.parse_args()
-    actions={'generate':generate,'generate-shard':generate_shard,'accept':accept}
+    actions={'generate':generate,'generate-shard':generate_shard,'accept':accept,'accept-or-record':accept_or_record}
     print(json.dumps(actions[a.action](a),default=str))

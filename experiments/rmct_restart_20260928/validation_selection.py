@@ -261,6 +261,42 @@ def continuation_budget(progress, state, *, requested_updates):
     return min(requested_updates, accepted + 64 - step, POLICY['max_optimizer_updates'] - step)
 
 
+DATA_MATCHED_ENV = 'GEMMA_DATA_MATCHED_ATTEMPTS'
+
+
+def data_matched_target():
+    """User-approved fixed data budget (2026-10-04): every method consumes at least
+    this many sampled batches (256 = 1,024 questions) for the data-matched comparison.
+    Opt-in per job via GEMMA_DATA_MATCHED_ATTEMPTS; None leaves pure patience."""
+    import os
+    value = os.environ.get(DATA_MATCHED_ENV)
+    if value is None:
+        return None
+    target = int(value)
+    if target <= 0 or target % interval_attempts() or target > max_attempts():
+        raise ValueError('Data-matched target must be a positive 256-encounter boundary')
+    return target
+
+
+def data_matched_budget(progress, state, *, requested_updates, target_attempts):
+    """Patience budget, extended to the fixed data-matched target when needed.
+
+    Patience still owns selection/stopping: checkpoints past a stop are never
+    accepted into the selection history (see accept-or-record validation).
+    """
+    contract = read_verified(state['contract'])
+    check_contract(contract)
+    if not encounter_mode(contract):
+        raise ValueError('Data-matched budgets are defined in encounter mode only')
+    check_progress(progress, contract)
+    cursor = progress['encounter_attempt']
+    normal = 0
+    if not state['stopped'] and cursor < encounter_horizon(state):
+        normal = continuation_budget(progress, state, requested_updates=requested_updates)
+    extra = max(0, min(requested_updates, target_attempts - cursor, max_attempts() - cursor))
+    return max(normal, extra)
+
+
 def encounter_horizon(state):
     """Furthest attempt patience can still require: best accepted boundary + patience windows.
 

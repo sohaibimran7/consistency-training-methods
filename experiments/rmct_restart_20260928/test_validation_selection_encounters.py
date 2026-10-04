@@ -86,3 +86,28 @@ def test_v1_policy_unchanged():
     assert s.POLICY == dict(metric='tbsr', interval=64, patience=2, min_delta=0, tie='earliest',
                             max_optimizer_updates=4096)
     assert s.interval_attempts() == 64 and s.max_attempts() == 1920
+
+
+def test_data_matched_budget_extends_only_to_fixed_target(c, monkeypatch):
+    c['accept'](60, 64, 64, 10)
+    c['accept'](120, 128, 128, 20)
+    state = c['accept'](180, 192, 192, 30)        # patience stop at 192 (best 64)
+    assert state['stopped']
+    _, at_stop = c['progress'](180, 192, 192)
+    assert s.continuation_budget(at_stop, state, requested_updates=16) == 0
+    assert s.data_matched_budget(at_stop, state, requested_updates=16, target_attempts=256) == 16
+    _, near = c['progress'](230, 250, 250)
+    assert s.data_matched_budget(near, state, requested_updates=16, target_attempts=256) == 6
+    _, done = c['progress'](236, 256, 256)
+    assert s.data_matched_budget(done, state, requested_updates=16, target_attempts=256) == 0
+    monkeypatch.setenv(s.DATA_MATCHED_ENV, '256')
+    assert s.data_matched_target() == 256
+    monkeypatch.setenv(s.DATA_MATCHED_ENV, '100')
+    with pytest.raises(ValueError, match='256-encounter'):
+        s.data_matched_target()
+
+
+def test_data_matched_budget_keeps_patience_budget_when_larger(c):
+    state = c['accept'](60, 64, 64, 10)            # horizon 192, not stopped
+    _, progress = c['progress'](70, 100, 100)
+    assert s.data_matched_budget(progress, state, requested_updates=999, target_attempts=128) == 92

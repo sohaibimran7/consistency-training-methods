@@ -233,7 +233,11 @@ def train_window(args):
         else:
             value=normalized(parent,contract)
             adapter.verify_checkpoint(value,contract)
-            budget=continuation_budget(value,adapter.replay(args.folder,contract_record),requested_updates=16)
+            from experiments.rmct_restart_20260928.validation_selection import data_matched_target,data_matched_budget
+            replayed=adapter.replay(args.folder,contract_record)
+            target=data_matched_target()
+            budget=(data_matched_budget(value,replayed,requested_updates=16,target_attempts=target)
+                    if target is not None else continuation_budget(value,replayed,requested_updates=16))
             before=parent['progress']
         if not budget:return
         # Budget unit: sampled batches (encounters/4), counting no-update batches.
