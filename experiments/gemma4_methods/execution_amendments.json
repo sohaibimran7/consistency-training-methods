@@ -16,13 +16,17 @@
         "experiments/rmct_restart_20260928/validation_selection.py",
         "experiments/rmct_restart_20260928/test_validation_selection_encounters.py",
         "experiments/gemma4_methods/selection_adapter.py",
-        "experiments/rmct_restart_20260928/gemma_controller.py"
+        "experiments/rmct_restart_20260928/gemma_controller.py",
+        "experiments/gemma4_methods/train.py"
       ],
       "scoring_amendments": [
         "2026-10-04 user decision: completed validation responses with an unclosed thinking channel score as unanswered (same as length-capped); applies identically to all methods; previously accepted boundaries had no such responses, so their recomputed metrics are unchanged."
       ],
       "budget_amendments": [
         "2026-10-04 user decision: fixed data-matched budget of 256 consumed batches (1,024 questions) for every method, opt-in via GEMMA_DATA_MATCHED_ATTEMPTS=256. Patience selection histories and selected convergence checkpoints are unchanged; validations after a patience stop are recorded under selection/<m>/data-matched/ and never enter selection or stopping."
+      ],
+      "training_fix_amendments": [
+        "2026-10-04 user-approved fix: Gemma five-method training rejects native-EOS completions whose reasoning channel is opened but never closed (finish 'unclosed_reasoning'), excluding the whole OPCT group / BCT update exactly like length truncation (skip reason 'incomplete_reasoning_group'). Applies only to batches sampled after deployment; historical checkpoints unchanged. Exhaustive audit of one-bias c2 OPCT: 1 of 3,808 trained rollouts affected (attempt 32, step 31)."
       ]
     },
     {
@@ -48,6 +52,9 @@
       ],
       "budget_amendments": [
         "2026-10-04 user decision: fixed data-matched budget of 256 consumed batches (1,024 questions) for every method, opt-in via GEMMA_DATA_MATCHED_ATTEMPTS=256. Patience selection histories and selected convergence checkpoints are unchanged; validations after a patience stop are recorded under selection/<m>/data-matched/ and never enter selection or stopping."
+      ],
+      "training_fix_amendments": [
+        "2026-10-04 user-approved fix: Gemma five-method training rejects native-EOS completions whose reasoning channel is opened but never closed (finish 'unclosed_reasoning'), excluding the whole OPCT group / BCT update exactly like length truncation (skip reason 'incomplete_reasoning_group'). Applies only to batches sampled after deployment; historical checkpoints unchanged. Exhaustive audit of one-bias c2 OPCT: 1 of 3,808 trained rollouts affected (attempt 32, step 31)."
       ]
     }
   ]

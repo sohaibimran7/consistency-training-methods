@@ -79,3 +79,32 @@ class GemmaMethodsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReasoningCompletionTests(unittest.TestCase):
+    def setUp(self):
+        ids = {'<|channel>': 100, '<channel|>': 101}
+        tokenizer = SimpleNamespace(convert_tokens_to_ids=ids.get, unk_token_id=3)
+        self.renderer = SimpleNamespace(get_stop_sequences=lambda: [106], tokenizer=tokenizer)
+        self.backend = SimpleNamespace(model=SimpleNamespace(generation_config=SimpleNamespace(eos_token_id=1)))
+
+    def finish(self, tokens):
+        return validate_completion(SimpleNamespace(tokens=tokens), self.backend,
+                                   renderer=self.renderer, max_tokens=50)[1]
+
+    def test_unclosed_reasoning_with_eos_is_rejected(self):
+        self.assertEqual(self.finish([100, 7, 8, 106]), 'unclosed_reasoning')
+        self.assertEqual(self.finish([100, 7, 101, 9, 100, 5, 1]), 'unclosed_reasoning')  # reopened, not closed
+
+    def test_closed_reasoning_and_no_reasoning_accepted(self):
+        self.assertEqual(self.finish([100, 7, 101, 9, 106]), 'model_eos')
+        self.assertEqual(self.finish([9, 9, 106]), 'model_eos')  # never opened: unchanged policy
+
+    def test_length_cap_still_reported(self):
+        self.assertEqual(self.finish([100] + [7] * 49), 'length')
+
+    def test_incomplete_set_and_skip_reason(self):
+        from experiments.gemma4_methods.train import INCOMPLETE, TruncatedGroup
+        self.assertEqual(INCOMPLETE, ('length', 'unclosed_reasoning'))
+        self.assertEqual(TruncatedGroup('incomplete_reasoning_group').reason, 'incomplete_reasoning_group')
+        self.assertEqual(TruncatedGroup().reason, 'incomplete_generation_group')
