@@ -213,6 +213,10 @@ def verified_budget(adapter, folder, contract_record, progress, requested):
     if adapter.verify_checkpoint(progress,contract) != progress:
         raise ValueError('Native progress did not verify')
     state = adapter.replay(folder,contract_record)
+    from experiments.rmct_restart_20260928.validation_selection import data_matched_target,data_matched_budget
+    target = data_matched_target()
+    if target is not None:
+        return data_matched_budget(progress,state,requested_updates=requested,target_attempts=target)
     return continuation_budget(progress,state,requested_updates=requested)
 
 

@@ -15,10 +15,14 @@
         "experiments/gemma4_methods/native_hooks.py",
         "experiments/rmct_restart_20260928/validation_selection.py",
         "experiments/rmct_restart_20260928/test_validation_selection_encounters.py",
-        "experiments/gemma4_methods/selection_adapter.py"
+        "experiments/gemma4_methods/selection_adapter.py",
+        "experiments/rmct_restart_20260928/gemma_controller.py"
       ],
       "scoring_amendments": [
         "2026-10-04 user decision: completed validation responses with an unclosed thinking channel score as unanswered (same as length-capped); applies identically to all methods; previously accepted boundaries had no such responses, so their recomputed metrics are unchanged."
+      ],
+      "budget_amendments": [
+        "2026-10-04 user decision: fixed data-matched budget of 256 consumed batches (1,024 questions) for every method, opt-in via GEMMA_DATA_MATCHED_ATTEMPTS=256. Patience selection histories and selected convergence checkpoints are unchanged; validations after a patience stop are recorded under selection/<m>/data-matched/ and never enter selection or stopping."
       ]
     },
     {
@@ -36,10 +40,14 @@
         "experiments/rmct_restart_20260928/validation_selection.py",
         "experiments/rmct_restart_20260928/test_validation_selection_encounters.py",
         "experiments/gemma4_methods/train.py",
-        "experiments/gemma4_methods/selection_adapter.py"
+        "experiments/gemma4_methods/selection_adapter.py",
+        "experiments/rmct_restart_20260928/gemma_controller.py"
       ],
       "scoring_amendments": [
         "2026-10-04 user decision: completed validation responses with an unclosed thinking channel score as unanswered (same as length-capped); applies identically to all methods; previously accepted boundaries had no such responses, so their recomputed metrics are unchanged."
+      ],
+      "budget_amendments": [
+        "2026-10-04 user decision: fixed data-matched budget of 256 consumed batches (1,024 questions) for every method, opt-in via GEMMA_DATA_MATCHED_ATTEMPTS=256. Patience selection histories and selected convergence checkpoints are unchanged; validations after a patience stop are recorded under selection/<m>/data-matched/ and never enter selection or stopping."
       ]
     }
   ]
